@@ -1,0 +1,82 @@
+# Установка «Генератора лидмагнитов» одной командой: ./install.sh (или docker compose up -d --build).
+# Сервисы: база PostgreSQL, работник (очередь, миграции, рассылки), веб-кабинет на порту 3000.
+# HTTPS на сервере: задайте DOMAIN в .env и запускайте с --profile https (Caddy сам получит сертификат).
+# Своё имя проекта: не пересекается с базой для разработки (docker-compose.dev.yml, проект livem)
+name: livem-open
+
+x-app: &app
+  build: .
+  image: livem-open:local
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    DATABASE_URL: postgres://livem:${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}@postgres:5432/livem
+  volumes:
+    - app-data:/app/data
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: livem
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+      POSTGRES_DB: livem
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U livem -d livem"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  worker:
+    <<: *app
+    # Работник сам применяет миграции базы при старте
+    command: ["node", "dist/worker.js"]
+    stop_grace_period: 45s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "deploy/worker-ready.cjs"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+
+  web:
+    <<: *app
+    depends_on:
+      worker:
+        condition: service_healthy
+    # Только для этого компьютера. Снаружи кабинет открывают через Caddy (профиль https)
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    image: caddy:2
+    profiles: ["https"]
+    restart: unless-stopped
+    command: ["caddy", "reverse-proxy", "--from", "${DOMAIN:-localhost}", "--to", "web:3000"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+    depends_on:
+      - web
+
+volumes:
+  postgres-data:
+  app-data:
+  caddy-data:

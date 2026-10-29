@@ -1,0 +1,52 @@
+@import "tailwindcss";
+@import "@ykurilov/agent-chat-skin-oduvanchik/styles.css";
+@import "@ykurilov/agent-chat-skin-oduvanchik/flows/styles.css";
+@source "../../node_modules/@tandem/ui/dist";
+@source "../../node_modules/@ykurilov/agent-chat-skin-oduvanchik/dist";
+
+html, body { min-height: 100%; background: var(--yk-bg); color: var(--yk-text); font-family: var(--yk-font-sans); font-size: var(--yk-text-body-size); line-height: var(--yk-text-body-line-height); }
+body { margin: 0; }
+[hidden] { display: none !important; }
+.app-focus:focus-visible, a:focus-visible { outline: 2px solid var(--yk-accent); outline-offset: 3px; }
+.app-studio { height: 100dvh; }
+/* The canvas owns its working space; ordinary cabinet pages keep Studio padding. */
+.app-studio--board .yk-studio__main { padding: 0; }
+/* На компьютере шапки «Студии» нет: разделы, тема и выход — в меню слева, рабочая область начинается от верха окна. */
+@media (min-width: 701px) {
+  .app-studio { grid-template-rows: minmax(0, 1fr); }
+  .app-studio .yk-studio__header { display: none; }
+  .app-studio .yk-studio__navigation { grid-row: 1; }
+  .app-studio .yk-studio__body { grid-row: 1; padding-top: var(--yk-space-4); }
+  .app-studio--navigation-expanded { --yk-studio-navigation-width: 232px; }
+}
+.app-studio .yk-studio__navigation { align-items: stretch; }
+.app-topbar { display: flex; align-items: center; gap: var(--yk-space-2); min-width: 0; width: 100%; }
+.app-brand { display: flex; align-items: center; gap: var(--yk-space-3); font-weight: 600; color: var(--yk-text); text-decoration: none; }
+.app-sidebar { display: flex; flex: 1; flex-direction: column; justify-content: space-between; gap: var(--yk-space-4); min-height: 0; }
+.app-navigation { display: flex; flex-direction: column; align-items: center; gap: var(--yk-space-2); padding-block: var(--yk-space-3); }
+.app-sidebar-account { padding-top: var(--yk-space-3); border-top: 1px solid var(--yk-border); }
+.app-navigation-link, .app-navigation-item { position: relative; display: flex; align-items: center; justify-content: center; gap: var(--yk-space-3); width: 44px; min-height: 44px; border: 0; border-radius: var(--yk-radius-md); background: none; color: var(--yk-muted); font: inherit; text-decoration: none; cursor: pointer; }
+.app-navigation-item { cursor: default; }
+.app-navigation-link:hover { background: var(--yk-surface-2); color: var(--yk-text); }
+.app-navigation-link[aria-current="page"] { background: var(--yk-accent-soft); color: var(--yk-accent-text); }
+.app-navigation-link:focus-visible { outline: 2px solid var(--yk-accent); outline-offset: 2px; }
+.app-navigation-count { position: absolute; right: 0; top: 0; font: var(--yk-text-label-size) var(--yk-font-mono); color: var(--yk-accent-text); }
+.app-navigation-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--yk-text-small-size); }
+.app-sidebar--expanded .app-navigation { align-items: stretch; }
+.app-sidebar--expanded .app-navigation-link, .app-sidebar--expanded .app-navigation-item { width: 100%; justify-content: flex-start; padding-inline: var(--yk-space-3); }
+.app-sidebar--expanded .app-navigation-count { position: static; margin-left: auto; }
+.app-content { height: 100%; min-height: 0; overflow: auto; padding: 0 var(--yk-studio-scrollbar-gap) 0 0; scrollbar-gutter: stable; }
+.app-content:has([data-fill-window]) { display: flex; flex-direction: column; }
+.app-content--board { padding: 0; overflow: hidden; }
+.app-card-header { display: flex; flex-direction: column; gap: var(--yk-space-2); margin-bottom: var(--yk-space-4); }
+.app-muted { color: var(--yk-muted); font-size: var(--yk-text-small-size); }
+.app-field { display: flex; flex-direction: column; gap: var(--yk-space-2); min-width: 0; }
+.app-dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--yk-space-2); margin-top: var(--yk-space-5); }
+.app-saved-message { line-height: 1.8; min-width: 0; }
+.app-saved-message--user { background: var(--yk-surface-2); border-radius: var(--yk-radius-message); padding: var(--yk-space-3) var(--yk-space-4); margin-left: auto; max-width: 85%; }
+@media (max-width: 700px) {
+  .app-content { padding: 0; }
+  .app-content--board { padding: 0; }
+}
+
+.app-page-title { font-size: var(--yk-text-title-size); font-weight: var(--yk-text-title-weight); letter-spacing: var(--yk-text-title-tracking); }

@@ -1,0 +1,1 @@
+ALTER TABLE "app"."passages" ADD COLUMN "sale_offer_outreach_day" integer;

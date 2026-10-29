@@ -1,0 +1,3 @@
+ALTER TABLE "app"."outbound_messages" ADD COLUMN "next_attempt_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
+CREATE INDEX "outbound_messages_waiting" ON "app"."outbound_messages" USING btree ("next_attempt_at") WHERE "app"."outbound_messages"."status" = 'queued';--> statement-breakpoint
+CREATE INDEX "inbound_messages_unprocessed" ON "app"."inbound_messages" USING btree ("received_at") WHERE "app"."inbound_messages"."processed_at" is null;

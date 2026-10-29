@@ -1,0 +1,1 @@
+ALTER TABLE "app"."product_orders" DROP COLUMN "cost_rub";

@@ -1,0 +1,1 @@
+ALTER TABLE "app"."outbound_messages" ADD COLUMN "video" jsonb;

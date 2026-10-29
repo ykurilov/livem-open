@@ -1,0 +1,2 @@
+ALTER TABLE "app"."outbound_messages" ADD COLUMN "awaits_bot_repair" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE INDEX "outbound_messages_awaiting_bot" ON "app"."outbound_messages" USING btree ("bot_id") WHERE "app"."outbound_messages"."awaits_bot_repair";

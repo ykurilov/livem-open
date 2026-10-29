@@ -1,0 +1,1 @@
+ALTER TABLE "app"."passages" ADD COLUMN "person_closed_day" integer;

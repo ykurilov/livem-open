@@ -1,0 +1,1 @@
+ALTER TABLE "app"."app_settings" ALTER COLUMN "reminder_chain" DROP NOT NULL;

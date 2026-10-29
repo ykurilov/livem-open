@@ -1,0 +1,1 @@
+ALTER TABLE "app"."outbound_messages" ADD COLUMN "follow_ups" jsonb DEFAULT '[]'::jsonb NOT NULL;

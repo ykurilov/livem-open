@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "entry_links_active_label" ON "app"."entry_links" USING btree ("lead_magnet_id",lower("label")) WHERE "app"."entry_links"."label" is not null and "app"."entry_links"."archived_at" is null;

@@ -1,0 +1,1 @@
+ALTER TABLE "app"."passages" ADD COLUMN "reminder_chain_started_at" timestamp with time zone;

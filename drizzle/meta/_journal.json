@@ -1,0 +1,258 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1791018218486,
+      "tag": "0000_initial_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791019967870,
+      "tag": "0001_us2_bots",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791021036179,
+      "tag": "0002_us1_editor",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791021925081,
+      "tag": "0003_us2_live_dialog",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791023215142,
+      "tag": "0004_us2_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791024089530,
+      "tag": "0005_us7_money",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791025434806,
+      "tag": "0006_us7_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791026682611,
+      "tag": "0007_us6_inbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791027896429,
+      "tag": "0008_us3_reminders",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791028138807,
+      "tag": "0009_us9_no_code",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791028150231,
+      "tag": "0010_us8_active_label",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791028711400,
+      "tag": "0011_us5_mailings",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791029296498,
+      "tag": "0012_us5_mailing_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791032758402,
+      "tag": "0013_us_bot_repair_resend",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791034637922,
+      "tag": "0014_outbound_passage",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791093589079,
+      "tag": "0015_agent_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791176276081,
+      "tag": "0016_expert_videos",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791176487869,
+      "tag": "0017_outbound_video",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791177637417,
+      "tag": "0018_outbound_follow_ups",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791726235021,
+      "tag": "0019_deepseek_and_link_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791742010788,
+      "tag": "0020_multi_day_program",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791742856182,
+      "tag": "0021_preview_program_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791747794033,
+      "tag": "0022_person_closed_day",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791754872392,
+      "tag": "0023_sale_offer_outreach_day",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791963851544,
+      "tag": "0024_reminder_chain_optional",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791968489190,
+      "tag": "0025_outbound_staff_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792032045141,
+      "tag": "0026_deepseek_flash_on_together",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1792407339826,
+      "tag": "0027_contact_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1792544881847,
+      "tag": "0028_course_purchases",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792546484104,
+      "tag": "0029_order_amount_currency",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792546484560,
+      "tag": "0030_drop_order_cost_rub",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792624031051,
+      "tag": "0031_text_short_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792626441605,
+      "tag": "0032_deepseek_flash_direct_again",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792640000000,
+      "tag": "0033_purchase_reaction_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793191718228,
+      "tag": "0034_expert_images",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793256194999,
+      "tag": "0035_password_accounts",
+      "breakpoints": true
+    }
+  ]
+}
