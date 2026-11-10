@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { loadCurrentBranch, type ChatStorage, type ModelCatalog, type ModelChoice } from "@ykurilov/agent-chat-core";
+import { buildModelMenu, hasChatMessages, loadCurrentBranch, type ChatStorage, type ModelCatalog, type ModelChoice, type ModelMenu } from "@ykurilov/agent-chat-core";
 import { createChatHandler } from "@ykurilov/agent-chat-server";
+import type { Attachments } from "@ykurilov/agent-chat-attachments";
 import {
   attachConstructorChat,
   clearManualEditNotes,
@@ -10,13 +11,14 @@ import {
   getLeadMagnet,
 } from "../lead-magnets";
 import { logToolCalls } from "../agent-log/capture";
+import { markAnnounced, unannounced } from "../corrections";
 import { foreignWords } from "@ykurilov/agent-chat-reply-check";
 import { CABINET_OWNER_ID } from "../platform/cabinet-owner";
 import type { Database } from "../platform/db";
 import { AGENT_TIME_ZONE, PROVIDER_FALLBACK } from "../platform/models-catalog";
 import { turnChatId } from "../platform/turn-request";
 import { createTurnTails } from "../platform/turn-tails";
-import { constructorTail, fitManualEditNotes } from "./manual-edits";
+import { answerCorrectionsLine, constructorTail, fitManualEditNotes } from "./manual-edits";
 import { withSaveClaimGuard } from "./save-claim";
 import { createConstructorTools } from "./tools";
 
@@ -25,7 +27,7 @@ export const CONSTRUCTOR_BASE_PATH = "/api/constructor";
 /** Тег изменения данных: конструктор поменял черновик, панели настроек пора перечитать его. */
 export const DRAFT_CHANGED_TAG = "lead-magnet-draft";
 
-/** Предел хвоста хода конструктора: в него помещаются заметки о ручных правках. */
+/** Предел хвоста хода конструктора: в него помещаются строка о новых правках ответов и заметки о ручных правках. */
 export const CONSTRUCTOR_TAIL_MAX_LENGTH = 4000;
 
 export interface ConstructorEndpointOptions {
@@ -35,8 +37,12 @@ export interface ConstructorEndpointOptions {
   defaultChoice: ModelChoice;
   env?: Record<string, string | undefined>;
   resolveUser: (request: Request) => Promise<{ id: string } | null>;
+  /** Продолжить завершённый тестовый разговор лидмагнита (инструмент `reopen_test_conversation`). */
+  reopenTestConversation?: (leadMagnetId: string) => Promise<void>;
   /** Инструкция конструктора; по умолчанию — `prompts/constructor.md`. */
   instructions?: string;
+  /** Картинки в сообщениях эксперта: снимки экрана, фото. Нет — чат только текстовый. */
+  attachments?: Attachments;
 }
 
 export interface ConstructorEndpoint {
@@ -45,6 +51,8 @@ export interface ConstructorEndpoint {
   ensureChat(leadMagnetId: string): Promise<string>;
   /** В чате конструктора уже есть сообщения. */
   hasMessages(chatId: string): Promise<boolean>;
+  /** Меню моделей — то же, что отдаёт `GET /api/constructor/models`: форма настроек получает его со страницы, без своего запроса. */
+  modelMenu(): ModelMenu;
 }
 
 export function readConstructorPrompt(): string {
@@ -53,17 +61,20 @@ export function readConstructorPrompt(): string {
 
 export function createConstructorEndpoint(options: ConstructorEndpointOptions): ConstructorEndpoint {
   const { db, chatStorage } = options;
-  const deps = { db, chatStorage };
+  const deps = { db, chatStorage, ...(options.reopenTestConversation && { reopenTestConversation: options.reopenTestConversation }) };
   const instructions = options.instructions ?? readConstructorPrompt();
   const tails = createTurnTails();
 
   const handler = createChatHandler({
     basePath: CONSTRUCTOR_BASE_PATH,
     storage: chatStorage,
+    ...(options.attachments && { attachments: options.attachments }),
     // Ответ эксперту — без иероглифов и чужих слов, как у консультанта; ссылки конструктора не трогаются.
     // Слова из черновика лидмагнита законны, даже если конструктор их не читал в этом ходе
     replyChecks: {
       checks: [foreignWords({ script: "cyrillic" })],
+      // Фраза перед инструментом печаталась бы на экране до исправления: эксперт видит ответ только после проверки
+      web: "hold",
       knownTexts: async ({ chatId }) => {
         const lead = await findLeadMagnetByConstructorChat(db, chatId);
         return lead ? [JSON.stringify(lead.draft)] : [];
@@ -93,7 +104,7 @@ export function createConstructorEndpoint(options: ConstructorEndpointOptions): 
         ),
       // Вызовы идут по очереди: просмотр после правки видит её результат
       sequentialTools: true,
-      // Заметки о ручных правках — в конце запроса шагов этого хода, в историю не пишутся
+      // Заметки о ручных правках и строка о новых правках ответов — в конце запроса шагов этого хода, в историю не пишутся
       stepContext: tails.stepContext,
       timeZone: AGENT_TIME_ZONE,
       providerFallback: PROVIDER_FALLBACK,
@@ -107,22 +118,27 @@ export function createConstructorEndpoint(options: ConstructorEndpointOptions): 
 
       const chatId = turnChatId(request, CONSTRUCTOR_BASE_PATH);
       const lead = chatId ? await findLeadMagnetByConstructorChat(db, chatId) : null;
-      const sent = fitManualEditNotes(lead?.pendingManualEdits ?? [], CONSTRUCTOR_TAIL_MAX_LENGTH);
-      const tail = constructorTail(sent.map((note) => note.text));
+      // Новые правки и ответы эксперта — одной строкой; сами записи конструктор читает инструментом
+      const corrections = lead ? await unannounced(db, lead.id) : { ids: [], pendingTotal: 0, seenAt: new Date() };
+      const correctionsLine = answerCorrectionsLine({ fresh: corrections.ids.length, pending: corrections.pendingTotal });
+      const sent = fitManualEditNotes(lead?.pendingManualEdits ?? [], CONSTRUCTOR_TAIL_MAX_LENGTH, correctionsLine);
+      const tail = constructorTail(sent.map((note) => note.text), correctionsLine);
       if (chatId) tails.set(chatId, lead ? tail : null);
       if (!lead || !chatId || !tail) return handler.fetch(request);
 
       const response = await handler.fetch(request);
       if (!response.ok || !response.body) return response;
-      // Заметки стираются, только когда ход дошёл до конца удачно: при сбое их унесёт повтор или следующее сообщение
+      // Заметки стираются, а правки помечаются упомянутыми, только когда ход дошёл до конца удачно: при сбое их унесёт
+      // повтор или следующее сообщение
       const clearWhenTurnCompleted = new TransformStream<Uint8Array, Uint8Array>({
         async flush() {
           try {
             const answer = (await loadCurrentBranch(chatStorage, chatId)).at(-1);
-            if (answer?.role === "assistant" && answer.status === "complete")
-              await clearManualEditNotes(db, lead.id, sent.map((note) => note.id));
+            if (answer?.role !== "assistant" || answer.status !== "complete") return;
+            if (sent.length > 0) await clearManualEditNotes(db, lead.id, sent.map((note) => note.id));
+            if (correctionsLine) await markAnnounced(db, corrections.ids, corrections.seenAt);
           } catch (error) {
-            console.error(`Конструктор: не удалось стереть заметки о ручной правке: ${error instanceof Error ? error.message : error}`);
+            console.error(`Конструктор: не удалось снять хвост хода (заметки о ручной правке, новые правки ответов): ${error instanceof Error ? error.message : error}`);
           }
         },
       });
@@ -147,8 +163,8 @@ export function createConstructorEndpoint(options: ConstructorEndpointOptions): 
       return attachConstructorChat(db, leadMagnetId, id);
     },
 
-    async hasMessages(chatId) {
-      return (await chatStorage.listMessages(chatId)).length > 0;
-    },
+    hasMessages: (chatId) => hasChatMessages(chatStorage, chatId),
+
+    modelMenu: () => buildModelMenu(options.catalog, options.env ?? process.env, options.defaultChoice),
   };
 }

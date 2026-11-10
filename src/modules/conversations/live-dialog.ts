@@ -1,3 +1,4 @@
+import type { Attachments } from "@ykurilov/agent-chat-attachments";
 import type { ChatStorage, ModelCatalog, ModelChoice, RunningAnswerRegistry } from "@ykurilov/agent-chat-core";
 import { and, eq } from "drizzle-orm";
 import type { Pool } from "pg";
@@ -25,6 +26,7 @@ import { congratulatePurchase, remindPayment } from "../purchases/reactions";
 import { endActivePassages } from "./passage-end";
 import { createPassageConversationStore } from "./passage-store";
 import { routeInboundMessage } from "./router";
+import type { SenlerApi } from "../senler";
 import { passages } from "./schema";
 import { sweepStuckWork } from "./sweep";
 import { releaseBurstTurn, reserveBurstTurn, runPassageTurn, settleUnattendedTurn, type TurnSpending } from "./turn";
@@ -42,6 +44,8 @@ export interface LiveDialogDependencies {
   cipher: TokenCipher;
   alerts: AlertService;
   chatStorage: ChatStorage;
+  /** Картинки чатов работника (`getChatImages("worker")`): фото клиента из мессенджеров, если лидмагнит их принимает. */
+  chatImages?: Attachments;
   catalog: ModelCatalog;
   env?: Record<string, string | undefined>;
   /** Реестр идущих ответов процесса; не задан — свой. */
@@ -51,6 +55,8 @@ export interface LiveDialogDependencies {
   rateLimiter?: RateLimiter;
   /** Запасной судья сценария; не задан — DeepSeek 4.1 Flash. Тесты дают подставную модель. */
   judgeFallback?: ModelChoice;
+  /** Senler в сообществах ВК (`senlerApiFromEnv`); не задан — бот о Senler не знает. */
+  senler?: SenlerApi;
   /** Подменённые часы: сдвинуть на окно пачки SDK (`HeadlessConsultantOptions.afterBurstRecorded`). */
   afterBurstRecorded?: (window: { quietMs: number }) => void;
 }
@@ -128,12 +134,13 @@ export function createLiveDialog(deps: LiveDialogDependencies): LiveDialog {
     ...(deps.env && { env: deps.env }),
     ...(deps.registry && { registry: deps.registry }),
     store: createPassageConversationStore(db, clock, deps.queue),
+    ...(deps.chatImages && { attachments: deps.chatImages }),
     modelChoice: deps.modelChoice,
     limits,
     flow,
     now: () => clock.now(),
     ...(deps.afterBurstRecorded && { afterBurstRecorded: deps.afterBurstRecorded }),
-    onBurstTurn: (input) => reserveBurstTurn({ db }, input),
+    onBurstTurn: async (input) => reserveBurstTurn({ db }, { ...input, day: (await flow.readRun(input.ownerId, input.chatId))?.day?.day }),
     onBurstTurnRefused: (input) => releaseBurstTurn({ db }, input),
     onUnattendedAnswer: (input) => settleUnattendedTurn(turnDeps, input),
     // Пустой счёт или плохой ключ провайдера: ходы идут через запасной, но чинить это эксперту
@@ -152,7 +159,7 @@ export function createLiveDialog(deps: LiveDialogDependencies): LiveDialog {
     queue: deps.queue,
     clock,
     ...(deps.rateLimiter && { rateLimiter: deps.rateLimiter }),
-    resolveTarget: (message) => sendTargetOf(deps, db, message),
+    resolveTarget: (message, executor) => sendTargetOf(deps, executor, message),
     async onBlocked(message) {
       const at = clock.now();
       const active = await activeChatOf(message.personId);

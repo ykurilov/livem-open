@@ -1,7 +1,7 @@
 import { NotebookIcon as NotebookText } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/ui/primitives";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@/ui/primitives";
 import { requireUser } from "@/modules/access";
 import { CHANNEL_LABELS, CONTACT_SOURCE_LABELS } from "@/modules/channels";
 import { loadPersonCard, type PersonCardPassage } from "@/modules/people";
@@ -13,6 +13,7 @@ import { formatUsd } from "@/modules/spending";
 import { EmptyState, ImageLink, PageHeader, VideoLink } from "@/ui";
 import { AgentMessage } from "@/ui/agent-message";
 import { PASSAGE_STATUS_BADGES, PASSAGE_STATUS_LABELS } from "../status-labels";
+import { StartOverButton } from "./start-over-button";
 
 export const dynamic = "force-dynamic";
 
@@ -37,12 +38,23 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     <>
       <PageHeader
         title={card.displayName ?? "Без имени"}
-        description={`${CHANNEL_LABELS[card.channel]}, бот «${card.botTitle}». В базе с ${dateTimeFormat.format(card.createdAt)}.${card.source ? ` Источник: ${CONTACT_SOURCE_LABELS[card.source]}.` : ""}`}
-        action={card.blockedAt ? <Badge variant="warm">Заблокировал бота</Badge> : undefined}
+        description={`${CHANNEL_LABELS[card.channel]}, бот «${card.botTitle}». Пришёл ${dateTimeFormat.format(card.createdAt)}.${card.source ? ` Источник: ${CONTACT_SOURCE_LABELS[card.source]}.` : ""}`}
+        action={
+          <div className="flex flex-wrap items-start gap-[var(--yk-space-4)]">
+            {card.blockedAt ? <Badge variant="warm">Заблокировал бота</Badge> : null}
+            <StartOverButton personId={id} name={card.displayName ?? "Без имени"} />
+            {/* На телефоне главное действие — первым */}
+            <div className="max-sm:order-first">
+              <Button asChild>
+                <Link href={`/inbox?person=${id}`}>Открыть переписку</Link>
+              </Button>
+            </div>
+          </div>
+        }
       />
       <div className="flex flex-col gap-[var(--yk-space-6)]">
         <Link href="/people" className="app-focus w-fit text-[length:var(--yk-text-small-size)] underline">
-          ← К базе
+          ← Ко всем людям
         </Link>
         <div className="grid gap-[var(--yk-space-6)] md:grid-cols-2">
           <Card>

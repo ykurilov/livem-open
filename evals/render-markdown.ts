@@ -23,6 +23,33 @@ function renderTools(tools: ToolCallRecord[]): string {
     .join("\n");
 }
 
+const ANSWER_KIND_LABEL = { reply: "ответ", first_message: "первое сообщение", farewell: "ответ с прощанием" } as const;
+const CORRECTION_OUTCOME_LABEL = { applied: "учтено", rejected: "отклонено", already_covered: "уже учтено" } as const;
+
+/** Правки, которые эксперт будто бы сделал в «Проверке», и чем кончился их разбор. */
+function renderCorrections(run: ScenarioRun): string {
+  const consent = run.scenario.consent === "refuse" ? "Эксперт откажется от предложения конструктора." : "Эксперт согласится с предложением, если оно ему подходит.";
+  const items = (run.scenario.corrections ?? []).map((correction, index) => {
+    const final = run.corrections?.final[index];
+    const outcome = final?.outcome ? CORRECTION_OUTCOME_LABEL[final.outcome] : final ? "не разобрана" : "нет в базе";
+    return [
+      `### Правка ${index + 1} «${correction.title}» (${ANSWER_KIND_LABEL[correction.answerKind]}). Итог: ${outcome}`,
+      "",
+      ...(correction.context.length ? ["Перед ответом:", "", ...correction.context.map((line) => `> **${line.role === "user" ? "Клиент" : "Консультант"}:** ${line.text.replace(/\n/g, " ")}`), ""] : []),
+      "Было:",
+      "",
+      quoteBlock(correction.originalText),
+      "",
+      "Стало:",
+      "",
+      quoteBlock(correction.correctedText),
+      "",
+      `Почему: ${correction.reason ?? "не написано"}`,
+    ].join("\n");
+  });
+  return ["## Правки для разбора", "", `${consent} Настройки до разбора — \`lead-magnet-before.md\`.`, "", ...items].join("\n");
+}
+
 export function renderConstructor(run: ScenarioRun): string {
   const { building } = run;
   if (building.endedBy === "from_file")
@@ -33,6 +60,7 @@ export function renderConstructor(run: ScenarioRun): string {
     `Реплик эксперта: ${building.expertReplies} из ${run.scenario.expertReplies ?? "?"}. Конец: ${building.endedBy}.`,
     building.error ? `\n⚠️ ${building.error}` : "",
   ];
+  if (run.corrections) header.push("", renderCorrections(run));
   const turns = building.turns.map((turn, index) =>
     [
       `## Ход ${index + 1} (${seconds(turn.durationMs)}, статус ${turn.status}${turn.error ? `, ошибка ${turn.error}` : ""})`,

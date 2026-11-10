@@ -40,6 +40,12 @@ export async function readPreviewConversation(db: DatabaseExecutor, chatId: stri
   return row ?? null;
 }
 
+/** Завершённый тестовый разговор снова идёт: эксперт продолжает его или правит свою прошлую реплику. */
+/** Разговор снова идёт: прошлый итог снят, иначе его прощание заменило бы каждый новый ответ. */
+export async function reopenPreviewConversation(db: DatabaseExecutor, chatId: string): Promise<void> {
+  await db.update(previewConversations).set({ finishedAt: null, summary: null }).where(eq(previewConversations.chatId, chatId));
+}
+
 export function createPreviewConversationStore(db: DatabaseExecutor, shortLinks = shortLinksFromEnv(db)): ConversationStore {
   return {
     purchases: previewPurchasePort(db),

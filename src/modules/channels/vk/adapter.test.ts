@@ -224,6 +224,29 @@ describe("подключение сообщества", () => {
     expect(await hanging.checkConnection(bot)).toMatchObject({ ok: false, kind: "temporary" });
   });
 
+  it("checkConnection с нашим адресом: сервер событий на месте и принимает сообщения — всё хорошо", async () => {
+    await adapter.connect(bot, WEBHOOK_URL);
+    expect(await adapter.checkConnection(bot, WEBHOOK_URL)).toEqual({ ok: true });
+  });
+
+  it("checkConnection с нашим адресом: наш сервер событий удалили — приём занят (taken_over), как у Telegram", async () => {
+    await adapter.connect(bot, WEBHOOK_URL);
+    api.callbackServers = [{ id: 90, url: "https://other.test/vk", title: "Чужой" }];
+    expect(await adapter.checkConnection(bot, WEBHOOK_URL)).toMatchObject({ ok: false, kind: "taken_over" });
+  });
+
+  it("checkConnection с нашим адресом: у нашего сервера выключили входящие сообщения — taken_over", async () => {
+    await adapter.connect(bot, WEBHOOK_URL);
+    api.replyOnce("groups.getCallbackSettings", { status: 200, body: { response: { api_version: VK_API_VERSION, events: { message_new: 0 } } } });
+    expect(await adapter.checkConnection(bot, WEBHOOK_URL)).toMatchObject({ ok: false, kind: "taken_over" });
+  });
+
+  it("checkConnection с нашим адресом: ВК не ответил про серверы — временный сбой, а не «занят»", async () => {
+    await adapter.connect(bot, WEBHOOK_URL);
+    api.replyOnce("groups.getCallbackServers", vkError(10, "Internal server error"));
+    expect(await adapter.checkConnection(bot, WEBHOOK_URL)).toMatchObject({ ok: false, kind: "temporary" });
+  });
+
   it("по умолчанию ходит на api.vk.com", async () => {
     const calls: string[] = [];
     const direct = createVkAdapter({
@@ -531,6 +554,27 @@ describe("отправка", () => {
     });
   });
 
+  it("готовые ответы: обычная клавиатура ВК, текстовые кнопки по одной в ряду, прячется после нажатия, под последней частью", async () => {
+    await send("Ответ", { followUps: ["Пока!"], quickReplies: ["Да", "Пока нет"] });
+    const [first, last] = api.callsTo("messages.send");
+    expect(first?.params).not.toHaveProperty("keyboard");
+    expect(JSON.parse(last?.params.keyboard ?? "null")).toEqual({
+      one_time: true,
+      buttons: [[{ action: { type: "text", label: "Да" } }], [{ action: { type: "text", label: "Пока нет" } }]],
+    });
+  });
+
+  it("готовый ответ длиннее 40 знаков: ВК его не примет — сообщение уходит без клавиатуры", async () => {
+    const result = await send("Ответ", { quickReplies: ["Да", "я".repeat(41)] });
+    expect(result).toMatchObject({ ok: true });
+    expect(api.callsTo("messages.send")[0]?.params).not.toHaveProperty("keyboard");
+  });
+
+  it("пустой список готовых ответов убирает прежнюю клавиатуру", async () => {
+    await send("Ответ", { quickReplies: [] });
+    expect(JSON.parse(api.callsTo("messages.send")[0]?.params.keyboard ?? "null")).toEqual({ one_time: true, buttons: [] });
+  });
+
   it("надпись на кнопке длиннее 40 знаков — постоянная ошибка без запроса к ВК", async () => {
     const result = await send("Выберите", { buttons: [{ label: "я".repeat(41), payload: "menu:1" }] });
     expect(result).toMatchObject({ ok: false, reason: "permanent" });
@@ -648,9 +692,15 @@ describe("отправка", () => {
     expect(await send("x")).toEqual({ ok: false, reason: "rate_limited", retryAfterMs: 1000, sentParts: 0 });
   });
 
-  it("ошибка 29 (исчерпан суточный лимит метода) → temporary: попытки считаются, пауза растёт, вечного повтора нет", async () => {
+  // Попытки на них не тратятся: за 10+20+40+80 секунд лимит не сбросится, а получатель рассылки остался бы без письма
+  it("ошибка 9 (больше 100 сообщений человеку за час) → rate_limited с паузой в час", async () => {
+    api.replyOnce("messages.send", vkError(9, "Flood control: too much messages sent to user"));
+    expect(await send("x")).toEqual({ ok: false, reason: "rate_limited", retryAfterMs: 60 * 60_000, sentParts: 0 });
+  });
+
+  it("ошибка 29 (исчерпан суточный лимит метода) → rate_limited с паузой в три часа", async () => {
     api.replyOnce("messages.send", vkError(29, "Rate limit reached"));
-    expect(await send("x")).toEqual({ ok: false, reason: "temporary", error: "Rate limit reached", sentParts: 0 });
+    expect(await send("x")).toEqual({ ok: false, reason: "rate_limited", retryAfterMs: 3 * 60 * 60_000, sentParts: 0 });
   });
 
   it.each([
@@ -664,7 +714,6 @@ describe("отправка", () => {
 
   it.each([
     ["ошибка 10, сбой ВК", vkError(10, "Internal server error")],
-    ["ошибка 9, однотипные сообщения (повторять можно, но не бесконечно)", vkError(9, "Flood control")],
     ["ответ не от ВК (502)", { status: 502, body: "<html>Bad Gateway</html>" }],
   ])("%s → temporary", async (_name, reply) => {
     api.replyOnce("messages.send", reply);
@@ -819,5 +868,37 @@ describe("кнопки и ссылка входа", () => {
   it("kind и скорость отправки", () => {
     expect(adapter.kind).toBe("vk");
     expect(adapter.ratePerSecond).toBeGreaterThan(0);
+  });
+});
+
+describe("фото клиента", () => {
+  it("фото — ссылка на самый большой размер", async () => {
+    expect(await eventsOf(events.photoWithCaption)).toEqual([
+      expect.objectContaining({ attachment: "image", imageRef: "https://sun9-1.userapi.test/w.jpg" }),
+    ]);
+  });
+
+  it("документ, голосовое, стикер — без ссылки на фото", async () => {
+    for (const event of [events.documentMessage, events.voiceMessage, events.stickerMessage]) {
+      const [parsed] = await eventsOf(event);
+      expect(parsed).not.toHaveProperty("imageRef");
+    }
+  });
+
+  it("скачивание — по ссылке тем же клиентом, что у адаптера; сбой — итог без исключения", async () => {
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 7]);
+    const downloading = createVkAdapter({
+      apiBaseUrl: API_BASE,
+      fetch: async (input, init) => {
+        const url = input instanceof Request ? input.url : input.toString();
+        if (!url.startsWith("https://sun9-1.userapi.test/")) return api.fetch(input, init);
+        return url.endsWith("/w.jpg") ? new Response(bytes, { headers: { "content-type": "image/jpeg" } }) : new Response("", { status: 503 });
+      },
+    });
+    expect(await downloading.downloadImage!(bot, "https://sun9-1.userapi.test/w.jpg")).toEqual({
+      ok: true,
+      image: { bytes, filename: "w.jpg", contentType: "image/jpeg" },
+    });
+    expect(await downloading.downloadImage!(bot, "https://sun9-1.userapi.test/down.jpg")).toMatchObject({ ok: false, reason: "temporary" });
   });
 });

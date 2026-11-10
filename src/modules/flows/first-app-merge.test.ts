@@ -23,7 +23,11 @@ describe("четыре рабочие задачи first-app", () => {
     const { states: _, ...controls } = flow;
     const { states: __, ...oldControls } = before;
     expect(controls).toEqual(oldControls);
-    expect(state("course")).toEqual({ ...old("course"), title: "Курс" });
+    const { instructions, ...course } = state("course");
+    const { instructions: oldInstructions, ...oldCourse } = old("course");
+    expect(course).toEqual({ ...oldCourse, title: "Курс" });
+    expect(instructions).not.toBe(oldInstructions);
+    expect(instructions).toContain("сначала доведи этот шаг в App Studio");
     expect(state("final")).toEqual(old("final"));
     expect(state("deadline")).toEqual(old("deadline"));
   });
@@ -49,10 +53,12 @@ describe("четыре рабочие задачи first-app", () => {
     expect(registered.exitGuards).toEqual([{ flowId: FIRST_APP_ID, state: "result", exitId: "polish_done", requires: OWN_PUBLISHED, judgeWindow: "current-human-turn" }]);
     expect(OWN_APP_CRITERION.length).toBeLessThanOrEqual(800);
   });
+  // Частые касания — без «только в день входа» (решение Дмитрия 01.11): пришедший вечером получает их и в свой первый день
+  const withoutEntryDay = (nudges: unknown) => (nudges && typeof nudges === "object" ? Object.fromEntries(Object.entries(nudges).filter(([key]) => key !== "days")) : nudges);
   it("каждая рабочая нода до курса сохраняет timer третьего дня, общий deadline и потолки касаний прежние", () => {
     for (const id of ["idea", "build", "result"]) {
       expect(state(id).exits!.find((e) => e.id === `${id}_day3`)).toEqual({ ...old(id === "result" ? "publish" : id).exits!.find((e) => e.id === `${id === "result" ? "publish" : id}_day3`), id: `${id}_day3` });
-      expect("nudges" in state(id) ? state(id).nudges : undefined).toEqual("nudges" in old(id === "result" ? "publish" : id) ? old(id === "result" ? "publish" : id).nudges : undefined);
+      expect("nudges" in state(id) ? state(id).nudges : undefined).toEqual("nudges" in old(id === "result" ? "publish" : id) ? withoutEntryDay(old(id === "result" ? "publish" : id).nudges) : undefined);
     }
     expect(state("build").exits).toEqual(old("build").exits!.map(e => ({ ...e, to: e.to === "publish" ? "result" : e.to })));
     expect(current.flow.schedule).toEqual(previous.flow.schedule);

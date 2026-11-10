@@ -23,6 +23,8 @@ import type { BotCredentials } from "@/modules/channels";
 import { FakeChannel } from "@/modules/channels/fake";
 import { bots, outboundMessages } from "@/modules/channels/schema";
 import { createConstructorEndpoint } from "@/modules/constructor/endpoint";
+import { listCorrections, type AnswerCorrection } from "@/modules/corrections";
+import { seedCorrections, type SeedCorrection } from "@/modules/corrections/test-fixtures";
 import { createLiveDialog } from "@/modules/conversations/live-dialog";
 import { passages } from "@/modules/conversations/schema";
 import { createLeadMagnet, getLeadMagnet, getVersion, saveDraft, type LeadMagnetSettings } from "@/modules/lead-magnets";
@@ -104,6 +106,10 @@ export interface AppUnderTest {
   draft(): Promise<LeadMagnetSettings | null>;
   /** Лидмагнит из JSON в формате scripts/lm.sh вместо сборки конструктором. */
   useLeadMagnet(input: unknown): Promise<LeadMagnetSettings>;
+  /** Правки ответов консультанта мимо «Проверки», на текущей версии черновика. */
+  seedCorrections(items: readonly SeedCorrection[]): Promise<AnswerCorrection[]>;
+  /** Все правки лидмагнита по порядку появления. */
+  corrections(): Promise<AnswerCorrection[]>;
   /** Привязывает бота и публикует; возвращает код для /start. */
   publish(): Promise<string>;
   /** `startsAt` — во сколько по Москве клиент пишет первым. */
@@ -563,6 +569,14 @@ export async function startAppUnderTest(input: {
         const settings = await applyAgentInput(tx, current.draft, parsed, { creating: true });
         return (await saveDraft(tx, lead.id, settings, "agent")).settings;
       });
+    },
+
+    async seedCorrections(items) {
+      return seedCorrections(db, lead.id, items);
+    },
+
+    async corrections() {
+      return listCorrections(db, lead.id, { status: "all" });
     },
 
     async publish() {

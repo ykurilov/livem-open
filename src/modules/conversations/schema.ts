@@ -1,3 +1,4 @@
+import type { FlowEndInput } from "@ykurilov/agent-chat-flows";
 import { sql } from "drizzle-orm";
 import { boolean, date, index, integer, jsonb, numeric, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import type { AttachmentKind, ContactSource } from "../channels/channel";
@@ -31,6 +32,8 @@ export const passages = appSchema.table(
     status: text("status").$type<PassageStatus>().notNull().default("active"),
     currentStageId: text("current_stage_id"),
     stageHistory: jsonb("stage_history").$type<StageHistoryEntry[]>().notNull().default([]),
+    /** Дошёл до «Продажи» на прежней версии: отметку ставит перевод на новую, в её сценарии той ноды может не быть. */
+    saleReachedEarlier: boolean("sale_reached_earlier").notNull().default(false),
     personMessageCount: integer("person_message_count").notNull().default(0),
     summary: jsonb("summary").$type<DialogSummary>(),
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
@@ -80,6 +83,8 @@ export const passages = appSchema.table(
     paymentReminderSentAt: timestamp("payment_reminder_sent_at", { withTimezone: true }),
     /** Напоминание об оплате пишется сейчас: вторая задача ждёт; упал процесс — по сроку захвата его возьмёт повтор. */
     paymentReminderClaimedAt: timestamp("payment_reminder_claimed_at", { withTimezone: true }),
+    /** Когда напоминать об оплате: задача потерялась — по сроку её поставит подмётчик. */
+    paymentReminderDueAt: timestamp("payment_reminder_due_at", { withTimezone: true }),
     /** Пришла оплата продукта: больше не продаём и не напоминаем, итог прохождения — «купил». */
     purchasedAt: timestamp("purchased_at", { withTimezone: true }),
     /** Поздравление с покупкой ушло: второго не будет. */
@@ -98,8 +103,13 @@ export const passages = appSchema.table(
     // У человека не больше одного идущего прохождения
     uniqueIndex("passages_one_active_per_person").on(table.personId).where(sql`${table.status} = 'active'`),
     index("passages_lead_magnet").on(table.leadMagnetId),
+    // Прохождения человека, последние сверху: входящее сообщение, «База», карточка человека
+    index("passages_person_started").on(table.personId, table.startedAt),
     uniqueIndex("passages_tracking_code").on(table.trackingCode),
     index("passages_payment_email").on(table.paymentEmail),
+    // Подмётчик покупок: оплачено, но не поздравлено; пора напомнить, но не напомнили
+    index("passages_purchase_uncongratulated").on(table.purchasedAt).where(sql`${table.purchaseCongratulatedAt} is null`),
+    index("passages_payment_reminder_due").on(table.paymentReminderDueAt).where(sql`${table.paymentReminderSentAt} is null`),
   ],
 );
 
@@ -126,6 +136,10 @@ export const inboundMessages = appSchema.table(
     userName: text("user_name"),
     text: text("text").notNull().default(""),
     attachmentKind: text("attachment_kind").$type<AttachmentKind>(),
+    /** Фото клиента: ссылка мессенджера, по которой адаптер скачает байты (`ChannelEvent.imageRef`). */
+    imageRef: text("image_ref"),
+    /** Фото уже лежит во вложениях чата работника (id вложения SDK): повтор хода не скачивает его снова. */
+    imageAttachmentId: text("image_attachment_id"),
     startCode: text("start_code"),
     /** Кнопка: что в ней зашито и id нажатия для ответа мессенджеру. */
     buttonPayload: text("button_payload"),
@@ -141,17 +155,33 @@ export const inboundMessages = appSchema.table(
     autoreply: boolean("autoreply").notNull().default(false),
     /** На это сообщение решено ответить меню с кнопками лидмагнитов (режим бота «меню»). */
     menu: boolean("menu").notNull().default(false),
+    /** «Старт» посреди разговора (человек удалил чат или снова прошёл по ссылке): ему повторяется последнее сообщение бота. */
+    repeatLastMessage: boolean("repeat_last_message").notNull().default(false),
     /** Ход консультанта, который взял сообщение. Пока `answered_at` пуст, ход не закончен и повторится с теми же сообщениями. */
     turnId: uuid("turn_id"),
     answeredAt: timestamp("answered_at", { withTimezone: true }),
+    /**
+     * Записано без хода после жёсткой рамки дня (`answered_at` тоже стоит): ответит утреннее сообщение сценария. Ответ
+     * бота метку снимает; разговор закончился раньше — сообщение уходит во «Входящие» (`endActivePassages`).
+     */
+    heldAt: timestamp("held_at", { withTimezone: true }),
     // Время записи, а не начала транзакции: по нему склеиваются сообщения
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull().default(sql`clock_timestamp()`),
     processedAt: timestamp("processed_at", { withTimezone: true }),
+    /** Сценарии разговоров, которые это решение закончило (блокировка, переход на другой лидмагнит): их концы — после записи. */
+    flowEnds: jsonb("flow_ends").$type<FlowEndInput[]>().notNull().default([]),
+    /** Действия после решения (концы сценариев, первое сообщение, закрепление сценария, меню, автоответ) выполнены. Пусто — их доведёт подмётчик. */
+    followedUpAt: timestamp("followed_up_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("inbound_messages_dedupe_key").on(table.dedupeKey),
     index("inbound_messages_passage").on(table.passageId),
     index("inbound_messages_person").on(table.personId),
+    // Лента и ограничения веб-чата: сообщения одного посетителя по времени
+    index("inbound_messages_bot_user_received").on(table.botId, table.externalUserId, table.receivedAt),
     index("inbound_messages_unprocessed").on(table.receivedAt).where(sql`${table.processedAt} is null`),
+    index("inbound_messages_not_followed_up")
+      .on(table.processedAt)
+      .where(sql`${table.processedAt} is not null and ${table.followedUpAt} is null`),
   ],
 );

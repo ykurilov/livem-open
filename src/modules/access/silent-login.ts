@@ -4,18 +4,14 @@ import { seal } from "../../auth/core/cookie-seal";
 import { OidcClient } from "../../auth/core/oidc-client";
 import { createPkce } from "../../auth/core/pkce";
 import { FLOW_COOKIE, FLOW_MAX_AGE, isSecureRequest, serializeCookie } from "../../auth/cookies";
-import { SILENT_CHECK_COOKIE, SILENT_CHECK_MAX_AGE_SECONDS } from "./access";
+import { safeNext, SILENT_CHECK_COOKIE, SILENT_CHECK_MAX_AGE_SECONDS, SILENT_NEXT_COOKIE } from "./access";
 
 // Модуль входа не умеет `prompt=none`, а править его нельзя. Поэтому тихую проверку делаем сами на его деталях:
 // то же состояние потока в той же cookie, и обычный /api/auth/callback модуля разберёт ответ.
 // Если у человека нет живого единого входа, сервис вернёт `login_required`, модуль отправит на «/»,
-// а метка из SILENT_CHECK_COOKIE не даст начать проверку заново.
+// а метка из SILENT_CHECK_COOKIE не даст начать проверку заново. Адрес возврата — ещё и в SILENT_NEXT_COOKIE:
+// с «/» экран «Войти» вернёт человека туда, куда он шёл.
 // При входе по паролю единого входа нет: сразу экран входа.
-
-function safeNext(raw: string | null): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/";
-  return raw;
-}
 
 export function createSilentLogin(options: LoadConfigOptions = {}) {
   if (authMode(options) === "password") {
@@ -44,6 +40,10 @@ export function createSilentLogin(options: LoadConfigOptions = {}) {
     headers.append(
       "set-cookie",
       serializeCookie(SILENT_CHECK_COOKIE, "1", { maxAgeSeconds: SILENT_CHECK_MAX_AGE_SECONDS, secure }),
+    );
+    headers.append(
+      "set-cookie",
+      serializeCookie(SILENT_NEXT_COOKIE, encodeURIComponent(flow.next), { maxAgeSeconds: SILENT_CHECK_MAX_AGE_SECONDS, secure }),
     );
     return new Response(null, { status: 302, headers });
   };

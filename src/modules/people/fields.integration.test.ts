@@ -95,12 +95,14 @@ describe("удаление поля", () => {
     const city = await createField(database.db, { name, type: "text", description: "" });
     const personId = await addPerson();
     await rememberAboutPerson(database.db, personId, { facts: [], fieldValues: { [city.id]: "Казань" }, source: "p", at });
+    expect((await getPerson(database.db, personId))!.fieldUpdatedAt).toEqual({ [city.id]: at.toISOString() });
 
     await deleteField(database.db, city.id, at);
     await deleteField(database.db, city.id, new Date("2026-10-04T00:00:00Z"));
 
     const person = await getPerson(database.db, personId);
     expect(person!.facts.map((fact) => fact.text)).toEqual([`${name}: Казань`]);
+    expect(person!.fieldUpdatedAt).toEqual({});
     const [row] = await database.db.select().from(fields).where(eq(fields.id, city.id));
     expect(row!.deletedAt).toEqual(at);
     await expect(createField(database.db, { name, type: "text", description: "" })).resolves.toMatchObject({ name });

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { seal } from "../../src/auth/core/cookie-seal";
 import { E2E_SCRIPT } from "../../src/modules/platform/e2e-script";
+import { openTab } from "./open-tab";
 import { E2E_BASE_URL, E2E_COOKIE_SECRET, E2E_EMAIL } from "./e2e-env";
 
 test.beforeEach(async ({ context }) => {
@@ -39,28 +40,35 @@ test("эксперт загружает скриншот, разрешает е�
   await expect(page.getByRole("link", { name: title })).toBeVisible();
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Новый лидмагнит" }).click();
   await page.getByLabel("Название").fill("Лидмагнит со скриншотом");
   await page.getByRole("button", { name: "Создать" }).click();
   await expect(page).toHaveURL(/\/lead-magnets\/[0-9a-f-]{36}$/, { timeout: 60_000 });
   const constructorInput = page.getByRole("region", { name: "Конструктор" }).getByRole("textbox");
-  await constructorInput.fill("сделай");
-  await expect(page.getByRole("region", { name: "Конструктор", exact: true }).getByRole("button", { name: "Отправить", exact: true })).toBeEnabled();
+  // Ввод до того, как поле достроилось, пропадает: повторяем, пока «Отправить» не станет доступна
+  await expect(async () => {
+    await constructorInput.fill("сделай");
+    await expect(page.getByRole("region", { name: "Конструктор", exact: true }).getByRole("button", { name: "Отправить", exact: true })).toBeEnabled({ timeout: 2000 });
+  }).toPass({ timeout: 30_000 });
   await constructorInput.press("Enter");
-  await expect(page.getByRole("button", { name: "Начать проверку заново" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Начать заново" })).toBeVisible({ timeout: 30_000 });
 
-  await page.getByRole("tab", { name: "Настройки" }).click();
+  await openTab(page, "Настройки");
   await page.getByRole("checkbox", { name: new RegExp(title) }).check();
   const save = page.getByRole("button", { name: "Сохранить" });
   await save.click();
   await expect(save).toBeDisabled();
 
-  await page.getByRole("tab", { name: "Разговор" }).click();
-  await page.getByRole("button", { name: "Начать проверку заново" }).click();
+  await openTab(page, "Разговор");
+  await page.getByRole("button", { name: "Начать заново" }).click();
   const preview = page.getByRole("tabpanel", { name: "Разговор" });
   await expect(preview.getByRole("paragraph").filter({ hasText: E2E_SCRIPT.firstMessage })).toBeVisible({ timeout: 30_000 });
   const previewInput = preview.getByRole("textbox", { name: "Сообщение", exact: true });
-  await previewInput.fill(`Пришли ${E2E_SCRIPT.imageTrigger}, где моё приложение`);
-  await expect(preview.getByRole("button", { name: "Отправить", exact: true })).toBeEnabled();
+  // Ввод до того, как поле достроилось, пропадает: повторяем, пока «Отправить» не станет доступна
+  await expect(async () => {
+    await previewInput.fill(`Пришли ${E2E_SCRIPT.imageTrigger}, где моё приложение`);
+    await expect(preview.getByRole("button", { name: "Отправить", exact: true })).toBeEnabled({ timeout: 2000 });
+  }).toPass({ timeout: 30_000 });
   await previewInput.press("Enter");
   // Картинка — с названием подписью; открыть крупно можно по описанию
   const figure = preview.getByRole("figure", { name: title });

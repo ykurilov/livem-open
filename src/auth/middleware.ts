@@ -1,8 +1,8 @@
-import { authMode } from './core/auth-mode.js';
-import { loadModuleConfig, requireCookieSecret, resolveEnv, type LoadConfigOptions } from './core/config.js';
-import { OidcClient } from './core/oidc-client.js';
-import { seal, unseal } from './core/cookie-seal.js';
-import { buildSessionData, type SessionData } from './core/session-data.js';
+import { authMode } from './core/auth-mode';
+import { loadModuleConfig, requireCookieSecret, resolveEnv, type LoadConfigOptions } from './core/config';
+import { OidcClient } from './core/oidc-client';
+import { seal, unseal } from './core/cookie-seal';
+import { buildSessionData, type SessionData } from './core/session-data';
 import {
   SESSION_COOKIE,
   SESSION_MAX_AGE,
@@ -10,8 +10,8 @@ import {
   clearCookie,
   parseCookies,
   isSecureRequest,
-} from './cookies.js';
-import { createPasswordMiddleware } from './password/password-handlers.js';
+} from './cookies';
+import { createPasswordMiddleware } from './password/password-handlers';
 
 // За сколько до истечения access-токена начинаем обновление.
 const REFRESH_SKEW_MS = 120_000;

@@ -1,10 +1,11 @@
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import type { AlertService } from "../alerts";
 import { endActivePassages } from "../conversations/passage-end";
 import { passages } from "../conversations/schema";
 import { leadMagnets, leadMagnetVersions } from "../lead-magnets/schema";
 import { people } from "../people/schema";
+import { removeSenlerOfBot } from "../senler/settings";
 import type { TokenCipher } from "../platform/crypto";
 import { isUniqueViolation, type Database, type DatabaseExecutor } from "../platform/db";
 import type { JobEnqueuer } from "../platform/queue";
@@ -114,9 +115,9 @@ function toSummary(row: BotRow): BotSummary {
   };
 }
 
-/** Неудалённые боты по порядку подключения. */
+/** Неудалённые боты мессенджеров по порядку подключения. Служебный бот веб-чата эксперту не показывается. */
 export async function listLiveBots(db: DatabaseExecutor): Promise<BotSummary[]> {
-  const rows = await db.select().from(bots).where(isNull(bots.deletedAt)).orderBy(asc(bots.createdAt), asc(bots.id));
+  const rows = await db.select().from(bots).where(and(isNull(bots.deletedAt), ne(bots.channel, "web"))).orderBy(asc(bots.createdAt), asc(bots.id));
   return rows.map(toSummary);
 }
 
@@ -217,7 +218,7 @@ export function createBotService(deps: BotServiceDependencies): BotService {
       const [row] = await db
         .select()
         .from(bots)
-        .where(and(eq(bots.id, botId), isNull(bots.deletedAt)));
+        .where(and(eq(bots.id, botId), isNull(bots.deletedAt), ne(bots.channel, "web")));
       return row ? toSummary(row) : null;
     },
 
@@ -283,6 +284,8 @@ export function createBotService(deps: BotServiceDependencies): BotService {
         await endActivePassages(tx, ofBot, "not_completed", new Date());
         // Привязки к неопубликованным лидмагнитам снимаются: удалённый бот не должен вернуться при публикации
         await tx.delete(leadMagnetBots).where(eq(leadMagnetBots.botId, botId));
+        // Ключ Senler удалённого бота не нужен: отключить его потом негде
+        await removeSenlerOfBot(tx, botId);
         await tx.update(bots).set({ deletedAt: new Date(), defaultLeadMagnetId: null }).where(eq(bots.id, botId));
         return { ok: true, row };
       });

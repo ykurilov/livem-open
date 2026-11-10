@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, ilike, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, sql, type SQL } from "drizzle-orm";
 import { bots, enqueueOutbound, outboundMessages, type ChannelKind } from "../channels";
 import { inboundMessages } from "../conversations/schema";
-import { InvalidPeopleFilterError, getPerson, parsePeopleFilter, people, type PeopleFilter } from "../people";
+import { InvalidPeopleFilterError, getFields, getPerson, parsePeopleFilter, people, type PeopleFilter } from "../people";
 import type { Clock } from "../platform/clock";
 import type { Database, DatabaseExecutor } from "../platform/db";
 import type { JobEnqueuer } from "../platform/queue";
@@ -64,8 +64,8 @@ function checkedDraft(draft: MailingDraft): { text: string; imagePath: string | 
   return { text, imagePath: draft.imagePath ?? null, filter, testPersonId };
 }
 
-export async function createMailing(db: DatabaseExecutor, draft: MailingDraft): Promise<Mailing> {
-  const [row] = await db.insert(mailings).values(checkedDraft(draft)).returning();
+export async function createMailing(db: DatabaseExecutor, draft: MailingDraft, id?: string): Promise<Mailing> {
+  const [row] = await db.insert(mailings).values({ ...checkedDraft(draft), id }).returning();
   if (!row) throw new Error("Рассылка не сохранилась");
   return row;
 }
@@ -92,6 +92,8 @@ export interface MailingListItem {
   status: MailingStatus;
   scheduledAt: Date | null;
   recipientCount: number;
+  /** Скольким сообщение ушло. */
+  sentCount: number;
   createdAt: Date;
 }
 
@@ -103,6 +105,11 @@ export async function listMailings(db: DatabaseExecutor): Promise<MailingListIte
       status: mailings.status,
       scheduledAt: mailings.scheduledAt,
       recipientCount: mailings.recipientCount,
+      // Запрос к одной таблице Drizzle пишет без её имени — внешнюю колонку называем полностью, иначе «id» станет id сообщения
+      sentCount: sql<number>`(
+        select count(*)::int from ${outboundMessages}
+        where ${outboundMessages.mailingId} = ${mailings}.${sql.identifier(mailings.id.name)} and ${outboundMessages.status} = 'sent'
+      )`,
       createdAt: mailings.createdAt,
     })
     .from(mailings)
@@ -117,6 +124,8 @@ export async function launchMailing(deps: MailingServiceDependencies, id: string
   const now = deps.clock.now();
   if (options.at && options.at.getTime() <= now.getTime()) throw new MailingError("Это время уже прошло");
   const scheduledAt = options.at ?? now;
+  const draft = await getMailing(deps.db, id);
+  if (draft?.status === "draft") await ensureFilterFieldsLive(deps.db, draft.filter);
   const [row] = isUuid(id)
     ? await deps.db
         .update(mailings)
@@ -137,6 +146,14 @@ export async function launchMailing(deps: MailingServiceDependencies, id: string
   return row;
 }
 
+/** Условие «Кому» по удалённому полю никого не находит: рассылка ушла бы в пустоту, а эксперт думал бы, что она дошла. */
+async function ensureFilterFieldsLive(db: DatabaseExecutor, filter: unknown): Promise<void> {
+  const ids = parsePeopleFilter(filter).fieldConditions?.map((condition) => condition.fieldId) ?? [];
+  const live = new Set((await getFields(db, ids)).map((field) => field.id));
+  if (ids.some((fieldId) => !live.has(fieldId)))
+    throw new MailingError("В «Кому» есть условие по удалённому полю — уберите его и нажмите «Показать»");
+}
+
 /** Отмена запланированной рассылки до старта: никто её не получит. */
 export async function cancelMailing(deps: Pick<MailingServiceDependencies, "db">, id: string): Promise<void> {
   const [row] = isUuid(id)
@@ -151,7 +168,7 @@ export async function cancelMailing(deps: Pick<MailingServiceDependencies, "db">
 
 /**
  * «Отправить себе»: проба уходит выбранному человеку из базы — эксперту в его мессенджере.
- * В отчёт рассылки проба не входит. Выбор запоминается для следующего раза.
+ * В отчёт рассылки проба не входит и рассылкой человеку не считается (`mailingId` пуст). Выбор запоминается для следующего раза.
  */
 export async function sendMailingTest(deps: MailingServiceDependencies, id: string, personId: string, requestId: string): Promise<void> {
   const mailing = await getMailing(deps.db, id);
@@ -220,7 +237,7 @@ export async function lastTestPersonId(db: DatabaseExecutor): Promise<string | n
   return row?.id ?? null;
 }
 
-export type RecipientOutcome = "sent" | "failed" | "blocked" | "waiting";
+export type RecipientOutcome = "sent" | "failed" | "blocked" | "waiting" | "skipped";
 
 export interface MailingReportRow {
   personId: string;
@@ -228,6 +245,7 @@ export interface MailingReportRow {
   botTitle: string | null;
   channel: ChannelKind | null;
   outcome: RecipientOutcome;
+  /** Почему не доставлено или пропущено. */
   error: string | null;
   replied: boolean;
 }
@@ -238,33 +256,69 @@ export interface MailingReport {
   /** Не доставлено, включая заблокировавших. */
   failed: number;
   blocked: number;
+  /** К своей порции были посреди лидмагнита — не отправлено намеренно. */
+  skipped: number;
   replied: number;
   waiting: number;
-  /** Не доставленные сверху. */
+  /** Строки получателей (страница, если задана), не доставленные сверху. */
   people: MailingReportRow[];
 }
 
-const OUTCOME_ORDER: Record<RecipientOutcome, number> = { blocked: 0, failed: 1, waiting: 2, sent: 3 };
-
-/** Отчёт рассылки: ушло, не доставлено (с пометкой «заблокировал»), ответили в течение 7 дней. */
-export async function loadMailingReport(db: DatabaseExecutor, id: string): Promise<MailingReport | null> {
-  if (!(await getMailing(db, id))) return null;
+/**
+ * Отчёт рассылки: ушло, не доставлено (с пометкой «заблокировал»), пропущено, ответили в течение 7 дней.
+ * Итоги — по всем получателям; строки — страницей `limit`/`offset`, без них — все.
+ */
+export async function loadMailingReport(
+  db: DatabaseExecutor,
+  id: string,
+  page: { limit?: number; offset?: number } = {},
+): Promise<MailingReport | null> {
+  const mailing = await getMailing(db, id);
+  if (!mailing) return null;
+  // Переход по ссылке лидмагнита (`/start <код>`) — ответ, только если ссылка была в самой рассылке, а не в рекламе
   const replied = sql<boolean>`exists (
     select 1 from ${inboundMessages}
     where ${inboundMessages.personId} = ${mailingRecipients.personId}
       and ${inboundMessages.kind} = 'message'
+      and (${inboundMessages.startCode} is null or strpos(${mailing.text}, ${inboundMessages.startCode}) > 0)
       and ${outboundMessages.sentAt} is not null
       and ${inboundMessages.receivedAt} > ${outboundMessages.sentAt}
       and ${inboundMessages.receivedAt} <= ${outboundMessages.sentAt} + make_interval(days => ${REPLY_WINDOW_DAYS})
   )`;
-  const rows = await db
+  const outcome = sql<RecipientOutcome>`case
+    when ${mailingRecipients.skipReason} is not null then 'skipped'
+    when ${mailingRecipients.error} is not null then 'failed'
+    when ${outboundMessages.status} = 'sent' then 'sent'
+    when ${outboundMessages.status} = 'blocked' then 'blocked'
+    when ${outboundMessages.status} = 'failed' and ${outboundMessages.awaitsBotRepair} then 'waiting'
+    when ${outboundMessages.status} = 'failed' then 'failed'
+    else 'waiting'
+  end`;
+  const outcomeOrder = sql`case ${outcome} when 'blocked' then 0 when 'failed' then 1 when 'skipped' then 2 when 'waiting' then 3 else 4 end`;
+  const ofMailing = eq(mailingRecipients.mailingId, id);
+  const counted = (value: SQL) => sql<number>`count(*) filter (where ${value})::int`;
+  const [totals] = await db
+    .select({
+      recipients: sql<number>`count(*)::int`,
+      sent: counted(sql`${outcome} = 'sent'`),
+      failed: counted(sql`${outcome} in ('failed', 'blocked')`),
+      blocked: counted(sql`${outcome} = 'blocked'`),
+      skipped: counted(sql`${outcome} = 'skipped'`),
+      waiting: counted(sql`${outcome} = 'waiting'`),
+      replied: counted(replied),
+    })
+    .from(mailingRecipients)
+    .leftJoin(outboundMessages, eq(outboundMessages.id, mailingRecipients.outboundMessageId))
+    .where(ofMailing);
+
+  const rowsQuery = db
     .select({
       personId: mailingRecipients.personId,
       displayName: people.displayName,
       botTitle: bots.title,
       channel: people.channel,
-      recipientError: mailingRecipients.error,
-      status: outboundMessages.status,
+      outcome,
+      recipientError: sql<string | null>`coalesce(${mailingRecipients.skipReason}, ${mailingRecipients.error})`,
       sendError: outboundMessages.error,
       replied,
     })
@@ -272,36 +326,26 @@ export async function loadMailingReport(db: DatabaseExecutor, id: string): Promi
     .leftJoin(outboundMessages, eq(outboundMessages.id, mailingRecipients.outboundMessageId))
     .leftJoin(people, eq(people.id, mailingRecipients.personId))
     .leftJoin(bots, eq(bots.id, mailingRecipients.botId))
-    .where(eq(mailingRecipients.mailingId, id));
+    .where(ofMailing)
+    .orderBy(outcomeOrder, asc(people.displayName), asc(mailingRecipients.personId));
+  const rows = await (page.limit === undefined ? rowsQuery : rowsQuery.limit(page.limit).offset(page.offset ?? 0));
 
-  const report: MailingReport = { recipients: rows.length, sent: 0, failed: 0, blocked: 0, replied: 0, waiting: 0, people: [] };
-  for (const row of rows) {
-    const outcome: RecipientOutcome = row.recipientError
-      ? "failed"
-      : row.status === "sent"
-        ? "sent"
-        : row.status === "blocked"
-          ? "blocked"
-          : row.status === "failed"
-            ? "failed"
-            : "waiting";
-    if (outcome === "sent") report.sent += 1;
-    if (outcome === "failed" || outcome === "blocked") report.failed += 1;
-    if (outcome === "blocked") report.blocked += 1;
-    if (outcome === "waiting") report.waiting += 1;
-    if (row.replied) report.replied += 1;
-    report.people.push({
+  return {
+    recipients: totals?.recipients ?? 0,
+    sent: totals?.sent ?? 0,
+    failed: totals?.failed ?? 0,
+    blocked: totals?.blocked ?? 0,
+    skipped: totals?.skipped ?? 0,
+    replied: totals?.replied ?? 0,
+    waiting: totals?.waiting ?? 0,
+    people: rows.map((row) => ({
       personId: row.personId,
       displayName: row.displayName,
       botTitle: row.botTitle,
       channel: row.channel,
-      outcome,
-      error: row.recipientError ?? (outcome === "failed" ? row.sendError : null),
+      outcome: row.outcome,
+      error: row.recipientError ?? (row.outcome === "failed" ? row.sendError : null),
       replied: row.replied,
-    });
-  }
-  report.people.sort(
-    (a, b) => OUTCOME_ORDER[a.outcome] - OUTCOME_ORDER[b.outcome] || (a.displayName ?? "").localeCompare(b.displayName ?? "", "ru"),
-  );
-  return report;
+    })),
+  };
 }

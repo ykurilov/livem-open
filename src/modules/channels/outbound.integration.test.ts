@@ -6,11 +6,12 @@ import { passages } from "../conversations/schema";
 import { createLeadMagnet, saveDraft } from "../lead-magnets";
 import { people } from "../people/schema";
 import { createFakeClock, type FakeClock } from "../platform/clock";
+import { connectDatabase } from "../platform/db";
 import type { EnqueueOptions, JobEnqueuer, JobName, JobPayloads } from "../platform/queue";
 import type { BotCredentials } from "./channel";
 import { FakeChannel } from "./fake";
 import { createRateLimiter, type RateLimiter } from "./rate-limiter";
-import { enqueueOutbound, sendOutbound, type OutboundDependencies, type SendTarget } from "./outbound";
+import { enqueueOutbound, requeueAfterBotRepair, requeueStuckOutbound, sendOutbound, type OutboundDependencies, type SendTarget } from "./outbound";
 import { bots, outboundMessages } from "./schema";
 
 interface EnqueuedJob {
@@ -66,7 +67,7 @@ function dependencies(overrides: Partial<OutboundDependencies> = {}): OutboundDe
   };
 }
 
-const draft = (key = randomUUID()) => ({
+const draft = (key: string = randomUUID()) => ({
   botId: bot.id,
   personId,
   kind: "consultant" as const,
@@ -180,6 +181,14 @@ describe("отправка", () => {
     expect(channel.sent[0]?.message).toMatchObject({ text: "Привет!", idempotencyKey: row.idempotencyKey });
   });
 
+  it("готовые ответы доходят до мессенджера; пустой список — тоже, у сообщения без них поля нет", async () => {
+    const withReplies = await enqueueOutbound(dependencies(), { ...draft(), quickReplies: ["Да", "Нет"] });
+    const cleared = await enqueueOutbound(dependencies(), { ...draft(), quickReplies: [] });
+    const plain = await enqueueOutbound(dependencies(), draft());
+    for (const { id } of [withReplies, cleared, plain]) await sendOutbound(dependencies(), id);
+    expect(channel.sent.map((sent) => sent.message.quickReplies)).toEqual([["Да", "Нет"], [], undefined]);
+  });
+
   it("повторный запуск той же задачи ничего не отправляет второй раз", async () => {
     const { id } = await enqueueOutbound(dependencies(), draft());
     await sendOutbound(dependencies(), id);
@@ -233,6 +242,20 @@ describe("отправка", () => {
     expect(passage).toMatchObject({ status: "active" });
   });
 
+  it("окно ответа закрыто у ответа консультанта, работник упал до «Входящих»: повтор доводит перенос, тревоги нет", async () => {
+    const world = await seedVkPassage();
+    channel.failNext({ ok: false, reason: "reply_window_closed" });
+    const { id } = await enqueueOutbound(dependencies(), { ...draft(), botId: world.botId, personId: world.personId, passageId: world.passageId });
+    await sendOutbound(dependencies(), id);
+    // Итог записан, последствия — нет
+    await database.db.update(outboundMessages).set({ outcomePending: true }).where(eq(outboundMessages.id, id));
+    await sendOutbound(dependencies(), id);
+
+    expect(await rowOf(id)).toMatchObject({ status: "failed", outcomePending: false, awaitsBotRepair: false });
+    expect(failures).toEqual([]);
+    expect(channel.attempts).toHaveLength(1);
+  });
+
   it("окно ответа закрыто у сообщения без прохождения: ничего не падает, блокировки нет", async () => {
     channel.failNext({ ok: false, reason: "reply_window_closed" });
     const { id } = await enqueueOutbound(dependencies(), draft());
@@ -254,6 +277,7 @@ describe("отправка", () => {
       payload: { outboundMessageId: id },
       options: { delaySeconds: 3 },
     });
+    clock.advance(3000);
     await sendOutbound(dependencies(), id);
     expect((await rowOf(id)).status).toBe("sent");
   });
@@ -264,6 +288,7 @@ describe("отправка", () => {
     const { id } = await enqueueOutbound(dependencies(), draft());
     await sendOutbound(dependencies(), id);
     const afterFirst = jobs.at(-1)?.options?.delaySeconds ?? 0;
+    clock.advance(afterFirst * 1000);
     await sendOutbound(dependencies(), id);
     const afterSecond = jobs.at(-1)?.options?.delaySeconds ?? 0;
     expect((await rowOf(id)).attempts).toBe(2);
@@ -278,7 +303,10 @@ describe("отправка", () => {
       channel.failNext({ ok: false, reason: "temporary", error: "сеть" });
     }
     const { id } = await enqueueOutbound(dependencies({ maxAttempts: 3 }), draft());
-    for (let attempt = 0; attempt < 3; attempt += 1) await sendOutbound(dependencies({ maxAttempts: 3 }), id);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await sendOutbound(dependencies({ maxAttempts: 3 }), id);
+      clock.advance(10 * 60_000);
+    }
     const row = await rowOf(id);
     expect(row.status).toBe("failed");
     expect(row.error).toBe("сеть");
@@ -317,6 +345,39 @@ describe("отправка", () => {
     const { id } = await enqueueOutbound(dependencies(), draft());
     await sendOutbound(dependencies(), id);
     expect((await rowOf(id)).awaitsBotRepair).toBe(false);
+  });
+
+  it("в пуле одно соединение: адресат ищется в транзакции отправки, второе соединение не нужно", async () => {
+    const single = connectDatabase(database.url, { poolSize: 1, connectionWaitMs: 2_000 });
+    try {
+      const { id } = await enqueueOutbound(dependencies(), draft());
+      await sendOutbound(
+        dependencies({
+          db: single.db,
+          async resolveTarget(message, executor) {
+            await executor.select({ id: outboundMessages.id }).from(outboundMessages).where(eq(outboundMessages.id, message.id));
+            return { adapter: channel, bot, to: TELEGRAM_USER };
+          },
+        }),
+        id,
+      );
+      expect((await rowOf(id)).status).toBe("sent");
+    } finally {
+      await single.close();
+    }
+  });
+
+  it("свободного соединения нет — отправка падает за срок ожидания (повтор очереди), а не висит", async () => {
+    const single = connectDatabase(database.url, { poolSize: 1, connectionWaitMs: 2_000 });
+    const held = await single.pool.connect();
+    try {
+      const { id } = await enqueueOutbound(dependencies(), draft());
+      await expect(sendOutbound(dependencies({ db: single.db }), id)).rejects.toThrow();
+      expect((await rowOf(id)).status).toBe("queued");
+    } finally {
+      held.release();
+      await single.close();
+    }
   });
 
   it("получатель не найден (бот удалён): failed, а не тишина", async () => {
@@ -361,6 +422,7 @@ describe("отправка", () => {
     await sendOutbound(dependencies(), id);
     expect((await rowOf(id)).sentParts).toBe(1);
 
+    clock.advance(10_000);
     await sendOutbound(dependencies(), id);
     expect(channel.sent[0]?.message.sentParts).toBe(1);
     expect((await rowOf(id)).status).toBe("sent");
@@ -382,5 +444,132 @@ describe("отправка", () => {
 
   it("неизвестное сообщение — ошибка, а не тихий пропуск", async () => {
     await expect(sendOutbound(dependencies(), randomUUID())).rejects.toThrow();
+  });
+});
+
+describe("пауза перед повтором", () => {
+  it("дубль задачи во время паузы после rate_limited не отправляет, а ждёт её конца", async () => {
+    channel.failNext({ ok: false, reason: "rate_limited", retryAfterMs: 2500 });
+    const { id } = await enqueueOutbound(dependencies(), draft());
+    await sendOutbound(dependencies(), id);
+
+    clock.advance(1000);
+    await sendOutbound(dependencies(), id);
+    expect(channel.attempts).toHaveLength(1);
+    expect(jobs.at(-1)).toEqual({ name: "outbound-send", payload: { outboundMessageId: id }, options: { delaySeconds: 2 } });
+
+    clock.advance(2000);
+    await sendOutbound(dependencies(), id);
+    expect(channel.attempts).toHaveLength(2);
+    expect((await rowOf(id)).status).toBe("sent");
+  });
+
+  it("дубль задачи во время паузы после временного сбоя не тратит попытку", async () => {
+    channel.failNext({ ok: false, reason: "temporary", error: "сеть" });
+    const { id } = await enqueueOutbound(dependencies(), draft());
+    await sendOutbound(dependencies(), id);
+    await sendOutbound(dependencies(), id);
+    expect(channel.attempts).toHaveLength(1);
+    expect((await rowOf(id)).attempts).toBe(1);
+  });
+});
+
+describe("порядок сообщений одному человеку", () => {
+  const sentKeys = () => channel.sent.map((sent) => sent.message.idempotencyKey);
+
+  it("сообщение не обгоняет более раннее тому же человеку: ждёт его и уходит следом", async () => {
+    const first = await enqueueOutbound(dependencies(), draft("first"));
+    const second = await enqueueOutbound(dependencies(), draft("second"));
+    jobs = [];
+
+    await sendOutbound(dependencies(), second.id);
+    expect(channel.attempts).toEqual([]);
+    expect((await rowOf(second.id)).status).toBe("queued");
+    expect(jobs).toEqual([{ name: "outbound-send", payload: { outboundMessageId: second.id }, options: { delaySeconds: expect.any(Number) } }]);
+
+    await sendOutbound(dependencies(), first.id);
+    await sendOutbound(dependencies(), second.id);
+    expect(sentKeys()).toEqual(["first", "second"]);
+  });
+
+  it("сообщение другому человеку не ждёт чужих", async () => {
+    await enqueueOutbound(dependencies(), draft("first"));
+    const other = await enqueueOutbound(dependencies(), { ...draft("other"), personId: randomUUID() });
+    await sendOutbound(dependencies(), other.id);
+    expect(sentKeys()).toEqual(["other"]);
+  });
+
+  it("после возврата связи накопленные сообщения уходят по порядку записи, даже если работник берёт их разом", async () => {
+    const keys = ["first", "second", "third"];
+    const ids: string[] = [];
+    for (const key of keys) ids.push((await enqueueOutbound(dependencies(), draft(key))).id);
+    await database.pool.query("update app.outbound_messages set status = 'failed', awaits_bot_repair = true, error = 'fetch failed'");
+    jobs = [];
+
+    await requeueAfterBotRepair(dependencies(), bot.id);
+    // Работник берёт задачи разом, в любом порядке, и повторяет отложенные, пока очередь не опустеет
+    let pending = jobs.splice(0).reverse();
+    for (let round = 0; pending.length > 0 && round < 20; round++) {
+      await Promise.all(pending.map((job) => sendOutbound(dependencies(), (job.payload as { outboundMessageId: string }).outboundMessageId)));
+      pending = jobs.splice(0);
+      clock.advance(60_000);
+    }
+
+    expect(sentKeys()).toEqual(keys);
+    for (const id of ids) expect((await rowOf(id)).status).toBe("sent");
+  });
+});
+
+describe("сбой после записи итога отправки", () => {
+  const crash = async (): Promise<never> => {
+    throw new Error("работник упал");
+  };
+
+  it("человек заблокировал бота, работник упал до пометки: повтор задачи помечает его, третий раз — уже нет", async () => {
+    channel.blockUser(TELEGRAM_USER);
+    const { id } = await enqueueOutbound(dependencies(), draft());
+    await expect(sendOutbound(dependencies({ onBlocked: crash }), id)).rejects.toThrow("работник упал");
+    expect((await rowOf(id)).status).toBe("blocked");
+
+    await sendOutbound(dependencies(), id);
+    await sendOutbound(dependencies(), id);
+    expect(blocked).toEqual([id]);
+    expect(channel.attempts).toHaveLength(1);
+  });
+
+  it("токен отозван, работник упал до пометки «ждёт починки бота»: повтор задачи её ставит", async () => {
+    channel.failNext({ ok: false, reason: "permanent", error: "Unauthorized" });
+    const { id } = await enqueueOutbound(dependencies(), draft());
+    await expect(sendOutbound(dependencies({ onPermanentFailure: crash }), id)).rejects.toThrow("работник упал");
+    expect((await rowOf(id)).awaitsBotRepair).toBe(false);
+
+    const causes: string[] = [];
+    const botFault = dependencies({
+      async onPermanentFailure(_message, error) {
+        causes.push(error);
+        return "bot";
+      },
+    });
+    await sendOutbound(botFault, id);
+    await sendOutbound(botFault, id);
+    expect(causes).toEqual(["Unauthorized"]);
+    expect(await rowOf(id)).toMatchObject({ status: "failed", awaitsBotRepair: true });
+    expect(channel.attempts).toHaveLength(1);
+  });
+
+  it("повтора задачи нет: подмётчик ставит её, когда последствия просрочены", async () => {
+    channel.blockUser(TELEGRAM_USER);
+    const { id } = await enqueueOutbound(dependencies(), draft());
+    await expect(sendOutbound(dependencies({ onBlocked: crash }), id)).rejects.toThrow();
+    jobs = [];
+
+    expect(await requeueStuckOutbound(dependencies(), new Date(clock.now().getTime() - 60_000))).toBe(0);
+    clock.advance(2 * 60_000);
+    expect(await requeueStuckOutbound(dependencies(), new Date(clock.now().getTime() - 60_000))).toBe(1);
+    expect(jobs).toEqual([{ name: "outbound-send", payload: { outboundMessageId: id }, options: undefined }]);
+
+    await sendOutbound(dependencies(), id);
+    expect(blocked).toEqual([id]);
+    expect(await requeueStuckOutbound(dependencies(), new Date(clock.now().getTime() - 60_000))).toBe(0);
   });
 });

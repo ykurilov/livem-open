@@ -55,7 +55,7 @@ export function createStubModelCatalog(base: ModelCatalog, model: LanguageModel)
         id: STUB_MODEL_CHOICE.modelId,
         displayName: "Тестовая модель",
         contextWindowTokens: 100_000,
-        acceptsImages: false,
+        acceptsImages: true, // картинки клиента и эксперта проверяются тестами: подставная модель «видит» их
         reasoning: { replayPastTurns: true },
         providerModelIds: { [STUB_MODEL_CHOICE.providerId]: "stub-v1" },
         pricing: { [STUB_MODEL_CHOICE.providerId]: { inputPerMillion: 0, outputPerMillion: 0 } },

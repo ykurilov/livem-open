@@ -1,7 +1,8 @@
-import { and, desc, eq, inArray, max } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, max, sql, type SQL } from "drizzle-orm";
 import { outboundMessages } from "../channels/schema";
 import type { DatabaseExecutor } from "../platform/db";
 import { passages, type PassageStatus } from "./schema";
+import { afterStartOver } from "./start-over";
 
 /** Брошенный разговор продолжается, если с последнего сообщения в нём прошло меньше недели. */
 export const REOPEN_WINDOW_MS = 7 * 24 * 60 * 60_000;
@@ -16,58 +17,72 @@ export interface LastPassage {
 /**
  * Кто пишет без кода, когда идущего разговора нет. Новичок (у бота с ним не было ни разговора, ни рассылки, и эксперт
  * ему из «Входящих» не отвечал) — режим
- * бота «без кода». Брошенный меньше недели назад разговор без рассылки после него — тот же разговор. Остальные — «Входящие».
+ * бота «без кода». Брошенный меньше недели назад разговор, после которого не было ни рассылки, ни ответа эксперта, — тот
+ * же разговор. Остальные — «Входящие».
  */
 export type WithoutCodeWriter = { kind: "newcomer" } | { kind: "reopen"; passageId: string } | { kind: "inbox" };
 
 export function whoWritesWithoutCode(input: {
   lastPassage: LastPassage | null;
   lastMailingSentAt: Date | null;
-  /** Эксперт уже отвечал человеку из «Входящих»: переписка идёт, вступление лидмагнита посреди неё нелепо. */
-  staffReplied: boolean;
+  /**
+   * Последний ответ эксперта из «Входящих». Был — переписка идёт с экспертом: вступление лидмагнита посреди неё нелепо,
+   * а ответ после брошенного разговора — уже не консультанту.
+   */
+  lastStaffReplyAt: Date | null;
   now: Date;
 }): WithoutCodeWriter {
-  const { lastPassage, lastMailingSentAt, staffReplied, now } = input;
-  if (!lastPassage) return lastMailingSentAt || staffReplied ? { kind: "inbox" } : { kind: "newcomer" };
+  const { lastPassage, lastMailingSentAt, lastStaffReplyAt, now } = input;
+  if (!lastPassage) return lastMailingSentAt || lastStaffReplyAt ? { kind: "inbox" } : { kind: "newcomer" };
   const recent = now.getTime() - lastPassage.lastActivityAt.getTime() < REOPEN_WINDOW_MS;
-  const mailedAfter = lastMailingSentAt !== null && lastMailingSentAt > lastPassage.lastActivityAt;
-  if (lastPassage.status === "not_completed" && recent && !mailedAfter) return { kind: "reopen", passageId: lastPassage.id };
+  const after = (at: Date | null) => at !== null && at > lastPassage.lastActivityAt;
+  if (lastPassage.status === "not_completed" && recent && !after(lastMailingSentAt) && !after(lastStaffReplyAt))
+    return { kind: "reopen", passageId: lastPassage.id };
   return { kind: "inbox" };
 }
 
-/** Последний разговор человека и последняя ушедшая ему рассылка — для `whoWritesWithoutCode`. */
+/**
+ * Последний разговор человека, последняя ушедшая ему рассылка и последний ответ эксперта — для `whoWritesWithoutCode`.
+ * Записанное до «Начать заново» (`resetAt`) не считается.
+ */
 export async function loadWithoutCodeHistory(
   tx: DatabaseExecutor,
   personId: string,
-): Promise<{ lastPassage: LastPassage | null; lastMailingSentAt: Date | null; staffReplied: boolean }> {
+  resetAt: Date | null = null,
+): Promise<{ lastPassage: LastPassage | null; lastMailingSentAt: Date | null; lastStaffReplyAt: Date | null }> {
   const [passage] = await tx
     .select({ id: passages.id, status: passages.status, startedAt: passages.startedAt, lastPersonMessageAt: passages.lastPersonMessageAt })
     .from(passages)
-    .where(eq(passages.personId, personId))
+    .where(afterStartOver(passages.startedAt, resetAt, eq(passages.personId, personId)))
     .orderBy(desc(passages.startedAt))
     .limit(1);
-  const lastSentTo = async (condition: ReturnType<typeof eq>) => {
+  const lastSentTo = async (condition: SQL | undefined) => {
     const [row] = await tx
       .select({ at: max(outboundMessages.sentAt) })
       .from(outboundMessages)
-      .where(and(eq(outboundMessages.personId, personId), eq(outboundMessages.status, "sent"), condition));
+      .where(afterStartOver(outboundMessages.createdAt, resetAt, and(eq(outboundMessages.personId, personId), eq(outboundMessages.status, "sent"), condition)));
     return row?.at ?? null;
   };
-  const lastMailingSentAt = await lastSentTo(eq(outboundMessages.kind, "mailing"));
-  // Ответ эксперта считается, как только отправлен из «Входящих» (ещё в очереди), — как в контексте консультанта
+  // Проба «Отправить себе» — без рассылки: рассылкой человеку она не считается
+  const lastMailingSentAt = await lastSentTo(and(eq(outboundMessages.kind, "mailing"), isNotNull(outboundMessages.mailingId)));
+  // Ответ эксперта считается, как только отправлен из «Входящих» (ещё в очереди), — как в контексте консультанта.
+  // Ушедший — по времени отправки (часы приложения, как у разговора), ещё в пути — по времени, когда эксперт ответил
   const [staffReply] = await tx
-    .select({ id: outboundMessages.id })
+    .select({ at: max(sql<Date>`coalesce(${outboundMessages.sentAt}, ${outboundMessages.createdAt})`).mapWith(outboundMessages.sentAt) })
     .from(outboundMessages)
     .where(
-      and(
-        eq(outboundMessages.personId, personId),
-        eq(outboundMessages.kind, "manual_reply"),
-        inArray(outboundMessages.status, ["queued", "sending", "sent"]),
+      afterStartOver(
+        outboundMessages.createdAt,
+        resetAt,
+        and(
+          eq(outboundMessages.personId, personId),
+          eq(outboundMessages.kind, "manual_reply"),
+          inArray(outboundMessages.status, ["queued", "sending", "sent"]),
+        ),
       ),
-    )
-    .limit(1);
-  const staffReplied = Boolean(staffReply);
-  if (!passage) return { lastPassage: null, lastMailingSentAt, staffReplied };
+    );
+  const lastStaffReplyAt = staffReply?.at ?? null;
+  if (!passage) return { lastPassage: null, lastMailingSentAt, lastStaffReplyAt };
   const lastBotMessageAt = await lastSentTo(eq(outboundMessages.passageId, passage.id));
   const moments = [passage.lastPersonMessageAt, lastBotMessageAt].filter((at): at is Date => at !== null);
   // Время начала пишет база, а не часы приложения: оно — только если в разговоре не было ни одного сообщения
@@ -75,6 +90,6 @@ export async function loadWithoutCodeHistory(
   return {
     lastPassage: { id: passage.id, status: passage.status, lastActivityAt },
     lastMailingSentAt,
-    staffReplied,
+    lastStaffReplyAt,
   };
 }

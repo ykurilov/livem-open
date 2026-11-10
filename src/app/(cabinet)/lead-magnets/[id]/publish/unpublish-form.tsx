@@ -2,11 +2,15 @@
 
 import { useActionState } from "react";
 import { Alert, Button } from "@/ui/primitives";
+import { ACTION_SEND_FAILED, keepingFormOnSendFailure } from "@/ui/form-upload";
 import { unpublishAction, type UnpublishState } from "./actions";
 
 /** «Снять с публикации» с пояснением и понятной ошибкой. */
 export function UnpublishForm({ leadMagnetId }: { leadMagnetId: string }) {
-  const [state, formAction, pending] = useActionState<UnpublishState>(unpublishAction.bind(null, leadMagnetId), {});
+  const [state, formAction, pending] = useActionState<UnpublishState, FormData>(
+    keepingFormOnSendFailure(unpublishAction.bind(null, leadMagnetId), ACTION_SEND_FAILED),
+    {},
+  );
 
   return (
     <form action={formAction} className="mt-[var(--yk-space-4)] flex flex-col gap-1">

@@ -1,10 +1,13 @@
-// Ход консультанта на краях: живое сообщение при отложенном до утра ходе и пауза сотрудника посреди окна пачки
+// Ход консультанта на краях: живое сообщение при отложенном до утра ходе, пауза сотрудника посреди окна пачки, срок вышел посреди хода
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../../../tests/integration/db-helper";
-import { DEFAULT_CONSULTANT_REPLY, createLiveDialogKit, type LiveDialogKit } from "../../../tests/integration/live-dialog-kit";
+import { DEFAULT_CONSULTANT_REPLY, createLiveDialogKit, providerOutage, type LiveDialogKit } from "../../../tests/integration/live-dialog-kit";
 import { updateSettings } from "../platform/settings";
-import { DAILY_LIMIT_TEXT } from "../spending";
+import { DAILY_LIMIT_TEXT, MODEL_DELAY_TEXT } from "../spending";
+import { DECLINED_SILENT_REASON, SILENT_TURN_REASON } from "./turn";
+import { passages } from "./schema";
 
 const DAILY_LIMIT_USD = 1;
 // 12:00 по Москве 1 октября
@@ -16,7 +19,7 @@ let person: string;
 
 beforeAll(async () => {
   database = await createTestDatabase();
-  await updateSettings(database.db, { dailyLimitUsd: String(DAILY_LIMIT_USD), monthlyBudgetUsd: null });
+  await updateSettings(database.db, { dailyLimitUsd: String(DAILY_LIMIT_USD), monthlyBudgetUsd: null, alertChatId: "777" });
 });
 
 afterAll(async () => {
@@ -68,6 +71,36 @@ describe("отложенный до утра ход и живое сообщен
     await kit.drain();
     expect(kit.consultantCalls()).toHaveLength(1);
   });
+
+  it("ход после сброса лимита упал на сбое провайдера — повтор встаёт, хотя ждёт утренний ход; ответ один", async () => {
+    await startPassage();
+    await kit.spend((await kit.personOf(person))!.id, DAILY_LIMIT_USD);
+    await say("Вечером");
+    expect(kit.consultantCalls()).toHaveLength(0);
+
+    // 00:30 МСК: лимит сброшен, но провайдер лежит
+    kit.clock.set(new Date("2026-10-01T21:30:00Z"));
+    let modelDown = true;
+    kit.reply = () => {
+      if (modelDown) throw providerOutage();
+      return { text: DEFAULT_CONSULTANT_REPLY };
+    };
+    await say("После полуночи");
+    expect(kit.textsTo(person)).not.toContain(DEFAULT_CONSULTANT_REPLY);
+
+    // Провайдер ожил: ответ — с повтором через минуты, а не утром в 9:00
+    modelDown = false;
+    kit.clock.advance(2 * 60_000);
+    await kit.runDue();
+    kit.clock.advance(5_000);
+    await kit.runDue();
+    expect(kit.textsTo(person).filter((text) => text === DEFAULT_CONSULTANT_REPLY)).toHaveLength(1);
+    expect((await kit.inboundOf(person)).every((message) => message.answeredAt !== null)).toBe(true);
+
+    // Утренний ход находит, что отвечать нечего: второго ответа нет
+    await kit.drain();
+    expect(kit.textsTo(person).filter((text) => text === DEFAULT_CONSULTANT_REPLY)).toHaveLength(1);
+  });
 });
 
 describe("пауза сотрудника посреди окна пачки", () => {
@@ -82,5 +115,68 @@ describe("пауза сотрудника посреди окна пачки", (
     expect(kit.consultantCalls()).toHaveLength(0);
     const [question] = (await kit.inboundOf(person)).filter((message) => message.text === "Вопрос эксперту");
     expect(question).toMatchObject({ route: "inbox", answeredAt: null });
+  });
+});
+
+describe("срок вышел, пока модель думала", () => {
+  it("ответ не уходит, а вопрос человека — эксперту во «Входящие», а не «отвечено»", async () => {
+    const passage = await startPassage();
+    // Срок программы истёк посреди хода: сценарий закрыл прохождение, пока модель писала ответ
+    kit.reply = () => ({
+      text: DEFAULT_CONSULTANT_REPLY,
+      until: (async () => {
+        await kit.db.update(passages).set({ status: "term_ended", endedAt: kit.clock.now() }).where(eq(passages.id, passage.id));
+      })(),
+    });
+    await say("Последний вопрос");
+    await kit.drain();
+
+    expect(kit.consultantCalls()).toHaveLength(1);
+    expect(kit.textsTo(person)).not.toContain(DEFAULT_CONSULTANT_REPLY);
+    const [question] = (await kit.inboundOf(person)).filter((message) => message.text === "Последний вопрос");
+    expect(question).toMatchObject({ route: "inbox", answeredAt: null });
+  });
+});
+
+describe("модель закончила ход без слов", () => {
+  it("человеку «отвечу чуть позже», сообщение — эксперту во «Входящие» с тревогой, а не «отвечено»", async () => {
+    await startPassage();
+    const before = kit.textsTo(person).length;
+    kit.reply = () => ({});
+    await say("Вопрос без ответа");
+    await kit.drain();
+
+    expect(kit.textsTo(person).slice(before)).toEqual([MODEL_DELAY_TEXT]);
+    const [question] = (await kit.inboundOf(person)).filter((message) => message.text === "Вопрос без ответа");
+    expect(question).toMatchObject({ route: "inbox", answeredAt: null });
+    const [passage] = await kit.passagesOf(person);
+    expect(passage).toMatchObject({ status: "active", handoverReason: SILENT_TURN_REASON });
+    expect(kit.alertTexts.filter((text) => /входящие/i.test(text))).toHaveLength(1);
+
+    // Следующее сообщение — снова консультанту
+    kit.reply = () => ({ text: DEFAULT_CONSULTANT_REPLY });
+    await say("Ау");
+    expect(kit.textsTo(person).at(-1)).toBe(DEFAULT_CONSULTANT_REPLY);
+  });
+});
+
+describe("человек отказался, консультант завершил разговор без слов", () => {
+  it("не сбой: ни «отвечу чуть позже», ни тревоги; сообщение — эксперту во «Входящие» с объяснением", async () => {
+    await startPassage();
+    const before = kit.textsTo(person).length;
+    const alertsBefore = kit.alertTexts.length;
+    kit.reply = (call) =>
+      call.lastToolResult === undefined
+        ? { toolCalls: [{ toolName: "finish_dialog", input: { goal: "Цель", stuckAt: "Застрял", chosenStep: "Созвон", outcome: "declined" } }] }
+        : {};
+    await say("Больше не пишите мне");
+    await kit.drain();
+
+    expect(kit.textsTo(person).slice(before)).toEqual([]);
+    expect(kit.alertTexts.slice(alertsBefore)).toEqual([]);
+    const [question] = (await kit.inboundOf(person)).filter((message) => message.text === "Больше не пишите мне");
+    expect(question).toMatchObject({ route: "inbox", answeredAt: null });
+    const [passage] = await kit.passagesOf(person);
+    expect(passage).toMatchObject({ status: "completed", handoverReason: DECLINED_SILENT_REASON });
   });
 });

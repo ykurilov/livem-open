@@ -58,7 +58,11 @@ export function ChatMigrationCard({ leadMagnetId, view }: { leadMagnetId: string
   const migrate = () =>
     startTransition(async () => {
       const chosen = Object.fromEntries(removed.map((state) => [state.stateId, map[state.stateId] ?? state.suggestedTo]));
-      setResult(await migrateChatsAction(leadMagnetId, chosen));
+      try {
+        setResult(await migrateChatsAction(leadMagnetId, chosen));
+      } catch {
+        setResult({ error: "Не получилось перевести: нет связи с сервером. Попробуйте ещё раз." });
+      }
       setConfirming(false);
     });
 

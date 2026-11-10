@@ -250,8 +250,141 @@
     {
       "idx": 35,
       "version": "7",
+      "when": 1793266014113,
+      "tag": "0035_client_images",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793267776578,
+      "tag": "0036_client_image_refs",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1793269052173,
+      "tag": "0037_person_conversations_reset",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793421527941,
+      "tag": "0038_passages_person_started",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1793853221740,
+      "tag": "0039_bot_failure_kind_repeat_start",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1793855237547,
+      "tag": "0040_delivery_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1793859574191,
+      "tag": "0041_mailing_recipient_skip",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1793865092688,
+      "tag": "0042_inbound_followed_up",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1793870845074,
+      "tag": "0043_senler",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793874863642,
+      "tag": "0044_web_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1793879273494,
+      "tag": "0045_knowledge_bases",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1793904235805,
+      "tag": "0046_inbound_held",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793921885770,
+      "tag": "0047_field_updated_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1793924384456,
+      "tag": "0048_sale_reached_earlier",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1793960597460,
+      "tag": "0049_answer_corrections",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1793963666304,
+      "tag": "0050_answer_edit_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1794035774769,
+      "tag": "0051_role_swap_conversations",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1794039212336,
+      "tag": "0052_role_swap_client_stages",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1794235399843,
+      "tag": "0053_quick_replies",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
       "when": 1793256194999,
-      "tag": "0035_password_accounts",
+      "tag": "0054_password_accounts",
       "breakpoints": true
     }
   ]

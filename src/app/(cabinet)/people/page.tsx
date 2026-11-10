@@ -5,7 +5,7 @@ import { requireUser } from "@/modules/access";
 import { CHANNEL_LABELS, CONTACT_SOURCE_LABELS } from "@/modules/channels";
 import { countPeople, listFields, listPeople, listPeopleFilterOptions, type PersonListItem } from "@/modules/people";
 import { getDatabase } from "@/modules/platform/db";
-import { DataTable, PageHeader, type DataTableColumn } from "@/ui";
+import { DataTable, PageHeader, PEOPLE_TABS, SectionTabs, type DataTableColumn } from "@/ui";
 import { filterFromSearchParams, pageFromSearchParams, searchParamsFromFilter, type SearchParams } from "./filter-params";
 import { PeopleFilterForm } from "./people-filter-form";
 import { PASSAGE_STATUS_BADGES, PASSAGE_STATUS_LABELS } from "./status-labels";
@@ -29,16 +29,21 @@ const columns: DataTableColumn<PersonListItem>[] = [
   {
     key: "bot",
     header: "Бот",
+    cardLine: "plain",
     render: (person) => (
-      <div className="flex flex-col">
+      <div className="flex flex-col max-sm:flex-row max-sm:gap-1">
         <span>{person.botTitle}</span>
-        <span className="text-[var(--yk-muted)]">{CHANNEL_LABELS[person.channel]}</span>
+        <span className="text-[var(--yk-muted)]">
+          <span className="sm:hidden">· </span>
+          {CHANNEL_LABELS[person.channel]}
+        </span>
       </div>
     ),
   },
   {
     key: "passage",
     header: "Последний лидмагнит",
+    cardLine: "plain",
     render: (person) =>
       person.lastPassage ? (
         <div className="flex flex-wrap items-center gap-2">
@@ -49,7 +54,7 @@ const columns: DataTableColumn<PersonListItem>[] = [
         <span className="text-[var(--yk-muted)]">{person.source ? CONTACT_SOURCE_LABELS[person.source] : "—"}</span>
       ),
   },
-  { key: "created", header: "Пришёл", align: "right", numeric: true, render: (person) => dateFormat.format(person.createdAt) },
+  { key: "created", header: "Пришёл", align: "right", numeric: true, cardLine: "labeled", render: (person) => dateFormat.format(person.createdAt) },
 ];
 
 export default async function Page({ searchParams }: { searchParams: Promise<SearchParams> }) {
@@ -69,7 +74,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
 
   return (
     <>
-      <PageHeader title="База" />
+      <PageHeader title="Люди" tabs={<SectionTabs label="Разделы «Люди»" tabs={PEOPLE_TABS} />} />
       <div className="flex flex-col gap-[var(--yk-space-6)]">
         <Card>
           <CardContent>
@@ -80,7 +85,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
         <p className="font-semibold" data-testid="people-count">
           Найдено: {total}
         </p>
-        <DataTable columns={columns} rows={rows} rowKey={(person) => person.id} empty={{ icon: SearchX, title: "Никто не подходит", hint: "Под этот фильтр в базе никого нет." }} />
+        <DataTable columns={columns} rows={rows} rowKey={(person) => person.id} empty={{ icon: SearchX, title: "Никто не подходит", hint: "Поменяйте или сбросьте фильтр." }} />
         {pages > 1 ? (
           <nav aria-label="Страницы" className="flex items-center gap-[var(--yk-space-4)] text-[length:var(--yk-text-small-size)]">
             {page > 1 ? (

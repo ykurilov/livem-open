@@ -5,7 +5,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../../../tests/integration/db-helper";
 import { createLiveDialogKit } from "../../../tests/integration/live-dialog-kit";
 import { passages, type PassageStatus } from "../conversations/schema";
-import { listLeadMagnetCards } from "./lead-magnets";
+import type { AgentFlow } from "@ykurilov/agent-chat-flows/format";
+import { getLeadMagnet, listLeadMagnetCards, saveDraft } from "./lead-magnets";
+import { publishLeadMagnet } from "./publish";
+import { migrateLiveChats } from "../flows/chat-migration";
 import { archiveEntryLink, createLabeledLink } from "./links";
 import { outboundMessages } from "../channels/schema";
 import { inboundMessages } from "../conversations/schema";
@@ -15,6 +18,7 @@ import { newProgramSettings } from "./settings";
 import { leadMagnetReport, programReport } from "./stats";
 import { LEAD_MAGNET_TOOLS } from "../flows/catalog";
 import { SALE_TAG } from "../flows/settings-to-flow";
+import { PURCHASE_USAGE_SOURCE } from "../purchases/outreach-keys";
 
 let database: TestDatabase;
 
@@ -207,6 +211,46 @@ describe("отчёт «Программа»", () => {
     expect((await programReport(database.db, kit.chatStorage, lead.leadMagnetId))!.reachedSale).toBe(2);
   });
 
+  /** Метка «Продажа» переезжает с ноды `from` на ноду `to` (с инструментом ответа на предложение). */
+  const moveSale = (from: string, to: string) => (flow: AgentFlow): AgentFlow => ({
+    ...flow,
+    states: flow.states.map((state) => {
+      if (state.id === to) return { ...state, tags: [SALE_TAG], tools: [...state.tools, LEAD_MAGNET_TOOLS.saleAnswer] };
+      if (state.id === from) return { ...state, tags: [], tools: state.tools.filter((tool) => tool !== LEAD_MAGNET_TOOLS.saleAnswer) };
+      return state;
+    }),
+  });
+
+  it("разговор, начавшийся в ноде «Продажа» (она стартовая), — дошёл до продажи", async () => {
+    const kit = await createLiveDialogKit(database);
+    const lead = await kit.publish({ stages: STAGES, program: newProgramSettings(3) }, moveSale("sale", "intro"));
+    await arrive(kit, lead.code, { furthestDay: 1 });
+    await arrive(kit, lead.code, { furthestDay: 3, currentStageId: "sale", stageHistory: [{ stageId: "sale", at: "2026-10-03T10:00:00Z", by: "day" }] });
+
+    expect((await programReport(database.db, kit.chatStorage, lead.leadMagnetId))!.reachedSale).toBe(1);
+  });
+
+  it("перевод на версию, где прежней ноды «Продажа» нет, не убирает прошедших продажу из дошедших", async () => {
+    const kit = await createLiveDialogKit(database);
+    const stages = [
+      STAGES[0]!,
+      { id: "offer", name: "Предложение", instruction: "Предложи", transitionCondition: "Ответил", startDay: 2, isSale: false },
+      STAGES[1]!,
+    ];
+    const lead = await kit.publish({ stages, program: newProgramSettings(3) });
+    await arrive(kit, lead.code, { furthestDay: 3, currentStageId: "sale", stageHistory: [{ stageId: "sale", at: "2026-10-03T10:00:00Z", by: "day" }] });
+    await arrive(kit, lead.code, { furthestDay: 2 });
+
+    // Новая версия: «Продажа» теперь в «Предложении», у прежней ноды метки нет
+    const current = (await getLeadMagnet(database.db, lead.leadMagnetId))!;
+    await saveDraft(database.db, lead.leadMagnetId, { ...current.draft, flow: moveSale("sale", "offer")(current.draft.flow) }, "manual");
+    const v2 = (await publishLeadMagnet(database.db, lead.leadMagnetId)).snapshotId;
+    const moved = await migrateLiveChats(database.db, { leadMagnetId: lead.leadMagnetId, map: {}, by: { email: "expert@example.com" }, at: new Date() });
+    expect(moved).toMatchObject({ chats: 2, toVersionId: v2 });
+
+    expect((await programReport(database.db, kit.chatStorage, lead.leadMagnetId))!.reachedSale).toBe(1);
+  });
+
   it("лидмагнит без программы — отчёта «Программа» нет", async () => {
     const kit = await createLiveDialogKit(database);
     const lead = await kit.publish();
@@ -231,7 +275,7 @@ describe("отчёт «Программа»", () => {
     // Без программы: в отчёт не попадает
     await arrive(kit, lead.code, { furthestDay: 3, programStartDate: null });
 
-    const outreachFor = async (passage: typeof day1, createdAt: Date) => {
+    const outreachFor = async (passage: typeof day1, createdAt: Date, idempotencyKey: string = randomUUID()) => {
       const [{ personId, botId }] = (await database.db
         .select({ personId: passages.personId, botId: outboundMessages.botId })
         .from(passages)
@@ -240,7 +284,7 @@ describe("отчёт «Программа»", () => {
         .limit(1)) as [{ personId: string; botId: string | null }];
       await database.db.insert(outboundMessages).values({
         botId: botId!, personId, passageId: passage.id, kind: "outreach", text: "Как дела?", status: "sent",
-        idempotencyKey: randomUUID(), createdAt,
+        idempotencyKey, createdAt,
       });
     };
     const answerFrom = async (passage: typeof day1, receivedAt: Date) => {
@@ -260,6 +304,11 @@ describe("отчёт «Программа»", () => {
     await answerFrom(sold, at("2026-10-02T12:00:00Z"));
     // Ответ человека ДО сообщения первым не считается возвратом
     await outreachFor(doubtful, at("2026-10-02T10:00:00Z"));
+    // Напоминание об оплате и поздравление с покупкой — не касания программы: ответ на них — не возврат, расход — не её
+    await outreachFor(day1, at("2026-10-02T08:00:00Z"), `payment-reminder:${day1.id}`);
+    await outreachFor(day1, at("2026-10-02T08:30:00Z"), `purchase-congratulate:${day1.id}`);
+    await answerFrom(day1, at("2026-10-02T09:00:00Z"));
+    await kit.spend(day1.personId, 5, day1.chatId, PURCHASE_USAGE_SOURCE);
     // Цена касаний — журнал SDK, строка first_message; судья сценария — строка judge; ответы на человека — не в счёт
     await kit.spend(day2.personId, 0.01, day2.chatId, "first_message");
     await kit.spend(day2.personId, 0.02, day2.chatId, "first_message");

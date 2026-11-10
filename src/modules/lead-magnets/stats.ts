@@ -1,6 +1,6 @@
 import type { ChatStorage, UsageSource } from "@ykurilov/agent-chat-core";
 import type { FlowState } from "@ykurilov/agent-chat-flows/format";
-import { and, asc, avg, count, eq, inArray, isNotNull, sql, sum } from "drizzle-orm";
+import { and, asc, avg, count, eq, inArray, isNotNull, notLike, sql, sum } from "drizzle-orm";
 import { outboundMessages } from "../channels/schema";
 import type { SaleReason } from "../consultant/schema";
 import { inboundMessages, passages } from "../conversations/schema";
@@ -9,6 +9,8 @@ import type { DatabaseExecutor } from "../platform/db";
 import { entryLinks, leadMagnets, leadMagnetVersions } from "./schema";
 import type { LeadMagnetSettings } from "./settings";
 import { SALE_TAG } from "../flows/settings-to-flow";
+import { saleReachedIn } from "../flows/sale-reached";
+import { PURCHASE_OUTREACH_KEY_PREFIXES } from "../purchases/outreach-keys";
 
 /** Нода сценария в отчёте. */
 interface RouteStep {
@@ -213,7 +215,9 @@ export async function programReport(db: DatabaseExecutor, usage: Pick<ChatStorag
       chatId: passages.chatId,
       snapshotId: passages.snapshotId,
       furthestDay: passages.furthestDay,
+      currentStageId: passages.currentStageId,
       stageHistory: passages.stageHistory,
+      saleReachedEarlier: passages.saleReachedEarlier,
       saleAnswer: passages.saleAnswer,
     })
     .from(passages)
@@ -225,9 +229,11 @@ export async function programReport(db: DatabaseExecutor, usage: Pick<ChatStorag
   if (plannedDays === undefined && rows.length === 0) return null;
   const days = Math.max(plannedDays ?? 0, ...rows.map((row) => row.furthestDay));
 
-  // Продажа — по метке ноды в снимке прохождения
-  const isSaleStep = (snapshotId: string, stageId: string) => stepOf(settingsOf.get(snapshotId), stageId)?.isSale ?? false;
-  const reachedSale = rows.filter((row) => row.stageHistory.some((entry) => isSaleStep(row.snapshotId, entry.stageId))).length;
+  // Продажа — по метке ноды в снимке прохождения; до перевода на этот снимок — по отметке перевода
+  const reachedSale = rows.filter((row) => {
+    const snapshot = settingsOf.get(row.snapshotId);
+    return row.saleReachedEarlier || (snapshot !== undefined && saleReachedIn(snapshot.flow, row));
+  }).length;
 
   const reasonCounts = new Map<SaleReason, number>();
   for (const row of rows) if (row.saleAnswer) reasonCounts.set(row.saleAnswer.reason, (reasonCounts.get(row.saleAnswer.reason) ?? 0) + 1);
@@ -240,7 +246,15 @@ export async function programReport(db: DatabaseExecutor, usage: Pick<ChatStorag
         db
           .select({ passageId: outboundMessages.passageId, createdAt: outboundMessages.createdAt })
           .from(outboundMessages)
-          .where(and(inArray(outboundMessages.passageId, passageIds), eq(outboundMessages.kind, "outreach"), eq(outboundMessages.status, "sent")))
+          .where(
+            and(
+              inArray(outboundMessages.passageId, passageIds),
+              eq(outboundMessages.kind, "outreach"),
+              eq(outboundMessages.status, "sent"),
+              // Поздравление с покупкой и напоминание об оплате — не касания программы
+              ...PURCHASE_OUTREACH_KEY_PREFIXES.map((prefix) => notLike(outboundMessages.idempotencyKey, `${prefix}%`)),
+            ),
+          )
           .orderBy(asc(outboundMessages.createdAt)),
         db
           .select({ passageId: inboundMessages.passageId, receivedAt: inboundMessages.receivedAt })

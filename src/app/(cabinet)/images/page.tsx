@@ -2,7 +2,7 @@ import { ImageIcon } from "@phosphor-icons/react/dist/ssr";
 import { requireUser } from "@/modules/access";
 import { imageUrl, listImages, type ExpertImage } from "@/modules/images";
 import { getDatabase } from "@/modules/platform/db";
-import { DataTable, PageHeader, type DataTableColumn } from "@/ui";
+import { DataTable, KNOWLEDGE_TABS, PageHeader, SectionTabs, type DataTableColumn } from "@/ui";
 import { AddImageButton, ImageActions } from "./image-dialogs";
 
 export const dynamic = "force-dynamic";
@@ -35,7 +35,7 @@ export default async function Page() {
   const images = await listImages(getDatabase().db);
   return (
     <>
-      <PageHeader title="Картинки" action={<AddImageButton />} />
+      <PageHeader title="База знаний" action={<AddImageButton />} tabs={<SectionTabs label="Разделы «Базы знаний»" tabs={KNOWLEDGE_TABS} />} />
       <DataTable
         columns={columns}
         rows={images}

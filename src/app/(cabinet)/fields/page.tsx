@@ -2,7 +2,7 @@ import { ListChecksIcon as ListChecks } from "@phosphor-icons/react/dist/ssr";
 import { requireUser } from "@/modules/access";
 import { listFields, type FieldDefinition, type FieldType } from "@/modules/people";
 import { getDatabase } from "@/modules/platform/db";
-import { DataTable, PageHeader, type DataTableColumn } from "@/ui";
+import { DataTable, PageHeader, PEOPLE_TABS, SectionTabs, type DataTableColumn } from "@/ui";
 import { FieldActions } from "./field-actions";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +43,7 @@ export default async function Page() {
   const fields = await listFields(getDatabase().db);
   return (
     <>
-      <PageHeader title="Поля базы" />
+      <PageHeader title="Люди" tabs={<SectionTabs label="Разделы «Люди»" tabs={PEOPLE_TABS} />} />
       <DataTable columns={columns} rows={fields} rowKey={(field) => field.id} empty={{ icon: ListChecks, title: "Полей пока нет", hint: "Их заводит конструктор лидмагнита." }} />
     </>
   );

@@ -1,0 +1,1 @@
+ALTER TABLE "app"."mailing_recipients" ADD COLUMN "skip_reason" text;

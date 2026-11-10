@@ -6,6 +6,7 @@ import { congratulationInAnswer, outboundExists, REMINDER_CLAIM_MS, schedulePaym
 import { productOrders } from "./schema";
 import { purchaseTailLine } from "./tail";
 import { productLinksOf } from "./outgoing";
+import { productOfCampaign } from "./product-links";
 import { getVersion } from "../lead-magnets";
 import type { PaymentCheck, PurchasePort } from "./tools";
 
@@ -82,12 +83,12 @@ export function passagePurchasePort(deps: PurchaseDependencies): PurchasePort {
       const products = snapshot ? productLinksOf(snapshot.settings) : [];
       if (products.length === 0) return null;
       const { paid, unpaid } = await ordersOfPassage(db, row.id);
-      const product = products.find((candidate) => (paid ?? unpaid)?.utmCampaign === candidate.campaign) ?? products[0]!;
+      const product = productOfCampaign(products, (paid ?? unpaid)?.utmCampaign);
       return purchaseTailLine({
         purchased: Boolean(row.purchasedAt || paid),
         unpaidOrder: Boolean(unpaid),
         promised: Boolean(row.promisedAt),
-        productTitle: product.title,
+        productTitle: product?.title ?? null,
         remindingNow: await remindingNow(db, row, clock.now()),
       });
     },

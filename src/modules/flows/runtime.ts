@@ -70,6 +70,12 @@ function judgeOpenRouter(env: Record<string, string | undefined>) {
   };
 }
 
+/** Судья сценариев лидмагнитов: decision-1, при сбое — запасная модель каталога. */
+export const leadMagnetJudgeSettings = (env: Record<string, string | undefined>, fallback: ModelChoice = DEFAULT_MODEL_CHOICE) => ({
+  fallback,
+  openrouter: judgeOpenRouter(env),
+});
+
 /**
  * Какой сценарий у чата: боевой разговор — сценарий своего снимка (`flowId` — id лидмагнита, `versionId` — id снимка;
  * переопубликация идущие чаты не трогает), тестовый — черновика. Чужой чат (конструктор) — без сценария.
@@ -138,7 +144,7 @@ export function createLeadMagnetFlow(options: LeadMagnetFlowOptions): LeadMagnet
     ...firstAppConfirmations(),
     loadFlow: ({ chat }) => loadPlacedFlow(db, chat.id, clock.now()),
     store: postgresFlowStore(options.pool),
-    judge: { fallback: options.judgeFallback ?? DEFAULT_MODEL_CHOICE, openrouter: judgeOpenRouter(env) },
+    judge: leadMagnetJudgeSettings(env, options.judgeFallback),
     firstMessages: {
       quietHours: FIRST_MESSAGES_QUIET_HOURS,
       maxPerDay: FIRST_MESSAGES_PER_DAY,
@@ -155,5 +161,7 @@ export function createLeadMagnetFlow(options: LeadMagnetFlowOptions): LeadMagnet
     now: () => clock.now(),
     ...(options.logError && { logError: options.logError }),
   });
-  return Object.assign(flow, { attachPorts: (portFor: FlowAttachment["portFor"]) => flow.attach({ portFor, ...(deliver && { deliver }) }) });
+  return Object.assign(flow, {
+    attachPorts: (portFor: FlowAttachment["portFor"]) => flow.attach({ portFor, ...(deliver && { deliver }) }),
+  });
 }

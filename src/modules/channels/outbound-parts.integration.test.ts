@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../../../tests/integration/db-helper";
-import { createFakeClock } from "../platform/clock";
+import { createFakeClock, type FakeClock } from "../platform/clock";
 import type { EnqueueOptions, JobEnqueuer, JobName, JobPayloads } from "../platform/queue";
 import type { BotCredentials } from "./channel";
 import { enqueueOutbound, requeueAfterBotRepair, sendOutbound, type OutboundDependencies } from "./outbound";
@@ -22,6 +22,7 @@ const bot: BotCredentials = {
 let database: TestDatabase;
 let api: FakeTelegramApi;
 let jobs: Array<{ name: JobName; payload: JobPayloads[JobName]; options?: EnqueueOptions }>;
+let clock: FakeClock;
 
 const queue: JobEnqueuer = {
   async enqueue(name, payload, options) {
@@ -34,7 +35,7 @@ function dependencies(failureCause: "bot" | "message" = "message"): OutboundDepe
   return {
     db: database.db,
     queue,
-    clock: createFakeClock(new Date("2026-10-10T09:00:00Z")),
+    clock,
     async resolveTarget() {
       return { adapter, bot, to: "5550001" };
     },
@@ -73,6 +74,7 @@ beforeEach(async () => {
   await database.pool.query("delete from app.outbound_messages");
   api = new FakeTelegramApi();
   jobs = [];
+  clock = createFakeClock(new Date("2026-10-10T09:00:00Z"));
 });
 
 describe("повтор отправки не шлёт уже отправленное", () => {
@@ -84,6 +86,7 @@ describe("повтор отправки не шлёт уже отправлен�
     expect(await rowOf(id)).toMatchObject({ status: "queued", sentParts: 1, attempts: 0 });
     expect(jobs.at(-1)).toMatchObject({ name: "outbound-send", options: { delaySeconds: 2 } });
 
+    clock.advance(2000);
     await sendOutbound(dependencies(), id);
     expect((await rowOf(id)).status).toBe("sent");
     expect(api.callsTo("sendPhoto")).toHaveLength(1);
@@ -95,6 +98,7 @@ describe("повтор отправки не шлёт уже отправлен�
     const { id } = await enqueue("а".repeat(1500), "https://cdn.test/cover.png");
     await sendOutbound(dependencies(), id);
     expect(await rowOf(id)).toMatchObject({ status: "queued", sentParts: 1, attempts: 1 });
+    clock.advance(60_000);
     await sendOutbound(dependencies(), id);
     expect(api.callsTo("sendPhoto")).toHaveLength(1);
     expect((await rowOf(id)).status).toBe("sent");
@@ -109,6 +113,7 @@ describe("повтор отправки не шлёт уже отправлен�
     await sendOutbound(dependencies(), id);
     expect(await rowOf(id)).toMatchObject({ status: "queued", sentParts: 1 });
 
+    clock.advance(60_000);
     await sendOutbound(dependencies(), id);
     const row = await rowOf(id);
     expect(row.status).toBe("sent");
@@ -128,6 +133,38 @@ describe("повтор отправки не шлёт уже отправлен�
     expect((await rowOf(id)).status).toBe("sent");
     expect(api.callsTo("sendPhoto")).toHaveLength(1);
     expect(api.callsTo("sendMessage")).toHaveLength(2);
+  });
+
+  it("Telegram не принял саму картинку: ответ уходит текстом, повторы — тоже без неё", async () => {
+    api.replyOnce("sendPhoto", telegramError(400, "Bad Request: PHOTO_INVALID_DIMENSIONS"));
+    const { id } = await enqueue("Вот ваш экран", "https://cdn.test/long-screenshot.png");
+
+    await sendOutbound(dependencies(), id);
+    expect(await rowOf(id)).toMatchObject({ status: "sent", imagePath: null });
+    expect(api.callsTo("sendMessage")).toHaveLength(1);
+  });
+
+  it("токен отозван: картинка остаётся, после починки бота сообщение уходит с ней", async () => {
+    api.replyOnce("sendPhoto", telegramError(401, "Unauthorized"));
+    api.replyOnce("sendMessage", telegramError(401, "Unauthorized"));
+    const { id } = await enqueue("Вот ваш экран", "https://cdn.test/cover.png");
+
+    await sendOutbound(dependencies("bot"), id);
+    expect(await rowOf(id)).toMatchObject({ status: "failed", awaitsBotRepair: true, imagePath: "https://cdn.test/cover.png" });
+
+    await requeueAfterBotRepair({ db: database.db, queue }, bot.id);
+    await sendOutbound(dependencies(), id);
+    expect((await rowOf(id)).status).toBe("sent");
+    expect(api.callsTo("sendPhoto")).toHaveLength(2);
+  });
+
+  it("последний временный сбой сети: картинка у сообщения остаётся", async () => {
+    api.replyOnce("sendPhoto", telegramError(502, "Bad Gateway"));
+    api.replyOnce("sendMessage", telegramError(502, "Bad Gateway"));
+    const { id } = await enqueue("Вот ваш экран", "https://cdn.test/cover.png");
+
+    await sendOutbound({ ...dependencies("bot"), maxAttempts: 1 }, id);
+    expect(await rowOf(id)).toMatchObject({ status: "failed", imagePath: "https://cdn.test/cover.png" });
   });
 
   it("пустое сообщение: в Telegram не уходит, запись failed с понятной причиной", async () => {

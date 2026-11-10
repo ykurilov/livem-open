@@ -8,7 +8,9 @@ import { useMemo, useRef, type ComponentProps, type ReactNode } from "react";
 import { leadMagnetFlowChecks } from "@/modules/flows/app-checks";
 import { leadMagnetFlowCatalog } from "@/modules/flows/catalog";
 import type { FieldDefinition } from "@/modules/people";
-import { saveFlowAction } from "../actions";
+import type { LeadMagnetSettings } from "@/modules/lead-magnets";
+import { saveFlowAction, saveSettingsAndFlowAction } from "../actions";
+import { combineUnsavedEdits } from "./unsaved-edits";
 import { previewFlowTestConnection } from "./flow-test-connection";
 
 /** Перемотка часов тестового чата на доске: 15 минут, час, три часа (касания молчуну). */
@@ -24,12 +26,14 @@ export interface FlowTabProps {
   savedValue: AgentFlow;
   onChange(flow: AgentFlow): void;
   fields: FieldDefinition[];
-  /** Черновик правит конструктор или «Настройки» ждут сохранения — доска закрыта на правку. */
+  /** Черновик правит конструктор — доска закрыта на правку. */
   locked: boolean;
-  /** Почему сохранение сейчас закрыто; `null` — открыто. */
-  saveBlockedBecause: string | null;
+  /** Настройки черновика, как они лежат на сервере: от них видно, меняли ли в форме основную инструкцию. */
+  savedSettings: LeadMagnetSettings;
+  /** Несохранённая правка «Настроек»: сохранится вместе с доской; `null` — правки нет. */
+  unsavedSettings: LeadMagnetSettings | null;
   /** Сценарий сохранён новой версией `versionId`; `overwroteNewerDraft` — черновик успел измениться. */
-  onSaved(result: { versionId: string; overwroteNewerDraft: boolean }): void;
+  onSaved(result: { versionId: string; overwroteNewerDraft: boolean; flow: AgentFlow }): void;
   /** Экран чата «Проверки» для тестового чата рядом с доской. */
   renderChat(chatId: string, options: { noticeLines: FlowNoticeLines }): ReactNode;
   /** «Начать заново» в тестовом чате заменило разговор «Проверки»: страница перечитывает его статус. */
@@ -46,7 +50,7 @@ function boardPath(path: string): string | undefined {
 }
 
 /** Вкладка «Сценарий»: доска со ступенями разговора, переходами, днями и касаниями. Проверки те же, что на сервере. */
-export function FlowTab({ leadMagnetId, draftVersionId, value, savedValue, onChange, fields, locked, saveBlockedBecause, onSaved, renderChat, onPreviewRestarted }: FlowTabProps) {
+export function FlowTab({ leadMagnetId, draftVersionId, value, savedValue, onChange, fields, locked, savedSettings, unsavedSettings, onSaved, renderChat, onPreviewRestarted }: FlowTabProps) {
   const catalog = useMemo(() => leadMagnetFlowCatalog(fields), [fields]);
   // Подключение живёт, пока открыт лидмагнит (оно помнит «первое открытие»), а экран чата и обновление берёт свежие
   const latest = useRef({ renderChat, onPreviewRestarted });
@@ -63,13 +67,20 @@ export function FlowTab({ leadMagnetId, draftVersionId, value, savedValue, onCha
 
   // Отказ сервера — доске: она пишет «Не сохранено», а замечания ставит у нод и в «Проверить граф»
   const save = async (flow: AgentFlow): Promise<FlowSaveResult> => {
-    if (saveBlockedBecause) return { ok: false, issues: [{ message: saveBlockedBecause }] };
-    const result = await saveFlowAction(leadMagnetId, flow, draftVersionId);
+    let result: Awaited<ReturnType<typeof saveFlowAction>>;
+    try {
+      if (unsavedSettings) {
+        const both = combineUnsavedEdits(savedSettings, unsavedSettings, flow);
+        result = await saveSettingsAndFlowAction(leadMagnetId, both.settings, both.flow, draftVersionId);
+      } else result = await saveFlowAction(leadMagnetId, flow, draftVersionId);
+    } catch {
+      return { ok: false, issues: [{ message: "Не сохранено: нет связи с сервером. Правка осталась на доске, попробуйте ещё раз." }] };
+    }
     if (!result.ok) {
       const issues = result.issues.length > 0 ? result.issues : [{ path: "", message: result.error }];
       return { ok: false, issues: issues.map(({ path, message }) => ({ ...(boardPath(path) !== undefined && { path: boardPath(path) }), message })) };
     }
-    onSaved(result);
+    onSaved({ ...result, flow });
     return { ok: true };
   };
 

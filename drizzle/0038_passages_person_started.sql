@@ -1,0 +1,1 @@
+CREATE INDEX "passages_person_started" ON "app"."passages" USING btree ("person_id","started_at");

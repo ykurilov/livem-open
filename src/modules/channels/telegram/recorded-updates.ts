@@ -72,6 +72,16 @@ export const documentMessage = {
   },
 };
 
+/** Снимок экрана, отправленный файлом (без сжатия): картинка документом. */
+export const screenshotDocument = {
+  update_id: 810000090,
+  message: {
+    ...messageBase,
+    message_id: 21,
+    document: { file_name: "screen.png", mime_type: "image/png", file_id: "BQAD-screen", file_unique_id: "d2", file_size: 250000 },
+  },
+};
+
 export const locationMessage = {
   update_id: 810000009,
   message: { ...messageBase, message_id: 18, location: { latitude: -8.65, longitude: 115.21 } },

@@ -1,69 +1,9 @@
 {
-  "id": "fe3314d7-208a-49b4-b17a-a97575d93f55",
+  "id": "52cb9cb1-2018-4e18-8a5f-be77d4495106",
   "prevId": "9f9fd6cb-465a-46c6-aade-8f6ec068b744",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "app.accounts": {
-      "name": "accounts",
-      "schema": "app",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "password_hash": {
-          "name": "password_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "accounts_email_unique": {
-          "name": "accounts_email_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "app.agent_log_entries": {
       "name": "agent_log_entries",
       "schema": "app",
@@ -123,25 +63,25 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "agent_log_entries_turn_id_agent_log_turns_id_fk": {
           "name": "agent_log_entries_turn_id_agent_log_turns_id_fk",
           "tableFrom": "agent_log_entries",
-          "tableTo": "agent_log_turns",
-          "schemaTo": "app",
           "columnsFrom": [
             "turn_id"
           ],
+          "tableTo": "agent_log_turns",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -227,9 +167,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "agent_log_turns_started": {
           "name": "agent_log_turns_started",
@@ -242,25 +182,25 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "agent_log_turns_lead_magnet_id_lead_magnets_id_fk": {
           "name": "agent_log_turns_lead_magnet_id_lead_magnets_id_fk",
           "tableFrom": "agent_log_turns",
-          "tableTo": "lead_magnets",
-          "schemaTo": "app",
           "columnsFrom": [
             "lead_magnet_id"
           ],
+          "tableTo": "lead_magnets",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -324,9 +264,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -448,25 +388,25 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "bots_default_lead_magnet_id_lead_magnets_id_fk": {
           "name": "bots_default_lead_magnet_id_lead_magnets_id_fk",
           "tableFrom": "bots",
-          "tableTo": "lead_magnets",
-          "schemaTo": "app",
           "columnsFrom": [
             "default_lead_magnet_id"
           ],
+          "tableTo": "lead_magnets",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -516,9 +456,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "lead_magnet_bots_bot": {
           "name": "lead_magnet_bots_bot",
@@ -531,39 +471,39 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "lead_magnet_bots_lead_magnet_id_lead_magnets_id_fk": {
           "name": "lead_magnet_bots_lead_magnet_id_lead_magnets_id_fk",
           "tableFrom": "lead_magnet_bots",
-          "tableTo": "lead_magnets",
-          "schemaTo": "app",
           "columnsFrom": [
             "lead_magnet_id"
           ],
+          "tableTo": "lead_magnets",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "lead_magnet_bots_bot_id_bots_id_fk": {
           "name": "lead_magnet_bots_bot_id_bots_id_fk",
           "tableFrom": "lead_magnet_bots",
-          "tableTo": "bots",
-          "schemaTo": "app",
           "columnsFrom": [
             "bot_id"
           ],
+          "tableTo": "bots",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -729,9 +669,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "outbound_messages_person": {
           "name": "outbound_messages_person",
@@ -744,9 +684,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "outbound_messages_mailing": {
           "name": "outbound_messages_mailing",
@@ -759,9 +699,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "outbound_messages_waiting": {
           "name": "outbound_messages_waiting",
@@ -774,10 +714,10 @@
             }
           ],
           "isUnique": false,
-          "where": "\"app\".\"outbound_messages\".\"status\" = 'queued'",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"app\".\"outbound_messages\".\"status\" = 'queued'",
+          "concurrently": false
         },
         "outbound_messages_awaiting_bot": {
           "name": "outbound_messages_awaiting_bot",
@@ -790,10 +730,10 @@
             }
           ],
           "isUnique": false,
-          "where": "\"app\".\"outbound_messages\".\"awaits_bot_repair\"",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"app\".\"outbound_messages\".\"awaits_bot_repair\"",
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -904,16 +844,16 @@
         "preview_conversations_lead_magnet_id_lead_magnets_id_fk": {
           "name": "preview_conversations_lead_magnet_id_lead_magnets_id_fk",
           "tableFrom": "preview_conversations",
-          "tableTo": "lead_magnets",
-          "schemaTo": "app",
           "columnsFrom": [
             "lead_magnet_id"
           ],
+          "tableTo": "lead_magnets",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -1077,9 +1017,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "inbound_messages_passage": {
           "name": "inbound_messages_passage",
@@ -1092,9 +1032,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "inbound_messages_person": {
           "name": "inbound_messages_person",
@@ -1107,9 +1047,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "inbound_messages_unprocessed": {
           "name": "inbound_messages_unprocessed",
@@ -1122,54 +1062,54 @@
             }
           ],
           "isUnique": false,
-          "where": "\"app\".\"inbound_messages\".\"processed_at\" is null",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"app\".\"inbound_messages\".\"processed_at\" is null",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "inbound_messages_bot_id_bots_id_fk": {
           "name": "inbound_messages_bot_id_bots_id_fk",
           "tableFrom": "inbound_messages",
-          "tableTo": "bots",
-          "schemaTo": "app",
           "columnsFrom": [
             "bot_id"
           ],
+          "tableTo": "bots",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "inbound_messages_person_id_people_id_fk": {
           "name": "inbound_messages_person_id_people_id_fk",
           "tableFrom": "inbound_messages",
-          "tableTo": "people",
-          "schemaTo": "app",
           "columnsFrom": [
             "person_id"
           ],
+          "tableTo": "people",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "inbound_messages_passage_id_passages_id_fk": {
           "name": "inbound_messages_passage_id_passages_id_fk",
           "tableFrom": "inbound_messages",
-          "tableTo": "passages",
-          "schemaTo": "app",
           "columnsFrom": [
             "passage_id"
           ],
+          "tableTo": "passages",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1467,9 +1407,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "passages_one_active_per_person": {
           "name": "passages_one_active_per_person",
@@ -1482,10 +1422,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"app\".\"passages\".\"status\" = 'active'",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"app\".\"passages\".\"status\" = 'active'",
+          "concurrently": false
         },
         "passages_lead_magnet": {
           "name": "passages_lead_magnet",
@@ -1498,9 +1438,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "passages_tracking_code": {
           "name": "passages_tracking_code",
@@ -1513,9 +1453,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "passages_payment_email": {
           "name": "passages_payment_email",
@@ -1528,67 +1468,67 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "passages_person_id_people_id_fk": {
           "name": "passages_person_id_people_id_fk",
           "tableFrom": "passages",
-          "tableTo": "people",
-          "schemaTo": "app",
           "columnsFrom": [
             "person_id"
           ],
+          "tableTo": "people",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "passages_lead_magnet_id_lead_magnets_id_fk": {
           "name": "passages_lead_magnet_id_lead_magnets_id_fk",
           "tableFrom": "passages",
-          "tableTo": "lead_magnets",
-          "schemaTo": "app",
           "columnsFrom": [
             "lead_magnet_id"
           ],
+          "tableTo": "lead_magnets",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "passages_snapshot_id_lead_magnet_versions_id_fk": {
           "name": "passages_snapshot_id_lead_magnet_versions_id_fk",
           "tableFrom": "passages",
-          "tableTo": "lead_magnet_versions",
-          "schemaTo": "app",
           "columnsFrom": [
             "snapshot_id"
           ],
+          "tableTo": "lead_magnet_versions",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "passages_entry_link_id_entry_links_id_fk": {
           "name": "passages_entry_link_id_entry_links_id_fk",
           "tableFrom": "passages",
-          "tableTo": "entry_links",
-          "schemaTo": "app",
           "columnsFrom": [
             "entry_link_id"
           ],
+          "tableTo": "entry_links",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1702,26 +1642,26 @@
             }
           ],
           "isUnique": false,
-          "where": "\"app\".\"inbox_threads\".\"unanswered_count\" > 0",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"app\".\"inbox_threads\".\"unanswered_count\" > 0",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "inbox_threads_person_id_people_id_fk": {
           "name": "inbox_threads_person_id_people_id_fk",
           "tableFrom": "inbox_threads",
-          "tableTo": "people",
-          "schemaTo": "app",
           "columnsFrom": [
             "person_id"
           ],
+          "tableTo": "people",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1785,9 +1725,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "entry_links_main": {
           "name": "entry_links_main",
@@ -1800,10 +1740,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"app\".\"entry_links\".\"label\" is null",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"app\".\"entry_links\".\"label\" is null",
+          "concurrently": false
         },
         "entry_links_active_label": {
           "name": "entry_links_active_label",
@@ -1816,32 +1756,32 @@
             },
             {
               "expression": "lower(\"label\")",
-              "asc": true,
               "isExpression": true,
+              "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
-          "where": "\"app\".\"entry_links\".\"label\" is not null and \"app\".\"entry_links\".\"archived_at\" is null",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"app\".\"entry_links\".\"label\" is not null and \"app\".\"entry_links\".\"archived_at\" is null",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "entry_links_lead_magnet_id_lead_magnets_id_fk": {
           "name": "entry_links_lead_magnet_id_lead_magnets_id_fk",
           "tableFrom": "entry_links",
-          "tableTo": "lead_magnets",
-          "schemaTo": "app",
           "columnsFrom": [
             "lead_magnet_id"
           ],
+          "tableTo": "lead_magnets",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -1912,25 +1852,25 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "lead_magnet_versions_lead_magnet_id_lead_magnets_id_fk": {
           "name": "lead_magnet_versions_lead_magnet_id_lead_magnets_id_fk",
           "tableFrom": "lead_magnet_versions",
-          "tableTo": "lead_magnets",
-          "schemaTo": "app",
           "columnsFrom": [
             "lead_magnet_id"
           ],
+          "tableTo": "lead_magnets",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -2008,17 +1948,17 @@
       "uniqueConstraints": {
         "lead_magnets_constructor_chat_id_unique": {
           "name": "lead_magnets_constructor_chat_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "constructor_chat_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         },
         "lead_magnets_preview_chat_id_unique": {
           "name": "lead_magnets_preview_chat_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "preview_chat_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -2084,26 +2024,26 @@
             }
           ],
           "isUnique": false,
-          "where": "\"app\".\"mailing_recipients\".\"outbound_message_id\" is null and \"app\".\"mailing_recipients\".\"error\" is null",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"app\".\"mailing_recipients\".\"outbound_message_id\" is null and \"app\".\"mailing_recipients\".\"error\" is null",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "mailing_recipients_mailing_id_mailings_id_fk": {
           "name": "mailing_recipients_mailing_id_mailings_id_fk",
           "tableFrom": "mailing_recipients",
-          "tableTo": "mailings",
-          "schemaTo": "app",
           "columnsFrom": [
             "mailing_id"
           ],
+          "tableTo": "mailings",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -2267,16 +2207,16 @@
           "columns": [
             {
               "expression": "lower(\"name\")",
-              "asc": true,
               "isExpression": true,
+              "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
-          "where": "\"app\".\"fields\".\"deleted_at\" is null",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"app\".\"fields\".\"deleted_at\" is null",
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -2397,25 +2337,25 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "people_bot_id_bots_id_fk": {
           "name": "people_bot_id_bots_id_fk",
           "tableFrom": "people",
-          "tableTo": "bots",
-          "schemaTo": "app",
           "columnsFrom": [
             "bot_id"
           ],
+          "tableTo": "bots",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2659,9 +2599,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "product_orders_passage": {
           "name": "product_orders_passage",
@@ -2674,9 +2614,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "product_orders_email": {
           "name": "product_orders_email",
@@ -2689,25 +2629,25 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "product_orders_passage_id_passages_id_fk": {
           "name": "product_orders_passage_id_passages_id_fk",
           "tableFrom": "product_orders",
-          "tableTo": "passages",
-          "schemaTo": "app",
           "columnsFrom": [
             "passage_id"
           ],
+          "tableTo": "passages",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2803,25 +2743,25 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "model_usage_passage_id_passages_id_fk": {
           "name": "model_usage_passage_id_passages_id_fk",
           "tableFrom": "model_usage",
-          "tableTo": "passages",
-          "schemaTo": "app",
           "columnsFrom": [
             "passage_id"
           ],
+          "tableTo": "passages",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2902,9 +2842,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "text_short_links_lead_magnet": {
           "name": "text_short_links_lead_magnet",
@@ -2917,39 +2857,39 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "text_short_links_lead_magnet_id_lead_magnets_id_fk": {
           "name": "text_short_links_lead_magnet_id_lead_magnets_id_fk",
           "tableFrom": "text_short_links",
-          "tableTo": "lead_magnets",
-          "schemaTo": "app",
           "columnsFrom": [
             "lead_magnet_id"
           ],
+          "tableTo": "lead_magnets",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "text_short_links_passage_id_passages_id_fk": {
           "name": "text_short_links_passage_id_passages_id_fk",
           "tableFrom": "text_short_links",
-          "tableTo": "passages",
-          "schemaTo": "app",
           "columnsFrom": [
             "passage_id"
           ],
+          "tableTo": "passages",
+          "schemaTo": "app",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {},
@@ -3025,10 +2965,10 @@
   },
   "enums": {},
   "schemas": {},
+  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
-  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

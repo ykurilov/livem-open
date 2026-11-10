@@ -4,7 +4,8 @@ import { seal } from "../../src/auth/core/cookie-seal";
 import { bots, outboundMessages } from "../../src/modules/channels/schema";
 import { inboundMessages, passages } from "../../src/modules/conversations/schema";
 import { createLeadMagnet, publishWithBots, saveDraft } from "../../src/modules/lead-magnets";
-import { createField, rememberAboutPerson } from "../../src/modules/people";
+import { FIELD_DELETED } from "../../src/app/(cabinet)/people/field-condition-draft";
+import { createField, deleteField, rememberAboutPerson } from "../../src/modules/people";
 import { people } from "../../src/modules/people/schema";
 import { createTokenCipher } from "../../src/modules/platform/crypto";
 import { connectDatabase, type DatabaseConnection } from "../../src/modules/platform/db";
@@ -119,6 +120,11 @@ test("эксперт находит человека фильтром, откр�
   await page.goto("/inbox");
   await page.getByRole("link", { name: new RegExp(anya) }).click();
   await expect(page.getByTestId("inbox-messages")).toContainText("А когда созвон?");
+  // Переписка открывается на последнем вопросе: и он, и поле ответа — на экране без прокрутки; старт бота — без кода ссылки
+  await expect(page.getByTestId("inbox-messages").getByText("А когда созвон?")).toBeInViewport();
+  await expect(page.getByLabel("Ваш ответ")).toBeInViewport();
+  await expect(page.getByTestId("inbox-messages")).toContainText("Запуск бота по ссылке");
+  await expect(page.getByTestId("inbox-messages")).not.toContainText(`/start ${code}`);
   await page.getByLabel("Ваш ответ").fill("Завтра в 12:00");
   await page.getByRole("button", { name: "Отправить" }).click();
 
@@ -129,4 +135,26 @@ test("эксперт находит человека фильтром, откр�
     .where(and(eq(outboundMessages.personId, anyaRow!.id), eq(outboundMessages.kind, "manual_reply")));
   expect(reply).toMatchObject({ botId: bot!.id, status: "sent" });
   await expect(page.getByRole("navigation", { name: "Неотвеченные" }).getByRole("link", { name: new RegExp(anya) })).toHaveCount(0);
+});
+
+test("условие по удалённому полю не превращает фильтр во всю базу, несколько вариантов выбора не сужаются", async ({ page }) => {
+  const { db } = connection;
+  const tag = Date.now().toString(36);
+  const gone = await createField(db, { name: `Город ${tag}`, type: "text", description: "" });
+  await deleteField(db, gone.id, new Date());
+  const plan = await createField(db, { name: `Тариф ${tag}`, type: "choice", options: ["база", "про", "бизнес"], description: "" });
+
+  const deletedCondition = JSON.stringify([{ fieldId: gone.id, kind: "text", contains: "Москва" }]);
+  await page.goto(`/people?fields=${encodeURIComponent(deletedCondition)}`);
+  await expect(page.getByText(FIELD_DELETED)).toBeVisible();
+  await expect(page.getByTestId("people-count")).toHaveText("Найдено: 0");
+  await page.getByRole("button", { name: "Показать" }).click();
+  await expect(page.getByTestId("people-count")).toHaveText("Найдено: 0");
+  expect(new URL(page.url()).searchParams.get("fields")).toBe(deletedCondition);
+
+  const severalOptions = JSON.stringify([{ fieldId: plan.id, kind: "choice", anyOf: ["про", "бизнес"] }]);
+  await page.goto(`/people?fields=${encodeURIComponent(severalOptions)}`);
+  await expect(page.getByRole("combobox", { name: "Значение" }).locator("option:checked")).toHaveText("про или бизнес");
+  await page.getByRole("button", { name: "Показать" }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("fields")).toBe(severalOptions);
 });

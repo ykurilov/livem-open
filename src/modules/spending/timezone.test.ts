@@ -59,3 +59,15 @@ describe("дневной лимит по московским суткам", () 
     expect(new Date((error as SpendingLimitReachedError).resetsAt!).toISOString()).toBe("2026-10-03T21:00:00.000Z");
   });
 });
+
+describe("когда продолжить после лимита", () => {
+  it("UTC+12: сброс в полночь по Москве — ровно 9:00 там, продолжаем в этот же момент, а не через сутки", async () => {
+    const { morningAfter } = await import("./daily-limit");
+    const clock = createFakeClock(new Date("2026-10-03T12:00:00Z"));
+    const reset = "2026-10-03T21:00:00.000Z";
+    const at = await morningAfter({ db: null as never, clock }, reset, { morningAt: "09:00", timeZone: "Asia/Kamchatka" });
+    expect(at.toISOString()).toBe(reset);
+    const moscow = await morningAfter({ db: null as never, clock }, reset, { morningAt: "09:00", timeZone: "Europe/Moscow" });
+    expect(moscow.toISOString()).toBe("2026-10-04T06:00:00.000Z");
+  });
+});

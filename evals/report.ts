@@ -28,6 +28,7 @@ export async function writeScenarioReport(runDir: string, { run, checks, repeat 
     "constructor.json": toJson({ scenario: run.scenario, ...run.building }),
     "lead-magnet.md": renderLeadMagnet(run.settings, run.publishError),
     "lead-magnet.json": toJson(run.settings),
+    ...(run.corrections && { "lead-magnet-before.md": renderLeadMagnet(run.corrections.before, null) }),
     "checks.md": renderChecks(run, checks, stats),
     "checks.json": toJson({
       scenario: run.scenario.id,

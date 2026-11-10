@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseAgentInput } from "@/modules/lead-magnet-cli/agent-settings";
 import { leadMagnetInput, loadScenarios, loadScenarioSet, parseScenario } from "./scenario";
 
 const VALID = `---
@@ -192,6 +193,121 @@ describe("сценарий из файла лидмагнита (flow)", () => {
   });
 });
 
+const CORRECTIONS = `---
+id: corrections-short
+kind: corrections
+set: growth
+title: Короче ответы
+expertReplies: 8
+clientReplies: 10
+consent: agree
+leadMagnet: evals/lead-magnets/psychologist.json
+---
+
+# Эксперт
+
+Ирина, психолог. Пишет коротко.
+
+## Цель
+
+Чтобы бот отвечал так же коротко, как она поправила. С понятным предложением соглашается.
+
+# Правки
+
+## Правка: про сон
+
+### Разговор
+
+Клиент: Не сплю уже неделю
+Консультант: Как давно это началось?
+Клиент: С переезда.
+Всё никак не привыкну.
+
+### Было
+
+Длинный ответ консультанта.
+
+### Стало
+
+Короткий ответ.
+
+### Почему
+
+Длинное не читают.
+
+## Правка: первое сообщение
+
+Вид: первое сообщение
+
+### Было
+
+Здравствуйте! Я помощник Ирины.
+
+### Стало
+
+Привет! Что беспокоит?
+
+# Клиент: Марина
+
+Марина спрашивает про тревогу.
+`;
+
+describe("parseScenario: разбор правок (corrections)", () => {
+  it("читает правки: кусок разговора, было, стало, почему и вид ответа; согласие эксперта", () => {
+    const scenario = parseScenario(CORRECTIONS, "corrections-short.md");
+    expect(scenario.kind).toBe("corrections");
+    expect(scenario.consent).toBe("agree");
+    expect(scenario.expertReplies).toBe(8);
+    expect(scenario.leadMagnet?.file).toBe("evals/lead-magnets/psychologist.json");
+    expect(scenario.corrections).toEqual([
+      {
+        title: "про сон",
+        answerKind: "reply",
+        context: [
+          { role: "user", text: "Не сплю уже неделю" },
+          { role: "assistant", text: "Как давно это началось?" },
+          { role: "user", text: "С переезда.\nВсё никак не привыкну." },
+        ],
+        originalText: "Длинный ответ консультанта.",
+        correctedText: "Короткий ответ.",
+        reason: "Длинное не читают.",
+      },
+      { title: "первое сообщение", answerKind: "first_message", context: [], originalText: "Здравствуйте! Я помощник Ирины.", correctedText: "Привет! Что беспокоит?", reason: null },
+    ]);
+    expect(scenario.clients).toEqual([{ name: "Марина", card: "Марина спрашивает про тревогу." }]);
+  });
+
+  it("вид ответа — «ответ», «первое сообщение» или «ответ с прощанием», иначе ошибка", () => {
+    expect(parseScenario(CORRECTIONS.replace("Вид: первое сообщение", "Вид: ответ с прощанием"), "corrections-short.md").corrections?.[1]?.answerKind).toBe("farewell");
+    expect(() => parseScenario(CORRECTIONS.replace("Вид: первое сообщение", "Вид: странный"), "corrections-short.md")).toThrow(/corrections-short\.md.*Вид/);
+  });
+
+  it("у правки обязательны «Было» и «Стало», и они разные", () => {
+    expect(() => parseScenario(CORRECTIONS.replace("### Стало\n\nКороткий ответ.", ""), "corrections-short.md")).toThrow(/про сон.*Стало/);
+    expect(() => parseScenario(CORRECTIONS.replace("Короткий ответ.", "Длинный ответ консультанта."), "corrections-short.md")).toThrow(/про сон.*совпад/);
+  });
+
+  it("реплика разговора — «Клиент:» или «Консультант:», иначе ошибка", () => {
+    expect(() => parseScenario(CORRECTIONS.replace("Клиент: Не сплю", "Кто-то: Не сплю"), "corrections-short.md")).toThrow(/про сон.*Разговор/);
+  });
+
+  it("согласие эксперта — agree или refuse; файл лидмагнита, реплики эксперта и хотя бы одна правка обязательны", () => {
+    expect(parseScenario(CORRECTIONS.replace("consent: agree", "consent: refuse"), "corrections-short.md").consent).toBe("refuse");
+    expect(() => parseScenario(CORRECTIONS.replace("consent: agree", "consent: maybe"), "corrections-short.md")).toThrow(/consent/);
+    expect(() => parseScenario(CORRECTIONS.replace("consent: agree\n", ""), "corrections-short.md")).toThrow(/consent/);
+    expect(() => parseScenario(CORRECTIONS.replace("leadMagnet: evals/lead-magnets/psychologist.json\n", ""), "corrections-short.md")).toThrow(/leadMagnet/);
+    expect(() => parseScenario(CORRECTIONS.replace("expertReplies: 8\n", ""), "corrections-short.md")).toThrow(/expertReplies/);
+    const withoutCorrections = CORRECTIONS.slice(0, CORRECTIONS.indexOf("# Правки")) + CORRECTIONS.slice(CORRECTIONS.indexOf("# Клиент"));
+    expect(() => parseScenario(withoutCorrections, "corrections-short.md")).toThrow(/Правки/);
+  });
+
+  it("правки и согласие — только у сценария вида corrections", () => {
+    expect(() => parseScenario(VALID.replace("clientReplies: 10\n", "clientReplies: 10\nconsent: agree\n"), "normal-yoga.md")).toThrow(/consent/);
+    const withCorrections = VALID.replace("# Клиент: Сомневающаяся", `${CORRECTIONS.slice(CORRECTIONS.indexOf("# Правки"), CORRECTIONS.indexOf("# Клиент"))}# Клиент: Сомневающаяся`);
+    expect(() => parseScenario(withCorrections, "normal-yoga.md")).toThrow(/Правки/);
+  });
+});
+
 describe("loadScenarios", () => {
   async function folderWith(files: Record<string, string>): Promise<string> {
     const dir = await mkdtemp(path.join(tmpdir(), "eval-scenarios-"));
@@ -292,9 +408,20 @@ describe("сценарии проекта", () => {
     expect((await loadScenarioSet(evalsDir)).every((scenario) => scenario.set !== "holdout")).toBe(true);
   });
 
-  it.skipIf(!hasHoldout)("отложенных четыре: есть normal, hard и provocateur", async () => {
+  it.skipIf(!hasHoldout)("отложенных пять: есть normal, hard, provocateur и corrections", async () => {
     const holdout = await loadScenarioSet(evalsDir, "holdout");
-    expect(holdout).toHaveLength(4);
-    expect(new Set(holdout.map((scenario) => scenario.kind))).toEqual(new Set(["normal", "hard", "provocateur"]));
+    expect(holdout).toHaveLength(5);
+    expect(new Set(holdout.map((scenario) => scenario.kind))).toEqual(new Set(["normal", "hard", "provocateur", "corrections"]));
+  });
+
+  it("сценарии разбора правок: согласие и отказ, лидмагнит из файла читается как вход агента", async () => {
+    const holdout = hasHoldout ? await loadScenarioSet(evalsDir, "holdout") : [];
+    const all = [...(await loadScenarioSet(evalsDir)), ...holdout].filter((scenario) => scenario.kind === "corrections");
+    expect(all.map((scenario) => scenario.id).sort()).toEqual(["corrections-length", "corrections-refuse", ...(hasHoldout ? ["holdout-corrections-tone"] : [])]);
+    expect(new Set(all.map((scenario) => scenario.consent))).toEqual(new Set(["agree", "refuse"]));
+    for (const scenario of all) {
+      const input = JSON.stringify(await leadMagnetInput(scenario, process.cwd()));
+      expect(() => parseAgentInput(input)).not.toThrow();
+    }
   });
 });

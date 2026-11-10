@@ -8,33 +8,32 @@ html, body { min-height: 100%; background: var(--yk-bg); color: var(--yk-text); 
 body { margin: 0; }
 [hidden] { display: none !important; }
 .app-focus:focus-visible, a:focus-visible { outline: 2px solid var(--yk-accent); outline-offset: 3px; }
-.app-studio { height: 100dvh; }
-/* The canvas owns its working space; ordinary cabinet pages keep Studio padding. */
-.app-studio--board .yk-studio__main { padding: 0; }
-/* На компьютере шапки «Студии» нет: разделы, тема и выход — в меню слева, рабочая область начинается от верха окна. */
-@media (min-width: 701px) {
-  .app-studio { grid-template-rows: minmax(0, 1fr); }
-  .app-studio .yk-studio__header { display: none; }
-  .app-studio .yk-studio__navigation { grid-row: 1; }
-  .app-studio .yk-studio__body { grid-row: 1; padding-top: var(--yk-space-4); }
-  .app-studio--navigation-expanded { --yk-studio-navigation-width: 232px; }
-}
-.app-studio .yk-studio__navigation { align-items: stretch; }
-.app-topbar { display: flex; align-items: center; gap: var(--yk-space-2); min-width: 0; width: 100%; }
-.app-brand { display: flex; align-items: center; gap: var(--yk-space-3); font-weight: 600; color: var(--yk-text); text-decoration: none; }
-.app-sidebar { display: flex; flex: 1; flex-direction: column; justify-content: space-between; gap: var(--yk-space-4); min-height: 0; }
-.app-navigation { display: flex; flex-direction: column; align-items: center; gap: var(--yk-space-2); padding-block: var(--yk-space-3); }
-.app-sidebar-account { padding-top: var(--yk-space-3); border-top: 1px solid var(--yk-border); }
-.app-navigation-link, .app-navigation-item { position: relative; display: flex; align-items: center; justify-content: center; gap: var(--yk-space-3); width: 44px; min-height: 44px; border: 0; border-radius: var(--yk-radius-md); background: none; color: var(--yk-muted); font: inherit; text-decoration: none; cursor: pointer; }
-.app-navigation-item { cursor: default; }
-.app-navigation-link:hover { background: var(--yk-surface-2); color: var(--yk-text); }
-.app-navigation-link[aria-current="page"] { background: var(--yk-accent-soft); color: var(--yk-accent-text); }
-.app-navigation-link:focus-visible { outline: 2px solid var(--yk-accent); outline-offset: 2px; }
-.app-navigation-count { position: absolute; right: 0; top: 0; font: var(--yk-text-label-size) var(--yk-font-mono); color: var(--yk-accent-text); }
-.app-navigation-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--yk-text-small-size); }
-.app-sidebar--expanded .app-navigation { align-items: stretch; }
-.app-sidebar--expanded .app-navigation-link, .app-sidebar--expanded .app-navigation-item { width: 100%; justify-content: flex-start; padding-inline: var(--yk-space-3); }
-.app-sidebar--expanded .app-navigation-count { position: static; margin-left: auto; }
+.app-shell { height: 100dvh; }
+/* Карточка-ссылка: стили карточки дизайн-системы стоят вне слоёв и перебивают утилиты, поэтому наведение и фокус здесь. */
+.app-clickable-card { cursor: pointer; transition: border-color 120ms, box-shadow 120ms; }
+/* Только рамка и тень: заливка слилась бы с кнопкой подключения */
+.app-clickable-card:hover { border-color: var(--yk-border-strong); box-shadow: 0 2px 10px rgb(0 0 0 / 0.08); }
+.app-clickable-card [data-card-link]:focus-visible { outline: none; }
+/* Кнопки карточки поуже: обе подписи влезают в карточку */
+.app-card-action.yk-button { --yk-button-pad-x: 8px; }
+.app-clickable-card:has([data-card-link]:focus-visible) { outline: 2px solid var(--yk-accent); outline-offset: 2px; }
+/* Обычные страницы кабинета — с полями рабочей области, холст доски занимает её целиком. */
+.app-shell .yk-app-shell__content { padding: var(--yk-space-6); overflow: hidden; }
+.app-shell--board .yk-app-shell__content { padding: 0; }
+/* На компьютере шапки нет: название приложения — вверху панели. */
+@media (min-width: 701px) { .app-shell .yk-app-shell__header { display: none; } }
+.app-mobile-brand { display: flex; align-items: center; gap: var(--yk-space-3); min-width: 0; font-weight: 600; color: var(--yk-text); text-decoration: none; }
+/* Знак приложения: на тёмной теме синий светлее, иначе он теряется. */
+.brand-logo { flex: none; color: #1C89BF; }
+:root[data-theme="dark"] .brand-logo { color: #4FB3E8; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .brand-logo { color: #4FB3E8; } }
+.app-mobile-brand > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-account { box-sizing: border-box; display: flex; align-items: center; gap: var(--yk-space-3); width: 100%; min-width: 0; min-height: 48px; padding: var(--yk-space-3); border: 0; border-radius: var(--yk-radius-md); background: transparent; color: var(--yk-muted); font: inherit; font-size: var(--yk-text-small-size); text-align: left; cursor: pointer; }
+.app-account:hover { background: var(--yk-surface-2); }
+.app-account:focus-visible { outline: 2px solid var(--yk-accent); outline-offset: -2px; }
+.app-account > .yk-avatar { flex: none; }
+.app-account-email { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yk-app-shell--collapsed .app-account { width: 48px; justify-content: center; }
 .app-content { height: 100%; min-height: 0; overflow: auto; padding: 0 var(--yk-studio-scrollbar-gap) 0 0; scrollbar-gutter: stable; }
 .app-content:has([data-fill-window]) { display: flex; flex-direction: column; }
 .app-content--board { padding: 0; overflow: hidden; }
@@ -45,8 +44,20 @@ body { margin: 0; }
 .app-saved-message { line-height: 1.8; min-width: 0; }
 .app-saved-message--user { background: var(--yk-surface-2); border-radius: var(--yk-radius-message); padding: var(--yk-space-3) var(--yk-space-4); margin-left: auto; max-width: 85%; }
 @media (max-width: 700px) {
+  .app-shell .yk-app-shell__content { padding: var(--yk-space-4); }
+  .app-shell--board .yk-app-shell__content { padding: 0; }
   .app-content { padding: 0; }
   .app-content--board { padding: 0; }
 }
 
 .app-page-title { font-size: var(--yk-text-title-size); font-weight: var(--yk-text-title-weight); letter-spacing: var(--yk-text-title-tracking); }
+
+/* Полоска перехода между страницами кабинета (NavigationProgress) */
+.app-navigation-progress { position: fixed; top: 0; left: 0; z-index: 1000; width: 100%; height: 3px; pointer-events: none; background: var(--yk-accent); transform-origin: left; animation: app-navigation-progress 8s cubic-bezier(0.1, 0.7, 0.3, 1) forwards; }
+@keyframes app-navigation-progress { from { transform: scaleX(0.05); } to { transform: scaleX(0.9); } }
+@media (prefers-reduced-motion: reduce) { .app-navigation-progress { animation: none; transform: scaleX(0.6); } }
+/* Кнопки в нижней строке поля ввода «Разговора»: не влезают — переносятся строкой ниже, стрелка отправки остаётся справа и ничего не закрывает. */
+.oduvanchik-field-actions:has(> .app-composer-actions) { flex: 1 1 0; }
+.oduvanchik-field-bar:has(.app-composer-actions) { align-items: flex-end; }
+.app-composer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--yk-space-2); min-width: 0; }
+.app-composer-actions > * { flex: none; max-width: 100%; }

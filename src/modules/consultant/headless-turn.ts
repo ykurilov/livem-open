@@ -13,8 +13,10 @@ import {
   type SpendingLimits,
   type StoredMessage,
 } from "@ykurilov/agent-chat-core";
+import type { Attachments } from "@ykurilov/agent-chat-attachments";
 import type { FlowPort } from "@ykurilov/agent-chat-flows";
 import { eq } from "drizzle-orm";
+import type { ClientImage } from "../conversations/client-images";
 import { passages } from "../conversations/schema";
 import { createFlowLog } from "../flows/flow-log";
 import { cacheMissLog } from "./cache-miss-log";
@@ -25,7 +27,8 @@ import { AGENT_TIME_ZONE } from "../platform/models-catalog";
 import { readPreviewConversation, type ConversationStore } from "./preview-store";
 import { leadMagnetImageSource, type ShownImage } from "../images";
 import { leadMagnetVideoSource, type ShownVideoLink } from "../videos";
-import { consultantAgentSettings, liveVersionKey, VersionCache, withLiveMedia } from "./services";
+import { quickRepliesOf } from "./quick-replies";
+import { consultantAgentSettings, liveConsultantVersion, VersionCache, type LiveConsultantVersion } from "./services";
 import { consultantReplyChecks } from "./reply-checks";
 import { mediaSentWith } from "./sent-media";
 import { lastReplyParts, singleReplyStorage } from "./single-reply";
@@ -33,6 +36,7 @@ import { personLinkFromEnv } from "./person-link";
 import { createTurnTails } from "../platform/turn-tails";
 import { consultantStepContext } from "./step-context";
 import { nameUsedRecently, profileNameForTail } from "./profile-name";
+import { PURCHASE_USAGE_SOURCE } from "../purchases/outreach-keys";
 import type { FirstMessageWriter } from "../purchases/reactions";
 
 /** Имя служебного сообщения события приложения для модели и «Лога». */
@@ -46,6 +50,8 @@ export interface HeadlessConsultantOptions {
   registry?: RunningAnswerRegistry;
   /** Куда инструменты пишут состояние разговора. */
   store: ConversationStore;
+  /** Картинки чатов работника: фото клиента. Служба версии получает их, только если лидмагнит их принимает (`clientImages`). */
+  attachments?: Attachments;
   /** Модель консультанта по настройкам снимка. */
   modelChoice(settings: LeadMagnetSettings): ModelChoice;
   /** Лимиты расходов: исчерпан — ход не начинается, `SpendingLimitReachedError`. */
@@ -105,7 +111,7 @@ export class ConsultantTurnFailedError extends Error {
 
   /** Причина для эксперта. Текста ошибки SDK не хранит — только её вид. */
   get reason(): string {
-    if (this.status !== "error" || this.errorKind === undefined) return `ход оборвался (статус: ${this.status})`;
+    if (this.status !== "error" || this.errorKind === undefined) return "ответ оборвался на середине";
     return ERROR_KIND_REASONS[this.errorKind];
   }
 
@@ -126,7 +132,7 @@ export interface HeadlessTurn {
    * Сообщения человека на этот ход по порядку — пачкой SDK: в истории каждое отдельно, модель видит их одним сообщением.
    * Тот же id при повторе — то же сообщение, без второй записи.
    */
-  messages: ReadonlyArray<{ id: string; text: string }>;
+  messages: ReadonlyArray<{ id: string; text: string; image?: ClientImage }>;
   /**
    * Ход приложения, если сообщения уже отмечены прошлым ходом. До SDK 0.54 сообщения хода склеивались в одно сообщение
    * SDK с этим id: повтор такого хода — по нему.
@@ -153,6 +159,8 @@ export interface TurnAnswer {
   video: ShownVideoLink | null;
   /** Картинка к ответу: первая показанная, если её не показывали в разговоре раньше. */
   image: ShownImage | null;
+  /** Готовые ответы человека кнопками под ответом (`suggest_replies`); нет — пусто. */
+  quickReplies?: string[];
   /**
    * Сценарий записал сообщение без хода (ворота хода SDK): после жёсткой рамки дня — до утра, на паузе сотрудника,
    * после конца разговора. Ответа нет, человеку ничего не уходит.
@@ -285,8 +293,8 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
     abandonedBursts,
   });
 
-  const serviceFor = (snapshotId: string, settings: LeadMagnetSettings) =>
-    services.get(liveVersionKey(snapshotId, settings), async () => {
+  const serviceFor = ({ key, settings, knowledge }: LiveConsultantVersion) =>
+    services.get(key, async () => {
       const service = createChatService(
         options.flow.withChat({
           abandonedBursts,
@@ -297,10 +305,12 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
             options.onLogLine?.(line);
             void logError(line);
           },
-          replyChecks: consultantReplyChecks({ db: options.db, settings }),
+          replyChecks: consultantReplyChecks({ db: options.db, settings, knowledge }),
           catalog: options.catalog,
           ...(options.registry && { registry: options.registry }),
           ...(options.limits && { limits: options.limits }),
+          // Фото клиента — как в «Проверке»: только если лидмагнит их принимает, иначе и запрос, и инструкция прежние
+          ...(options.attachments && settings.clientImages && { attachments: options.attachments }),
           defaultChoice: options.modelChoice(settings),
           ...(options.env && { env: options.env }),
           ...(options.now && { now: options.now }),
@@ -312,6 +322,7 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
             personLink,
             stepContext,
             dayOf,
+            knowledge,
           }),
         }),
       );
@@ -326,12 +337,12 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
     if (passage) {
       const snapshot = await getVersion(options.db, passage.snapshotId);
       if (!snapshot) throw new Error(`Снимок ${passage.snapshotId} не найден`);
-      return serviceFor(passage.snapshotId, await withLiveMedia(options.db, snapshot.settings));
+      return serviceFor(await liveConsultantVersion(options.db, passage.snapshotId, snapshot.settings));
     }
     const preview = await readPreviewConversation(options.db, chatId);
     const lead = preview && (await getLeadMagnet(options.db, preview.leadMagnetId));
     if (!lead) throw new Error(`Чат ${chatId} — не разговор лидмагнита`);
-    return serviceFor(lead.draftVersionId, await withLiveMedia(options.db, lead.draft));
+    return serviceFor(await liveConsultantVersion(options.db, lead.draftVersionId, lead.draft));
   }
 
   /**
@@ -376,7 +387,7 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
         const { turn: started } = await service.sendBurstMessage(
           turn.ownerId,
           turn.chatId,
-          { id: message.id, role: "user", parts: [{ type: "text", text: message.text }] },
+          { id: message.id, role: "user", parts: messageParts(message) },
           // Упадёт работник посреди окна — пачку запомнит хранилище, ответит обход нового работника
           { page, quietMs: BURST_QUIET_MS, answerAfterRestart: true },
         );
@@ -445,7 +456,7 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
     },
 
     async runTurn(turn) {
-      const service = await serviceFor(turn.snapshotId, await withLiveMedia(options.db, turn.settings));
+      const service = await serviceFor(await liveConsultantVersion(options.db, turn.snapshotId, turn.settings));
       const page = pageOf(turn);
       // Ход, начатый до SDK 0.54 одним склеенным сообщением, повторяется по нему: иначе слова человека легли бы в историю дважды
       if (turn.messages.length === 0) throw new Error("Ход без сообщений человека с текстом");
@@ -453,6 +464,11 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
       const question = legacy?.role === "user" ? turn.turnId! : turn.messages.at(-1)!.id;
 
       try {
+        // Повтор хода, ответ на который уже готов (не дошла доставка): пачку не пишем заново — сценарий мог закончиться
+        if (turn.turnId && legacy?.role !== "user") {
+          const ready = await answerTo(turn.chatId, question);
+          if (ready?.status === "complete") return answerOf(chatStorage, ready);
+        }
         if (legacy?.role !== "user") {
           const started = await sendBurst(service, turn, page);
           if (started.length > 0) {
@@ -526,7 +542,8 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
         wakeAgent: true,
         awaitAnswer: true,
         deliveryKey,
-        usageSource: "first_message",
+        // Пишет первым по покупке (поздравление, напоминание об оплате), не касание программы — своя строка расхода
+        usageSource: PURCHASE_USAGE_SOURCE,
         ...(timeZone && { timeZone }),
       });
       if (result.status === "busy") return { kind: "busy" };
@@ -549,6 +566,15 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
   };
 }
 
+/** Сообщение человека для SDK: текст и фото клиента частью `file` (картинка — часть сообщения, начало запроса не меняется). */
+function messageParts(message: HeadlessTurn["messages"][number]) {
+  const image = message.image;
+  return [
+    ...(message.text ? [{ type: "text", text: message.text }] : []),
+    ...(image ? [{ type: "file", url: `attachment:${image.attachmentId}`, mediaType: image.mediaType, filename: image.filename }] : []),
+  ];
+}
+
 /** Служба записала сообщение без хода — часть `data-turn-held` в потоке (ворота хода сценария). */
 const TURN_HELD_PART = "data-turn-held";
 
@@ -562,6 +588,7 @@ async function answerOf(chatStorage: ChatStorage, message: StoredMessage): Promi
       .flatMap((part) => (part.type === "text" ? [part.text.trim()] : []))
       .filter(Boolean)
       .join("\n\n"),
+    quickReplies: quickRepliesOf(parts),
     ...(await mediaSentWith(chatStorage, message.chatId, message.id, parts)),
   };
 }

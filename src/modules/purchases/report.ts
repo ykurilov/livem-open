@@ -11,7 +11,7 @@ export interface PurchaseReport {
   ordered: number;
   /** Сколько оплатили и не вернули. */
   paid: number;
-  /** Сколько вернули оплаченный заказ. */
+  /** Сколько вернули оплаченный заказ и не оставили ни одной оплаты без возврата: у кого она осталась — в `paid`. */
   refunded: number;
   /** Сумма оплат без возвратов — отдельно по каждой валюте (разные валюты не складываются). */
   paidByCurrency: Array<{ currency: string; amount: number }>;
@@ -30,8 +30,9 @@ export async function purchaseReport(db: DatabaseExecutor, leadMagnetId: string)
     .select({
       ordered: sql<number>`count(distinct ${productOrders.passageId})`.mapWith(Number),
       paid: sql<number>`count(distinct ${productOrders.passageId}) filter (where ${kept})`.mapWith(Number),
-      // Возврат — только оплаченного: отмена до оплаты тоже ставит `refunded_at`, но это не «вернули»
-      refunded: sql<number>`count(distinct ${productOrders.passageId}) filter (where ${productOrders.paidAt} is not null and ${productOrders.refundedAt} is not null)`.mapWith(Number),
+      // Возврат — только оплаченного: отмена до оплаты тоже ставит `refunded_at`, но это не «вернули».
+      // У кого осталась оплата без возврата — тот «оплатили», а не «вернули»
+      refunded: sql<number>`count(distinct ${productOrders.passageId}) filter (where ${productOrders.paidAt} is not null and ${productOrders.refundedAt} is not null and not exists (select 1 from ${productOrders} as still_paid where still_paid.passage_id = ${productOrders.passageId} and still_paid.paid_at is not null and still_paid.refunded_at is null))`.mapWith(Number),
     })
     .from(productOrders)
     .innerJoin(passages, eq(passages.id, productOrders.passageId))

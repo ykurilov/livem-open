@@ -165,6 +165,28 @@ describe("подключение бота", () => {
     expect(JSON.stringify(await adapter.checkConnection(bot))).not.toContain(bot.token);
   });
 
+  it("checkConnection с нашим адресом: подписка на месте — всё хорошо", async () => {
+    api.replyOnce("GET /subscriptions", {
+      status: 200,
+      body: { subscriptions: [{ url: WEBHOOK_URL, time: 1, update_types: ["message_created"], version: "0.0.1" }] },
+    });
+    expect(await adapter.checkConnection(bot, WEBHOOK_URL)).toEqual({ ok: true });
+  });
+
+  it("checkConnection с нашим адресом: подписку сняли или заменили чужой — приём занят (taken_over), как у Telegram", async () => {
+    api.replyOnce("GET /subscriptions", {
+      status: 200,
+      body: { subscriptions: [{ url: "https://other.test/api/webhooks/max/bot-1", time: 1, update_types: ["message_created"], version: "0.0.1" }] },
+    });
+    expect(await adapter.checkConnection(bot, WEBHOOK_URL)).toMatchObject({ ok: false, kind: "taken_over" });
+    expect(await adapter.checkConnection(bot, WEBHOOK_URL)).toMatchObject({ ok: false, kind: "taken_over" });
+  });
+
+  it("checkConnection с нашим адресом: Max не ответил про подписки — временный сбой", async () => {
+    api.replyOnce("GET /subscriptions", maxError(500, "internal.error", "Internal error"));
+    expect(await adapter.checkConnection(bot, WEBHOOK_URL)).toMatchObject({ ok: false, kind: "temporary" });
+  });
+
   it("checkConnection: зависший запрос (таймаут) — временный сбой, а не исключение", async () => {
     const hanging = createMaxAdapter({
       requestTimeoutMs: 20,
@@ -362,6 +384,23 @@ describe("отправка", () => {
         },
       },
     ]);
+  });
+
+  it("готовые ответы: кнопки «сообщение» под последней частью, по одной в ряду; нажатие отправит их текст", async () => {
+    await send("Ответ", { followUps: ["Пока!"], quickReplies: ["Да", "Пока нет"] });
+    const [first, last] = api.callsTo("POST /messages");
+    expect(first?.body).not.toHaveProperty("attachments");
+    expect((last?.body as { attachments: unknown[] }).attachments).toEqual([
+      {
+        type: "inline_keyboard",
+        payload: { buttons: [[{ type: "message", text: "Да" }], [{ type: "message", text: "Пока нет" }]] },
+      },
+    ]);
+  });
+
+  it("пустой список готовых ответов — без клавиатуры", async () => {
+    await send("Ответ", { quickReplies: [] });
+    expect(api.callsTo("POST /messages")[0]?.body).not.toHaveProperty("attachments");
   });
 
   it("данные кнопки длиннее 1024 знаков — постоянная ошибка без запроса к Max", async () => {
@@ -655,5 +694,38 @@ describe("кнопки и ссылка входа", () => {
   it("kind и скорость отправки", () => {
     expect(adapter.kind).toBe("max");
     expect(adapter.ratePerSecond).toBeGreaterThan(0);
+  });
+});
+
+describe("фото клиента", () => {
+  it("фото — ссылка на картинку из вложения", async () => {
+    expect(await eventsOf(updates.photoWithCaption)).toEqual([expect.objectContaining({ attachment: "image", imageRef: "https://i.max.test/1.jpg" })]);
+  });
+
+  it("файл, голосовое, стикер — без ссылки на фото", async () => {
+    for (const update of [updates.fileMessage, updates.voiceMessage, updates.stickerMessage]) {
+      const [event] = await eventsOf(update);
+      expect(event).not.toHaveProperty("imageRef");
+    }
+  });
+
+  it("скачивание — по ссылке тем же клиентом, что у адаптера; сбой — итог без исключения", async () => {
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 9]);
+    const asked: string[] = [];
+    const downloading = createMaxAdapter({
+      apiBaseUrl: API_BASE,
+      fetch: async (input, init) => {
+        const url = input instanceof Request ? input.url : input.toString();
+        if (!url.startsWith("https://i.max.test/")) return api.fetch(input, init);
+        asked.push(url);
+        return url.endsWith("/1.jpg") ? new Response(bytes, { headers: { "content-type": "image/jpeg" } }) : new Response("", { status: 404 });
+      },
+    });
+    expect(await downloading.downloadImage!(bot, "https://i.max.test/1.jpg")).toEqual({
+      ok: true,
+      image: { bytes, filename: "1.jpg", contentType: "image/jpeg" },
+    });
+    expect(await downloading.downloadImage!(bot, "https://i.max.test/gone.jpg")).toMatchObject({ ok: false, reason: "permanent" });
+    expect(asked).toEqual(["https://i.max.test/1.jpg", "https://i.max.test/gone.jpg"]);
   });
 });

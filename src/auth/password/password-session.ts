@@ -1,5 +1,5 @@
-import { SESSION_MAX_AGE } from '../cookies.js';
-import type { SessionData } from '../core/session-data.js';
+import { SESSION_MAX_AGE } from '../cookies';
+import type { SessionData } from '../core/session-data';
 
 // Учётная запись для входа по паролю. Хранит её приложение (в своей базе) и передаёт модулю
 // через AccountStore — сам модуль базу не знает.

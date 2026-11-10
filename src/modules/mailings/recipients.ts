@@ -43,6 +43,7 @@ export async function fixRecipients(db: DatabaseExecutor, mailingId: string, fil
           outboundMessageId: sql<string | null>`null::uuid`.as("outbound_message_id"),
           error: sql<string | null>`null::text`.as("error"),
           botDownSince: sql<Date | null>`null::timestamptz`.as("bot_down_since"),
+          skipReason: sql<string | null>`null::text`.as("skip_reason"),
         })
         .from(people)
         .where(recipientCondition(filter)),

@@ -3,7 +3,7 @@ import { timeLabel } from "@ykurilov/agent-chat-videos";
 import { requireUser } from "@/modules/access";
 import { getDatabase } from "@/modules/platform/db";
 import { listVideos, type Video } from "@/modules/videos";
-import { DataTable, PageHeader, type DataTableColumn } from "@/ui";
+import { DataTable, KNOWLEDGE_TABS, PageHeader, SectionTabs, type DataTableColumn } from "@/ui";
 import { AddVideoButton, VideoActions } from "./video-dialogs";
 
 export const dynamic = "force-dynamic";
@@ -39,10 +39,7 @@ export default async function Page() {
   const videos = await listVideos(getDatabase().db);
   return (
     <>
-      <PageHeader
-        title="Видео"
-        action={<AddVideoButton />}
-      />
+      <PageHeader title="База знаний" action={<AddVideoButton />} tabs={<SectionTabs label="Разделы «Базы знаний»" tabs={KNOWLEDGE_TABS} />} />
       <DataTable columns={columns} rows={videos} rowKey={(video) => video.id} empty={{ icon: Clapperboard, title: "Роликов пока нет", hint: "Нажмите «Добавить ролик»." }} />
     </>
   );

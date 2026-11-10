@@ -10,6 +10,7 @@ import type {
   SendResult,
   WebhookRequest,
 } from "../channel";
+import type { ImageLoadResult, LoadedImage } from "../image-source";
 
 export const FAKE_SECRET_HEADER = "x-fake-secret";
 
@@ -38,6 +39,9 @@ export class FakeChannel implements ChannelAdapter {
   /** Что `findConflict` получил при каждой проверке: токен и наш адрес (`null` — бот ещё не заведён). */
   readonly conflictChecks: Array<{ token: string; ownWebhookUrl: string | null }> = [];
   readonly answeredButtons: string[] = [];
+  /** Какие фото клиента скачивал работник: ссылки по порядку. */
+  readonly imageDownloads: string[] = [];
+  private readonly images = new Map<string, LoadedImage | Exclude<ImageLoadResult, { ok: true }>>();
 
   private readonly blockedUsers = new Set<string>();
   private readonly queuedFailures: Array<Exclude<SendResult, { ok: true }>> = [];
@@ -74,6 +78,11 @@ export class FakeChannel implements ChannelAdapter {
   /** Бот «занят другим сервисом»: `findConflict` вернёт это предупреждение, пока не передать `null`. Токены `fake-busy-…` заняты всегда. */
   occupy(warning: string | null): void {
     this.occupiedBy = warning;
+  }
+
+  /** Фото клиента по ссылке `imageRef`: картинка или сбой скачивания. Неизвестная ссылка — постоянный сбой. */
+  serveImage(ref: string, image: LoadedImage | Exclude<ImageLoadResult, { ok: true }>): void {
+    this.images.set(ref, image);
   }
 
   /** Запрос вебхука с событиями; одинаковые `dedupeKey` в двух запросах — это повтор. */
@@ -135,6 +144,13 @@ export class FakeChannel implements ChannelAdapter {
       this.sent.push({ botId: bot.id, to, message: parts[index]!, externalMessageId: result.externalMessageId });
     }
     return result;
+  }
+
+  async downloadImage(_bot: BotCredentials, ref: string): Promise<ImageLoadResult> {
+    this.imageDownloads.push(ref);
+    const image = this.images.get(ref);
+    if (!image) return { ok: false, reason: "permanent", error: `Нет фото ${ref}` };
+    return "ok" in image ? image : { ok: true, image };
   }
 
   async answerButton(_bot: BotCredentials, callbackId: string): Promise<void> {

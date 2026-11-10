@@ -1,3 +1,4 @@
+import { PgBoss } from "pg-boss";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../../../tests/integration/db-helper";
 import { createQueue, type AppQueue } from "./queue";
@@ -59,5 +60,41 @@ describe("очередь задач", () => {
     await done;
     await new Promise((resolve) => setTimeout(resolve, 1500));
     expect(seen).toEqual(["p-1"]);
+  });
+});
+
+describe("цепочка ответа человеку", () => {
+  let own: TestDatabase;
+  let worker: AppQueue;
+  let web: AppQueue;
+
+  beforeAll(async () => {
+    own = await createTestDatabase({ migrate: false });
+    // Очередь из прежней версии, без уведомлений: обновление должно их включить
+    const old = new PgBoss({ connectionString: own.url, schema: "pgboss", supervise: false, schedule: false });
+    await old.start();
+    await old.createQueue("inbound-route");
+    await old.stop({ graceful: false });
+    // Опрос реже, чем ждёт тест: задача дойдёт, только если работника разбудит уведомление
+    worker = createQueue({ connectionString: own.url, role: "worker", pollingIntervalSeconds: 20 });
+    web = createQueue({ connectionString: own.url, role: "web" });
+    await worker.start();
+    await web.start();
+  });
+
+  afterAll(async () => {
+    await web.stop();
+    await worker.stop();
+    await own.drop();
+  });
+
+  it("задача из веба доходит до работника сразу, не дожидаясь опроса", async () => {
+    let deliver: (payload: { inboundMessageId: string }) => void = () => {};
+    await worker.work("inbound-route", async (payload) => deliver(payload));
+    // Первый, пустой забор работника проходит сразу при подключении; ждём, пока он закончится
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const received = waitFor<{ inboundMessageId: string }>((resolve) => (deliver = resolve), 5000);
+    await web.enqueue("inbound-route", { inboundMessageId: "in-1" });
+    expect(await received).toEqual({ inboundMessageId: "in-1" });
   });
 });

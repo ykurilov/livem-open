@@ -1,6 +1,7 @@
-import { and, asc, eq, isNotNull, isNull, lt, min, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lt, min, or, sql } from "drizzle-orm";
 import type { AlertService } from "../alerts";
 import { bots, enqueueOutbound, outboundMessages, type ChannelAdapters } from "../channels";
+import { passages } from "../conversations/schema";
 import { parsePeopleFilter } from "../people";
 import type { Clock } from "../platform/clock";
 import type { Database } from "../platform/db";
@@ -32,6 +33,7 @@ export const FINISH_CHECK_SECONDS = 15;
 export const BOT_DOWN_GRACE_MS = 15 * 60_000;
 /** Старт или порция опаздывают дольше этого — задача потерялась, а не просто ещё в пути. */
 export const MAILING_STUCK_AFTER_MS = 60_000;
+export const MID_LEAD_MAGNET_SKIP_REASON = "Был посреди лидмагнита — рассылку не отправили, чтобы не мешать разговору";
 
 const preview = (text: string) => (text.length > 40 ? `${text.slice(0, 40)}…` : text);
 
@@ -39,7 +41,12 @@ export function createMailingJobs(deps: MailingJobDependencies): MailingJobs {
   const { db, queue, clock } = deps;
   const after = (seconds: number) => new Date(clock.now().getTime() + seconds * 1000);
   const waitingOf = (mailingId: string) =>
-    and(eq(mailingRecipients.mailingId, mailingId), isNull(mailingRecipients.outboundMessageId), isNull(mailingRecipients.error));
+    and(
+      eq(mailingRecipients.mailingId, mailingId),
+      isNull(mailingRecipients.outboundMessageId),
+      isNull(mailingRecipients.error),
+      isNull(mailingRecipients.skipReason),
+    );
 
   return {
     /**
@@ -58,10 +65,16 @@ export function createMailingJobs(deps: MailingJobDependencies): MailingJobs {
           .update(mailings)
           .set({ status: "sending", recipientCount, startedAt: clock.now(), batchDueAt: clock.now() })
           .where(eq(mailings.id, mailingId));
-        return "batch";
+        return { started: mailing, recipientCount };
       });
-      if (outcome === "batch") await queue.enqueue("mailing-batch", { mailingId });
-      else if (outcome !== "nothing") await queue.enqueue("mailing-start", { mailingId }, { delaySeconds: outcome.waitSeconds });
+      if (outcome === "nothing") return;
+      if ("waitSeconds" in outcome) {
+        await queue.enqueue("mailing-start", { mailingId }, { delaySeconds: outcome.waitSeconds });
+        return;
+      }
+      // Порция и при нуле получателей: она же и закончит рассылку
+      await queue.enqueue("mailing-batch", { mailingId });
+      if (outcome.recipientCount === 0) await alertNobodyFound(outcome.started);
     },
 
     /**
@@ -83,7 +96,8 @@ export function createMailingJobs(deps: MailingJobDependencies): MailingJobs {
           await failBotRecipients(mailing, botId, `Бот${bot ? ` «${bot.title}»` : ""} удалён — сообщение не отправлено`);
           continue;
         }
-        if (!adapter || bot.status !== "ok") {
+        // Приём сообщений бота заняли (taken_over), а токен жив: отправке это не мешает
+        if (!adapter || (bot.status !== "ok" && bot.failureKind !== "taken_over")) {
           await waitForBot(mailing, botId, bot.title);
           continue;
         }
@@ -93,12 +107,28 @@ export function createMailingJobs(deps: MailingJobDependencies): MailingJobs {
           .set({ botDownSince: null })
           .where(and(waiting, eq(mailingRecipients.botId, botId), isNotNull(mailingRecipients.botDownSince)));
         const rate = adapter.ratePerSecond;
-        const portion = await db
+        // Получатели зафиксированы при старте, а до своей порции человек мог начать лидмагнит: посреди разговора рассылка не приходит
+        const candidates = await db
           .select({ personId: mailingRecipients.personId })
           .from(mailingRecipients)
           .where(and(waiting, eq(mailingRecipients.botId, botId)))
           .orderBy(asc(mailingRecipients.personId))
           .limit(Math.max(1, Math.floor(rate * BATCH_SECONDS)));
+        const busy =
+          candidates.length === 0
+            ? []
+            : await db
+                .selectDistinct({ personId: passages.personId })
+                .from(passages)
+                .where(and(inArray(passages.personId, candidates.map((candidate) => candidate.personId)), eq(passages.status, "active")));
+        const skipped = busy.map((row) => row.personId);
+        if (skipped.length > 0) {
+          await db
+            .update(mailingRecipients)
+            .set({ skipReason: MID_LEAD_MAGNET_SKIP_REASON })
+            .where(and(eq(mailingRecipients.mailingId, mailingId), inArray(mailingRecipients.personId, skipped)));
+        }
+        const portion = candidates.filter((candidate) => !skipped.includes(candidate.personId));
         for (const [index, { personId }] of portion.entries()) {
           const { id } = await enqueueOutbound(deps, {
             botId,
@@ -119,15 +149,19 @@ export function createMailingJobs(deps: MailingJobDependencies): MailingJobs {
 
       const [left] = await db.select({ count: sql<number>`count(*)::int` }).from(mailingRecipients).where(waiting);
       if ((left?.count ?? 0) > 0) return scheduleBatch(mailingId, BATCH_SECONDS);
+      const awaitingBot = await settleAwaitingBot(mailing);
+      // В пути и сообщения, чей итог записан, а последствия ещё нет: сообщение может оказаться ждущим починки бота
       const [inFlight] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(outboundMessages)
-        .where(and(eq(outboundMessages.mailingId, mailingId), eq(outboundMessages.status, "queued")));
-      if ((inFlight?.count ?? 0) > 0) return scheduleBatch(mailingId, FINISH_CHECK_SECONDS);
-      await db
+        .where(and(eq(outboundMessages.mailingId, mailingId), or(eq(outboundMessages.status, "queued"), eq(outboundMessages.outcomePending, true))));
+      if ((inFlight?.count ?? 0) + awaitingBot > 0) return scheduleBatch(mailingId, FINISH_CHECK_SECONDS);
+      const finished = await db
         .update(mailings)
         .set({ status: "done", finishedAt: clock.now(), batchDueAt: null })
-        .where(and(eq(mailings.id, mailingId), eq(mailings.status, "sending")));
+        .where(and(eq(mailings.id, mailingId), eq(mailings.status, "sending")))
+        .returning({ id: mailings.id });
+      if (finished.length > 0) await alertAllSkipped(mailing);
     },
 
     async sweep() {
@@ -145,6 +179,38 @@ export function createMailingJobs(deps: MailingJobDependencies): MailingJobs {
       return lostBatches.length + lostStarts.length;
     },
   };
+
+  /**
+   * При старте под условие «Кому» никто не подошёл: после планирования удалили поле или бота из условия, люди ушли.
+   * Рассылка закончится «отправлена» никому — эксперт должен узнать об этом сразу, а не от тишины.
+   */
+  async function alertNobodyFound(mailing: typeof mailings.$inferSelect): Promise<void> {
+    await deps.alerts.raise(
+      "delivery_failed",
+      `Рассылка «${preview(mailing.text)}» никому не ушла: при запуске под условие «Кому» не подошёл ни один человек. Возможно, после планирования удалили поле или бота из условия. Проверьте условие и создайте рассылку заново.`,
+      `mailing:${mailing.id}:empty`,
+    );
+  }
+
+  /**
+   * Получатели были, но все к своей порции оказались посреди лидмагнита: рассылка «Готово», а не ушла никому.
+   * Если не дошло кому-то из-за бота, о боте уже есть своя тревога (удалённого бота эксперт удалил сам).
+   */
+  async function alertAllSkipped(mailing: typeof mailings.$inferSelect): Promise<void> {
+    const [counts] = await db
+      .select({
+        total: sql<number>`count(*)::int`,
+        skipped: sql<number>`(count(*) filter (where ${mailingRecipients.skipReason} is not null))::int`,
+      })
+      .from(mailingRecipients)
+      .where(eq(mailingRecipients.mailingId, mailing.id));
+    if (!counts || counts.total === 0 || counts.skipped < counts.total) return;
+    await deps.alerts.raise(
+      "delivery_failed",
+      `Рассылка «${preview(mailing.text)}» никому не ушла: все ${counts.total} чел. к отправке были посреди лидмагнита, и рассылка не стала мешать разговору. Если она ещё нужна, отправьте её заново позже.`,
+      `mailing:${mailing.id}:all-skipped`,
+    );
+  }
 
   /** Берёт порцию в работу, если её срок пришёл. Сразу отодвигает срок: дубль, пришедший следом, ничего не сделает. */
   async function claimBatch(mailingId: string): Promise<typeof mailings.$inferSelect | null> {
@@ -179,6 +245,45 @@ export function createMailingJobs(deps: MailingJobDependencies): MailingJobs {
   }
 
   /**
+   * Сообщения рассылки, не ушедшие из-за бота, ждут его починки или возврата связи (их повторит проверка ботов).
+   * Не дождались за `BOT_DOWN_GRACE_MS` — «не доставлено» и тревога эксперту, как у ещё не отправленных: повтора больше нет,
+   * готовая рассылка задним числом не дойдёт. Возвращает, сколько ещё ждут.
+   */
+  async function settleAwaitingBot(mailing: typeof mailings.$inferSelect): Promise<number> {
+    const awaiting = and(eq(outboundMessages.mailingId, mailing.id), eq(outboundMessages.status, "failed"), eq(outboundMessages.awaitsBotRepair, true));
+    // Срок попытки ждущего сообщения — время его сбоя: отправка ставит его вместе с итогом
+    const waitedTooLong = lt(outboundMessages.nextAttemptAt, new Date(clock.now().getTime() - BOT_DOWN_GRACE_MS));
+    const givenUp = await db.transaction(async (tx) => {
+      const messages = await tx
+        .update(outboundMessages)
+        .set({ awaitsBotRepair: false })
+        .where(and(awaiting, waitedTooLong))
+        .returning({ id: outboundMessages.id, botId: outboundMessages.botId });
+      const result: Array<{ botId: string; botTitle: string; count: number }> = [];
+      for (const botId of new Set(messages.map((message) => message.botId))) {
+        const ids = messages.filter((message) => message.botId === botId).map((message) => message.id);
+        const [bot] = await tx.select({ title: bots.title }).from(bots).where(eq(bots.id, botId));
+        const botTitle = bot?.title ?? "";
+        await tx
+          .update(mailingRecipients)
+          .set({ error: `Бот «${botTitle}» не работал дольше ${BOT_DOWN_GRACE_MS / 60_000} минут — сообщение не отправлено` })
+          .where(and(eq(mailingRecipients.mailingId, mailing.id), inArray(mailingRecipients.outboundMessageId, ids)));
+        result.push({ botId, botTitle, count: ids.length });
+      }
+      return result;
+    });
+    for (const { botId, botTitle, count } of givenUp) {
+      await deps.alerts.raise(
+        "delivery_failed",
+        `Рассылка «${preview(mailing.text)}»: бот «${botTitle}» не работал дольше ${BOT_DOWN_GRACE_MS / 60_000} минут, ${count} чел. не получили сообщение. Проверьте бота: «Настройки» → «Боты».`,
+        `mailing:${mailing.id}:${botId}:waited`,
+      );
+    }
+    const [left] = await db.select({ count: sql<number>`count(*)::int` }).from(outboundMessages).where(awaiting);
+    return left?.count ?? 0;
+  }
+
+  /**
    * Бот отключён или удалён: его получатели помечаются недоставленными.
    * Тревога — только про отключённый (T097): удалил эксперт сам, ему это известно.
    */
@@ -192,13 +297,14 @@ export function createMailingJobs(deps: MailingJobDependencies): MailingJobs {
           eq(mailingRecipients.botId, botId),
           isNull(mailingRecipients.outboundMessageId),
           isNull(mailingRecipients.error),
+          isNull(mailingRecipients.skipReason),
         ),
       )
       .returning({ personId: mailingRecipients.personId });
     if (failed.length === 0 || disabledBotTitle === undefined) return;
     await deps.alerts.raise(
       "delivery_failed",
-      `Рассылка «${preview(mailing.text)}»: бот «${disabledBotTitle}» отключён, ${failed.length} чел. не получат сообщение. Подключите бота заново на странице «Боты».`,
+      `Рассылка «${preview(mailing.text)}»: бот «${disabledBotTitle}» отключён, ${failed.length} чел. не получат сообщение. Подключите бота заново: «Настройки» → «Боты».`,
       `mailing:${mailing.id}:${botId}`,
     );
   }

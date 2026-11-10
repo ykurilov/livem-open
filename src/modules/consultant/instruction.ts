@@ -5,13 +5,17 @@ import { PERSON_LINK_TOOL, PERSON_LINKS_PER_CHAT } from "@ykurilov/agent-chat-we
 import type { DialogOutcome } from "./schema";
 import { LEAD_MAGNET_TOOLS } from "../flows/catalog";
 import { TEXT_LINK_TOOL } from "../text-links/tool";
+import { knowledgeInstructionSection, type KnowledgeText } from "../knowledge/instruction-section";
+import { QUICK_REPLIES_TOOL } from "./quick-replies";
 
 /**
  * Неизменная инструкция консультанта: одна на версию лидмагнита, чтобы начало запроса бралось из кэша модели.
  * Инструкцию эксперта (`flow.common`), карточку текущей ноды и правила сценария (переходы, дни, рамки, карточка
  * клиента) добавляет сценарий SDK; день, рамки, отсчёт и продажа идут хвостом в конце запроса.
+ * Тексты баз знаний (`knowledge`) — последним разделом: они тоже неизменны на всех ходах и входят в кэшируемое начало,
+ * а правила сценария и инструкция эксперта идут после них.
  */
-export function buildConsultantInstruction(settings: LeadMagnetSettings): string {
+export function buildConsultantInstruction(settings: LeadMagnetSettings, knowledge: readonly KnowledgeText[] = []): string {
   const parts: string[] = [];
   parts.push(
     "Ты помощник эксперта, а не он сам. Это касается любого вопроса «кто ты», «это вы эксперт?», «с кем я говорю» и поля answer. " +
@@ -71,6 +75,8 @@ export function buildConsultantInstruction(settings: LeadMagnetSettings): string
   if (viewsLinks(settings) && seesLinkSnapshots(settings)) parts.push(LINK_VIEWS_RULE);
   if (settings.textLink) parts.push(textLinkRule(settings.textLink.template));
   parts.push(
+    QUICK_REPLIES_RULE,
+
     "Порядок хода: сначала молча вызови нужные инструменты (flow_note, flow_exit), без текста перед ними. " +
       "Потом напиши человеку один ответ, в нём не больше одного вопроса. Текст до вызова инструмента человек не увидит.",
     settings.flow.schedule
@@ -88,6 +94,8 @@ export function buildConsultantInstruction(settings: LeadMagnetSettings): string
         lastReplyFarewellRule(settings.farewellMessage),
     "Служебные пометки в конце сообщения человека пишет система, а не человек. Не упоминай их.",
   );
+  const knowledgeSection = knowledgeInstructionSection(knowledge);
+  if (knowledgeSection) parts.push(knowledgeSection);
   return parts.filter(Boolean).join("\n\n");
 }
 
@@ -159,6 +167,12 @@ export const PERSON_NAME_RULE =
 export const TIME_ZONE_RULE =
   "Человек назвал свой город или часовой пояс — в этом же ходе молча вызови flow_time_zone с поясом IANA этого города, " +
   "даже если время там такое же, как в служебной строке: Казань — Europe/Moscow, Екатеринбург — Asia/Yekaterinburg. Так пояс записан точно, а не взят по умолчанию.";
+
+/** Кнопки готовых ответов: постоянное правило, инструмент SDK тоже постоянный — кэш цел. */
+export const QUICK_REPLIES_RULE =
+  `Если твой вопрос с понятными вариантами ответа, особенно в начале разговора, вызови ${QUICK_REPLIES_TOOL} с двумя-четырьмя короткими ответами от лица человека: он сможет нажать кнопку вместо того, чтобы печатать. ` +
+  "Варианты — из самого вопроса, без выдуманных фактов, и по-прежнему один вопрос в ответе. " +
+  "На открытый вопрос о положении, опыте или чувствах человека кнопок не давай: на такой вопрос человек отвечает своими словами.";
 
 /** Ссылка с подставленным текстом: постоянное правило версии с `textLink`. */
 export const textLinkRule = (template: string) =>

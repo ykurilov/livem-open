@@ -2,7 +2,7 @@
 import { useSyncExternalStore } from "react";
 import { Select as DesignSelect } from "@ykurilov/ds-react";
 export interface SelectOption { value: string; label: string; }
-export interface SelectProps { options: SelectOption[]; value?: string; onValueChange?(value: string): void; placeholder?: string; "aria-label"?: string; disabled?: boolean; className?: string; }
+export interface SelectProps { options: SelectOption[]; value?: string; onValueChange?(value: string): void; placeholder?: string; "aria-label"?: string; disabled?: boolean; className?: string; error?: string; }
 const subscribe = () => () => {};
 export function Select({ options, value, onValueChange, placeholder, disabled, ...rest }: SelectProps) {
   // This controlled picker needs its onChange handler; do not accept edits before hydration.

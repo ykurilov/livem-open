@@ -30,8 +30,11 @@ test('first-app: четыре задачи и два окончания в на�
     expect(canvasBox.y).toBeLessThan(185);
     await board.locator('.react-flow__node[data-id="idea"]').click();
     const reminderDays = board.getByRole('combobox', { name: 'Когда действуют напоминания этапа', exact: true });
-    if (!(await reminderDays.count())) await board.getByText('Дополнительно', { exact: true }).click();
-    await reminderDays.scrollIntoViewIfNeeded();
+    // Панель этапа перерисовывается при открытии: повторяем, пока поле не станет устойчивым
+    await expect(async () => {
+      if (!(await reminderDays.count())) await board.getByText('Дополнительно', { exact: true }).click({ timeout: 3000 });
+      await reminderDays.scrollIntoViewIfNeeded({ timeout: 3000 });
+    }).toPass({ timeout: 30_000 });
     await expect(reminderDays).toHaveValue('untilProgramDay');
     await expect(reminderDays.locator('option:checked')).toHaveText('до дня воронки включительно');
     await expect(board.getByText(/Дни воронки считаются от начала участия человека/)).toBeVisible();

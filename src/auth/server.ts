@@ -1,9 +1,9 @@
-import { authMode } from './core/auth-mode.js';
-import { requireCookieSecret, resolveEnv, type LoadConfigOptions } from './core/config.js';
-import { unseal } from './core/cookie-seal.js';
-import { isSessionAlive } from './password/password-session.js';
-import { parseCookies, SESSION_COOKIE } from './cookies.js';
-import type { SessionData, SessionUser } from './core/session-data.js';
+import { authMode } from './core/auth-mode';
+import { requireCookieSecret, resolveEnv, type LoadConfigOptions } from './core/config';
+import { unseal } from './core/cookie-seal';
+import { isSessionAlive } from './password/password-session';
+import { parseCookies, SESSION_COOKIE } from './cookies';
+import type { SessionData, SessionUser } from './core/session-data';
 
 // Для серверных компонентов: только читаем cookie (middleware держит её свежей).
 // Ставить cookie в серверных компонентах Next.js нельзя — поэтому здесь без refresh.

@@ -143,13 +143,21 @@ export async function recordOrderNotice(deps: OrderDependencies, source: Product
     if (!before) throw new Error(`Заказ ${notice.externalOrderId} пропал сразу после записи`);
 
     const match = before.passageId ? null : await passageFor(tx, withStored(notice, before));
-    // Пустые поля нового уведомления прежних значений не стирают: процесс «оплачен» может прислать меньше,
-    // опоздавшее «создан» не откатывает статус оплаченного заказа, а после возврата статус меняет только возврат.
-    // Заказ «Проверки» тестовым и остаётся
-    const statusKept = (before.refundedAt === null || notice.kind === "refunded") && !(before.paidAt && notice.kind === "open");
+    // Пустые поля нового уведомления прежних значений не стирают: процесс «оплачен» может прислать меньше.
+    // Опоздавшее «создан» после оплаты только дополняет пустые поля: статус, сумма и валюта остаются от оплаты.
+    // После возврата статус меняет только возврат. Заказ «Проверки» тестовым и остаётся
+    const lateOpen = before.paidAt !== null && notice.kind === "open";
+    const statusKept = before.refundedAt === null || notice.kind === "refunded";
     const mediumKept = before.utmMedium !== PREVIEW_MEDIUM;
+    const blank = (value: unknown) => value === null || value === "";
     const kept = Object.fromEntries(
-      Object.entries(fields).filter(([key, value]) => value !== null && value !== "" && (key !== "status" || statusKept) && (key !== "utmMedium" || mediumKept)),
+      Object.entries(fields).filter(
+        ([key, value]) =>
+          !blank(value) &&
+          (!lateOpen || blank(before[key as keyof ProductOrder])) &&
+          (key !== "status" || statusKept) &&
+          (key !== "utmMedium" || mediumKept),
+      ),
     );
     const newlyRefunded = notice.kind === "refunded" && !before.refundedAt;
     const newlyPaid = notice.kind === "paid" && !before.paidAt && !before.refundedAt;
@@ -242,6 +250,16 @@ export async function markPurchased(db: DatabaseExecutor, passageId: string, at:
 export async function unmarkPurchased(db: DatabaseExecutor, passageId: string): Promise<void> {
   if (await hasPaidOrder(db, passageId)) return;
   await db.update(passages).set({ purchasedAt: null }).where(eq(passages.id, passageId));
+}
+
+/** Платил ли человек по этому прохождению хоть раз, включая заказы с возвратом. */
+export async function hasEverPaid(db: DatabaseExecutor, passageId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: productOrders.id })
+    .from(productOrders)
+    .where(and(eq(productOrders.passageId, passageId), isNotNull(productOrders.paidAt)))
+    .limit(1);
+  return Boolean(row);
 }
 
 /** Есть ли у прохождения оплаченный заказ без возврата. */

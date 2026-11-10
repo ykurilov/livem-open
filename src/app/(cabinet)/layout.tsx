@@ -20,7 +20,8 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
     <CabinetShell
       user={{ name: user.name, email: user.email }}
       unanswered={await countUnansweredThreads(getDatabase().db)}
-      navigationExpanded={(await cookies()).get(NAVIGATION_EXPANDED_COOKIE)?.value === "1"}
+      // По стандарту панель раскрыта, пока человек сам её не свернёт
+      navigationExpanded={(await cookies()).get(NAVIGATION_EXPANDED_COOKIE)?.value !== "0"}
     >
       {children}
     </CabinetShell>

@@ -51,6 +51,8 @@ export const people = appSchema.table(
     displayName: text("display_name"),
     /** Последнее записанное значение каждого поля: `{ fieldId: value }`. */
     fieldValues: jsonb("field_values").$type<Record<string, PersonFieldValue>>().notNull().default({}),
+    /** Когда записано каждое значение поля: `{ fieldId: ISO-время }`. По нему сценарий решает, пора ли уточнить поле. */
+    fieldUpdatedAt: jsonb("field_updated_at").$type<Record<string, string>>().notNull().default({}),
     facts: jsonb("facts").$type<PersonFact[]>().notNull().default([]),
     /** Часовой пояс человека (IANA): консультант узнаёт его между делом и действует он во всех прохождениях. Пусто — Москва. */
     timeZone: text("time_zone"),
@@ -62,6 +64,11 @@ export const people = appSchema.table(
     lastAutoreplyOn: date("last_autoreply_on", { mode: "string" }),
     /** День (по Москве), когда эксперт ответил сам: в этот день автоответа нет. */
     lastManualReplyOn: date("last_manual_reply_on", { mode: "string" }),
+    /**
+     * Эксперт нажал «Начать заново» (время базы). Разговоры, рассылки и ответы эксперта до этого не решают, куда идут
+     * сообщения человека: он как новичок, любой лидмагнит начинается с чистого листа.
+     */
+    conversationsResetAt: timestamp("conversations_reset_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("people_bot_external_user").on(table.botId, table.externalUserId)],

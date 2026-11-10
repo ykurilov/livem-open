@@ -96,6 +96,9 @@ describe("moneyOf", () => {
     ["1990", 1990, null],
     ["12,5", 12.5, null],
     ["5 000 KZT", 5000, "KZT"],
+    ["100 бел. руб.", 100, "BYN"],
+    ["100 бел руб", 100, "BYN"],
+    ["250 BYN", 250, "BYN"],
   ])("%s → %s %s", (text, amount, currency) => {
     expect(moneyOf(text)).toEqual({ amount, currency });
   });

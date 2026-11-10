@@ -49,7 +49,7 @@ export function scheduleWithDefaults(schedule: unknown): unknown {
 
 /**
  * JSON сценария от конструктора или агента, дополненный тем, что они не обязаны знать: формат, id и имя сценария, общее
- * (это основная инструкция), режим после конца, раскладку доски, id попутных задач, касания и потолок программы. Поле карточки можно назвать одним id.
+ * (это основная инструкция), режим после конца, раскладку доски, заметки чата, id попутных задач, касания и потолок программы. Поле карточки можно назвать одним id.
  */
 export function completeFlowJson(json: Json, current: AgentFlow): Json {
   const sideTasks = Array.isArray(json.sideTasks)
@@ -66,6 +66,7 @@ export function completeFlowJson(json: Json, current: AgentFlow): Json {
     common: current.common,
     afterEnd: "silent",
     layout: current.layout,
+    chatNotes: current.chatNotes,
     ...json,
     ...(clientCard !== undefined && { clientCard }),
     ...(sideTasks !== undefined && { sideTasks }),

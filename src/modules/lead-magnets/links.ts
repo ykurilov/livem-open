@@ -5,7 +5,7 @@ import { passages } from "../conversations/schema";
 import { isUniqueViolation, type DatabaseExecutor } from "../platform/db";
 import { isUuid } from "../platform/uuid";
 import { LeadMagnetNotFoundError } from "./lead-magnets";
-import { listAttachedBots } from "./publish";
+import { listAttachedBots, webChatLink } from "./publish";
 import { entryLinks, leadMagnets } from "./schema";
 import { ENTRY_LABEL_SEPARATOR } from "./start-payload";
 
@@ -163,10 +163,13 @@ export async function listLabeledLinks(
     ...row,
     label: row.label!,
     hasPeople: Boolean(row.hasPeople),
-    urls: attached.flatMap((bot) => {
-      const adapter = adapters[bot.channel];
-      return adapter ? [{ channel: bot.channel, url: adapter.entryLink(bot, row.code) }] : [];
-    }),
+    urls: [
+      ...attached.flatMap((bot) => {
+        const adapter = adapters[bot.channel];
+        return adapter ? [{ channel: bot.channel, url: adapter.entryLink(bot, row.code) }] : [];
+      }),
+      ...[webChatLink(adapters, row.code)].flatMap((url) => (url ? [{ channel: "web" as const, url }] : [])),
+    ],
   }));
 }
 

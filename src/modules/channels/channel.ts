@@ -1,8 +1,14 @@
 // Общий интерфейс мессенджера. Остальной код знает только эти типы (конституция II).
 
-export type ChannelKind = "telegram" | "vk" | "max";
+import type { ImageLoadResult } from "./image-source";
 
-export const CHANNEL_LABELS: Record<ChannelKind, string> = { telegram: "Telegram", vk: "ВКонтакте", max: "Max" };
+/** `web` — веб-чат лидмагнита на нашей странице `/c/<код>`: без мессенджера и без бота эксперта. */
+export type ChannelKind = "telegram" | "vk" | "max" | "web";
+
+export const CHANNEL_LABELS: Record<ChannelKind, string> = { telegram: "Telegram", vk: "ВКонтакте", max: "Max", web: "Веб-чат" };
+
+/** Мессенджеры, к которым эксперт подключает своих ботов. Веб-чат есть у каждого опубликованного лидмагнита сам. */
+export const MESSENGER_KINDS = ["telegram", "vk", "max"] as const satisfies readonly ChannelKind[];
 
 /** Всё, что адаптеру нужно знать о боте. Токен здесь уже расшифрован. */
 export interface BotCredentials {
@@ -40,6 +46,8 @@ export type ChannelEvent =
       userName?: string;
       text: string;
       attachment?: AttachmentKind;
+      /** Фото или снимок экрана: ссылка, по которой адаптер потом скачает байты (`downloadImage`). Telegram — file_id, Max и ВК — адрес. */
+      imageRef?: string;
       /** `/start <код>`, `ref`, `bot_started.payload` */
       startCode?: string;
     }
@@ -54,6 +62,11 @@ export interface OutgoingMessage {
   text: string;
   imagePath?: string;
   buttons?: Array<{ label: string; payload: string }>;
+  /**
+   * Готовые ответы человека: нажатие отправляет текст кнопки обычным сообщением. Висят под последней частью сообщения.
+   * Пустой список — у прошлого сообщения были, а у этого нет: адаптер убирает их, где мессенджер держит их сам.
+   */
+  quickReplies?: string[];
   /** Отдельные сообщения после основного, по порядку: ролик консультанта, прощание. Кнопки остаются на основном. */
   followUps?: string[];
   idempotencyKey: string;
@@ -83,7 +96,8 @@ export type SendResult = { ok: true; externalMessageId: string } | SendFailure;
  * `taken_over` — наш приём сообщений заняли: бота подключили к другому сервису. Само не пройдёт.
  * `temporary` — сеть, прокси или ограничение скорости: может пройти само.
  */
-export type ConnectionCheck = { ok: true } | { ok: false; kind: "invalid_token" | "taken_over" | "temporary"; error: string };
+export type ConnectionCheck = { ok: true } | { ok: false; kind: ConnectionFailureKind; error: string };
+export type ConnectionFailureKind = "invalid_token" | "taken_over" | "temporary";
 
 export interface BotIdentity {
   externalId: string;
@@ -119,6 +133,8 @@ export interface ChannelAdapter {
   parseWebhook(request: WebhookRequest, bot: BotCredentials): Promise<ParsedWebhook>;
 
   send(bot: BotCredentials, to: string, message: OutgoingMessage): Promise<SendResult>;
+  /** Байты фото клиента по ссылке из события (`imageRef`). Не бросает исключений: сбой — в результате, без токена в тексте. */
+  downloadImage?(bot: BotCredentials, ref: string): Promise<ImageLoadResult>;
   answerButton?(bot: BotCredentials, callbackId: string): Promise<void>;
 
   entryLink(bot: { username: string; externalId: string }, code: string): string;

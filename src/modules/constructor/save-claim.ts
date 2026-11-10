@@ -6,7 +6,8 @@ import { wrapCatalogModels } from "./catalog-models";
 /**
  * Конструктор иногда пишет эксперту «Записал», а правку не вызвал или она вернула ошибку: эксперт думает, что
  * настройка сохранена, а её нет. Ответ, где так сказано без удачной правки в этом ходе, эксперту не уходит: модель
- * получает пометку и отвечает заново — может сохранить правку или сказать, что не сохранилось.
+ * получает пометку и отвечает заново — может сохранить правку или сказать, что не сохранилось. Ответ без таких слов
+ * эксперт видит по ходу печати, по фразам.
  */
 
 const EDIT_TOOL = "edit_lead_magnet";
@@ -14,9 +15,10 @@ const EDIT_TOOL = "edit_lead_magnet";
 /**
  * «Записал», «добавил», «поменял», «завёл»… от первого лица и «Готово» в начале фразы — о правке этого хода.
  * «Настройки сохранены», «всё записано» — о прошлых правках: черновик сохраняется сам, это правда.
+ * «Не записал», «записал бы» — не о сохранении: так говорят о предложении, которое ждёт согласия.
  */
 const SAVED_CLAIM =
-  /(?<!\p{L})(?:записал|добавил|сохранил|поменял|изменил|обновил|исправил|убрал|заменил|вписал|внёс|внес|прописал|настроил|переписал|удалил|заложил|поставил|завёл|завел|создал|подключил)а?(?!\p{L})|(?:^|[.!?…]\s+)готово(?!\p{L})/iu;
+  /(?<!\p{L})(?<!(?<!\p{L})не\s+)(?:записал|добавил|сохранил|поменял|изменил|обновил|исправил|убрал|заменил|вписал|внёс|внес|прописал|настроил|переписал|удалил|заложил|поставил|завёл|завел|создал|подключил)а?(?!\p{L})(?!\s+бы(?!\p{L}))|(?:^|[.!?…]\s+)готово(?!\p{L})/iu;
 
 /**
  * Пометка последним сообщением запроса: начало запроса то же, кэш модели цел. В историю не пишется.
@@ -24,9 +26,13 @@ const SAVED_CLAIM =
  */
 export const SAVE_CLAIM_NOTE =
   "Проверка приложения: в этом ответе edit_lead_magnet ничего не сохранил, а ты пишешь эксперту, что записал, сохранил или поменял. " +
-  "Если эксперт просил правку — вызови edit_lead_magnet сейчас и ответь по его результату. " +
+  "Если эксперт просил правку и согласие на неё уже есть — вызови edit_lead_magnet сейчас и ответь по его результату. " +
+  "Если ты только предлагаешь изменение и согласия ещё нет — ничего не записывай и скажи, что предлагаешь. " +
   "Если вызов вернул ошибку или вызвать нельзя — прямо скажи эксперту, что не сохранилось. " +
   "Если правки не нужно или она была в прошлых ответах — не пиши, что записал сейчас.";
+
+/** Добавка к пометке, когда начало ответа эксперт уже видел. Текст постоянный. */
+export const SHOWN_PART_NOTE = "Начало ответа выше эксперт уже видит: продолжи с того места и не повторяй его.";
 
 /** Ответ говорит эксперту, что настройка сохранена. */
 export function claimsSaved(text: string): boolean {
@@ -69,28 +75,144 @@ function addUsage(a: LanguageModelV4Usage, b: LanguageModelV4Usage): LanguageMod
   };
 }
 
-function streamOf(parts: LanguageModelV4StreamPart[], error?: unknown): ReadableStream<LanguageModelV4StreamPart> {
-  return new ReadableStream({
+type Part = LanguageModelV4StreamPart;
+
+/**
+ * До какого места текст можно показать: конец фразы или строки. Слова до него целые — «Записал» не разорвётся
+ * между кусками, а новый ответ после пометки начнётся с новой фразы.
+ */
+function shownUpTo(text: string, shown: string): number {
+  let cut = 0;
+  for (const match of text.matchAll(/[.!?…:;]\s|\n/g)) {
+    const end = match.index + match[0].length;
+    if (claimsSaved(shown + text.slice(0, end))) break;
+    cut = end;
+  }
+  return cut;
+}
+
+/** Запрос заново: показанное начало ответа — сообщением модели, пометка — последним. */
+function promptAgain(prompt: Prompt, shown: string): Prompt {
+  const said = shown.trimEnd();
+  return [
+    ...prompt,
+    ...(said ? [{ role: "assistant" as const, content: [{ type: "text" as const, text: said }] }] : []),
+    { role: "user", content: [{ type: "text", text: said ? `${SAVE_CLAIM_NOTE} ${SHOWN_PART_NOTE}` : SAVE_CLAIM_NOTE }] },
+  ];
+}
+
+/**
+ * Шаг идёт эксперту по фразам. Фраза с «записал» и всё после неё придерживаются до конца шага: вызвал модель правку
+ * или шаг сорвался — придержанное уходит как есть; нет — модель отвечает заново после уже показанного начала.
+ */
+function holdSavedClaims(first: ReadableStream<Part>, askAgain: (shown: string) => Promise<ReadableStream<Part>>): ReadableStream<Part> {
+  let reader = first.getReader();
+  let cancelled = false;
+  return new ReadableStream<Part>({
     start(controller) {
-      for (const part of parts) controller.enqueue(part);
-      if (error === undefined) controller.close();
-      else controller.error(error);
+      const held: Part[] = [];
+      const openTexts = new Set<string>();
+      const openReasoning = new Set<string>();
+      let shown = "";
+      let passThrough = false;
+      const emit = (part: Part) => {
+        if (part.type === "text-start") openTexts.add(part.id);
+        if (part.type === "text-end") openTexts.delete(part.id);
+        if (part.type === "reasoning-start") openReasoning.add(part.id);
+        if (part.type === "reasoning-end") openReasoning.delete(part.id);
+        if (part.type === "text-delta") shown += part.delta;
+        controller.enqueue(part);
+      };
+      const heldText = () => held.flatMap((part) => (part.type === "text-delta" ? [part.delta] : [])).join("");
+      // Придержанное до `length` символов текста — эксперту; конец шага остаётся до решения
+      const release = (length: number) => {
+        let left = length;
+        while (held.length > 0 && held[0]!.type !== "finish") {
+          const part = held[0]!;
+          if (part.type !== "text-delta") emit(held.shift()!);
+          else if (left === 0) break;
+          else if (part.delta.length <= left) {
+            left -= part.delta.length;
+            emit(held.shift()!);
+          } else {
+            emit({ ...part, delta: part.delta.slice(0, left) });
+            held[0] = { ...part, delta: part.delta.slice(left) };
+            left = 0;
+          }
+        }
+      };
+      const flush = () => held.splice(0).forEach(emit);
+
+      void (async () => {
+        try {
+          for (let next = await reader.read(); !next.done; next = await reader.read()) {
+            const part = next.value;
+            if (passThrough) emit(part);
+            else if (part.type === "tool-call" || part.type === "tool-input-start" || part.type === "error") {
+              // Шаг с вызовом или ошибкой не переделывается
+              flush();
+              passThrough = true;
+              emit(part);
+            } else if (held.length === 0 && part.type !== "text-delta" && part.type !== "finish") emit(part);
+            else {
+              held.push(part);
+              if (part.type === "text-delta") release(shownUpTo(heldText(), shown));
+            }
+          }
+        } catch (error) {
+          if (cancelled) return;
+          flush();
+          controller.error(error);
+          return;
+        }
+        // Эксперт ушёл или остановил ход: дочитывать и переспрашивать некому
+        if (cancelled) return;
+        if (passThrough || !claimsSaved(shown + heldText())) {
+          flush();
+          controller.close();
+          return;
+        }
+
+        console.warn(`[записал без правки] ${(shown + heldText()).slice(0, 120)}`);
+        let second: ReadableStream<Part>;
+        try {
+          second = await askAgain(shown);
+        } catch {
+          if (cancelled) return;
+          flush();
+          controller.close();
+          return;
+        }
+        if (cancelled) {
+          void second.cancel();
+          return;
+        }
+        // Начатое закрывается: новый ответ — отдельным куском после показанного
+        for (const id of openReasoning) controller.enqueue({ type: "reasoning-end", id });
+        for (const id of openTexts) controller.enqueue({ type: "text-end", id });
+        // Отброшенный ответ тоже оплачен: его расход — к расходу нового
+        const spent = held.find((part) => part.type === "finish")?.usage;
+        reader = second.getReader();
+        try {
+          for (let next = await reader.read(); !next.done; next = await reader.read()) {
+            const part = next.value;
+            controller.enqueue(part.type === "finish" && spent ? { ...part, usage: addUsage(spent, part.usage) } : part);
+          }
+          if (!cancelled) controller.close();
+        } catch (error) {
+          if (!cancelled) controller.error(error);
+        }
+      })();
+    },
+    cancel: (reason) => {
+      cancelled = true;
+      return reader.cancel(reason);
     },
   });
 }
 
-async function readAll(stream: ReadableStream<LanguageModelV4StreamPart>): Promise<{ parts: LanguageModelV4StreamPart[]; error?: unknown }> {
-  const parts: LanguageModelV4StreamPart[] = [];
-  const reader = stream.getReader();
-  try {
-    for (let next = await reader.read(); !next.done; next = await reader.read()) parts.push(next.value);
-    return { parts };
-  } catch (error) {
-    return { parts, error };
-  }
-}
-
-function guardModel(model: LanguageModel): LanguageModel {
+/** Модель конструктора: ответ «записал» без удачной правки в ходе переделывается один раз. */
+export function guardSaveClaims(model: LanguageModel): LanguageModel {
   if (typeof model === "string") return model;
   return wrapLanguageModel({
     model,
@@ -98,35 +220,11 @@ function guardModel(model: LanguageModel): LanguageModel {
       specificationVersion: "v4",
       wrapStream: async ({ params, model: inner }) => {
         const first = await inner.doStream(params);
-        // Правка уже сохранилась — ответ идёт как есть, по кускам
+        // Правка уже сохранилась — ответ идёт как есть
         if (editSavedThisTurn(params.prompt)) return first;
-
-        // Иначе шаг придерживается целиком: «Записал» видно только в готовом тексте
-        const { parts, error } = await readAll(first.stream);
-        const text = parts.flatMap((part) => (part.type === "text-delta" ? [part.delta] : [])).join("");
-        const calls = parts.some((part) => part.type === "tool-call");
-        if (error !== undefined || calls || parts.some((part) => part.type === "error") || !claimsSaved(text))
-          return { ...first, stream: streamOf(parts, error) };
-
-        console.warn(`[записал без правки] ${text.slice(0, 120)}`);
-        let second: Awaited<ReturnType<typeof inner.doStream>>;
-        try {
-          second = await inner.doStream({ ...params, prompt: [...params.prompt, { role: "user", content: [{ type: "text", text: SAVE_CLAIM_NOTE }] }] });
-        } catch {
-          return { ...first, stream: streamOf(parts) };
-        }
-        // Отброшенный ответ тоже оплачен: его расход — к расходу нового
-        const spent = parts.find((part) => part.type === "finish")?.usage;
-        if (!spent) return second;
         return {
-          ...second,
-          stream: second.stream.pipeThrough(
-            new TransformStream<LanguageModelV4StreamPart, LanguageModelV4StreamPart>({
-              transform(part, controller) {
-                controller.enqueue(part.type === "finish" ? { ...part, usage: addUsage(spent, part.usage) } : part);
-              },
-            }),
-          ),
+          ...first,
+          stream: holdSavedClaims(first.stream, async (shown) => (await inner.doStream({ ...params, prompt: promptAgain(params.prompt, shown) })).stream),
         };
       },
     },
@@ -135,5 +233,5 @@ function guardModel(model: LanguageModel): LanguageModel {
 
 /** Каталог конструктора: ответ «записал» без удачной правки в ходе модель переделывает один раз. */
 export function withSaveClaimGuard(catalog: ModelCatalog): ModelCatalog {
-  return wrapCatalogModels(catalog, guardModel);
+  return wrapCatalogModels(catalog, guardSaveClaims);
 }

@@ -1,4 +1,6 @@
 import { createInMemoryChatStorage, type ChatStorage } from "@ykurilov/agent-chat-core";
+import { createMemoryAttachmentStorage } from "@ykurilov/agent-chat-attachments";
+import { createChatImages } from "../platform/chat-attachments";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../../../tests/integration/db-helper";
 import { timeZoneAtHour } from "../../../tests/time-zone-at-hour";
@@ -11,7 +13,7 @@ import { createLeadMagnet, getLeadMagnet, newProgramSettings, saveDraft as saveS
 import { createVideo, shownVideosOf } from "../videos";
 import { STUB_MODEL_CHOICE, createAppCatalog, createStubModelCatalog } from "../platform/models-catalog";
 import { createScriptedModel, type ScriptedCall, type ScriptedReply } from "../platform/scripted-model";
-import { createPreviewEndpoint, type PreviewEndpoint } from "./preview-endpoint";
+import { createPreviewEndpoint, PreviewReopenRefused, type PreviewEndpoint } from "./preview-endpoint";
 import { createPreviewConversationStore, readPreviewConversation } from "./preview-store";
 import { previewConversations } from "./schema";
 
@@ -58,6 +60,7 @@ beforeEach(async () => {
     resolveUser: async () => (signedIn ? { id: "expert" } : null),
     modelChoice: () => STUB_MODEL_CHOICE,
     clock: noonInMoscow,
+    attachments: createChatImages(createMemoryAttachmentStorage()),
   });
   const created = await createLeadMagnet(database.db, { name: "Превью" });
   await saveDraft(database.db, created.id, { ...created.draft, instruction: "Ты консультант превью." }, "manual");
@@ -96,7 +99,7 @@ describe("тестовый разговор: порядок проверок", (
     await createPreviewConversationStore(database.db).finish(chatId, { goal: "a", stuckAt: "b", chosenStep: "c" });
     const response = await send(chatId, "Привет");
     expect(response.status).toBe(409);
-    expect(((await response.json()) as { error: { message: string } }).error.message).toMatch(/завершён.*«Начать проверку заново»/);
+    expect(((await response.json()) as { error: { message: string } }).error.message).toMatch(/завершён.*«Продолжить разговор»/);
   });
 
   it("старый разговор после «Начать заново» — 409 с понятным текстом, модель не зовётся", async () => {
@@ -136,6 +139,20 @@ describe("тестовый разговор: порядок проверок", (
     const texts = answer.parts.flatMap((part) => (part.type === "text" ? [part.text] : []));
     expect(texts).toEqual(["Так что было в тот раз?"]);
     expect(answer.parts.some((part) => part.type === "tool-flow_note")).toBe(true);
+  });
+
+  it("английская фраза перед инструментом не печатается эксперту даже на миг: ответ держится до проверки", async () => {
+    reply = (call) => {
+      if (call.lastUserText.includes("Чужие слова:")) return { text: "Хорошо, сейчас всё отмечу для себя." };
+      return call.lastToolResult !== undefined
+        ? { text: "Так что было в тот раз?" }
+        : { text: "Okay, let me quickly note everything down.", toolCalls: [{ toolName: "flow_note", input: { fact: "Показывает другим" } }] };
+    };
+    const chatId = await endpoint.ensurePreview(lead.id);
+    const stream = await (await send(chatId, "Я показывал сборку")).text();
+
+    expect(stream).not.toContain("let me");
+    expect(stream).toContain("Так что было в тот раз?");
   });
 });
 
@@ -229,6 +246,239 @@ describe("тестовый разговор: прощание приложени
     await (await send(chatId, "Привет")).text();
 
     expect(await answerTexts(chatId)).toEqual(["Расскажите подробнее."]);
+  });
+});
+
+describe("завершённый тестовый разговор можно продолжить", () => {
+  const summary = { goal: "Курс", stuckAt: "Нет идеи", chosenStep: "Собрать идею", outcome: "agreed" };
+  const finishOnFirstTurn = () => {
+    let finished = false;
+    reply = (call) => {
+      if (finished) return { text: "Продолжим: что ещё важно?" };
+      if (call.lastToolResult !== undefined) {
+        finished = true;
+        return { text: "Идея собрана." };
+      }
+      return { toolCalls: [{ toolName: "finish_dialog", input: summary }] };
+    };
+  };
+  const finishedChat = async () => {
+    finishOnFirstTurn();
+    const chatId = await endpoint.ensurePreview(lead.id);
+    await (await send(chatId, "Да, подходит")).text();
+    expect((await endpoint.status(lead.id))?.finished).toBe(true);
+    return chatId;
+  };
+
+  it("«Продолжить разговор»: статус снова «идёт», следующее сообщение получает ответ консультанта", async () => {
+    const chatId = await finishedChat();
+
+    await endpoint.reopenPreview(lead.id);
+    expect((await endpoint.status(lead.id))?.finished).toBe(false);
+
+    const response = await send(chatId, "А ещё вопрос");
+    expect(response.status).toBe(200);
+    await response.text();
+    const answer = (await chatStorage.listMessages(chatId)).filter((message) => message.role === "assistant").at(-1)!;
+    expect(answer.parts.flatMap((part) => (part.type === "text" ? [part.text] : []))).toEqual(["Продолжим: что ещё важно?"]);
+  });
+
+  it("после «Продолжить разговор» прощание прошлого конца не подменяет новый ответ", async () => {
+    const current = (await getLeadMagnet(database.db, lead.id))!;
+    await saveSettings(database.db, lead.id, { ...current.draft, farewellMessage: "Спасибо, до встречи!" }, "manual");
+    const chatId = await finishedChat();
+
+    await endpoint.reopenPreview(lead.id);
+    await (await send(chatId, "А ещё вопрос")).text();
+
+    const answer = (await chatStorage.listMessages(chatId)).filter((message) => message.role === "assistant").at(-1)!;
+    expect(answer.parts.flatMap((part) => (part.type === "text" ? [part.text] : []))).toEqual(["Продолжим: что ещё важно?"]);
+  });
+
+  it("правка своей прошлой реплики открывает завершённый разговор сама: ответ идёт с новой ветки", async () => {
+    const chatId = await finishedChat();
+    const edited = (await chatStorage.listMessages(chatId)).find((message) => message.role === "user")!;
+
+    const response = await endpoint.fetch(
+      new Request(`http://localhost/api/preview/${chatId}/edit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ editedMessageId: edited.id, message: { id: `m-${++counter}`, role: "user", parts: [{ type: "text", text: "Пока не уверен" }] } }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    await response.text();
+    expect((await endpoint.status(lead.id))?.finished).toBe(false);
+    expect((await readPreviewConversation(database.db, chatId))?.finishedAt).toBeNull();
+  });
+
+  it("сценарий не открывается (срок программы вышел): разговор остаётся завершённым, отказ говорит, что делать", async () => {
+    const chatId = await finishedChat();
+    vi.spyOn(endpoint.flow, "reopen").mockResolvedValue({ reopened: false, reason: "deadline_passed" });
+
+    await expect(endpoint.reopenPreview(lead.id)).rejects.toThrow(PreviewReopenRefused);
+    await expect(endpoint.reopenPreview(lead.id)).rejects.toThrow(/срок.*«Начать проверку заново»/is);
+    expect((await endpoint.status(lead.id))?.finished).toBe(true);
+    expect((await readPreviewConversation(database.db, chatId))?.summary).not.toBeNull();
+  });
+
+  it("правка реплики, когда сценарий не открывается: 409 с тем же объяснением, разговор остаётся завершённым", async () => {
+    const chatId = await finishedChat();
+    vi.spyOn(endpoint.flow, "reopen").mockResolvedValue({ reopened: false, reason: "deadline_passed" });
+    const edited = (await chatStorage.listMessages(chatId)).find((message) => message.role === "user")!;
+
+    const response = await endpoint.fetch(
+      new Request(`http://localhost/api/preview/${chatId}/edit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ editedMessageId: edited.id, message: { id: `m-${++counter}`, role: "user", parts: [{ type: "text", text: "Пока не уверен" }] } }),
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { error: { message: string } }).error.message).toMatch(/«Начать проверку заново»/);
+    expect((await endpoint.status(lead.id))?.finished).toBe(true);
+  });
+
+  it("«Продолжить» у незавершённого разговора ничего не ломает", async () => {
+    const chatId = await endpoint.ensurePreview(lead.id);
+    await endpoint.reopenPreview(lead.id);
+    const response = await send(chatId, "Привет");
+    expect(response.status).toBe(200);
+    await response.text();
+  });
+});
+
+describe("после правки инструкций тестовый разговор идёт по новой версии", () => {
+  /** Черновик с правилами ноды и общими правилами, помеченными словом: по нему видно, какая версия в запросе. */
+  const withRules = async (word: string) => {
+    const current = (await getLeadMagnet(database.db, lead.id))!;
+    const flow = current.draft.flow;
+    await saveSettings(
+      database.db,
+      lead.id,
+      {
+        ...current.draft,
+        instruction: `Общее правило ${word}-ОБЩЕЕ.`,
+        flow: {
+          ...flow,
+          common: `Общее правило ${word}-ОБЩЕЕ.`,
+          states: flow.states.map((state, index) => (index === 0 ? { ...state, instructions: `Спроси про ${word}-НОДА.` } : state)),
+        },
+      },
+      "manual",
+    );
+  };
+  const wholeRequest = (call: ScriptedCall) => JSON.stringify(call.options.prompt);
+
+  it("откат на шаг назад правкой реплики: в запросе только новые правила, старых нет ни в одном месте", async () => {
+    await withRules("ЯБЛОКО");
+    const chatId = await endpoint.ensurePreview(lead.id);
+    await (await send(chatId, "Привет")).text();
+    await (await send(chatId, "Расскажу ещё")).text();
+    expect(wholeRequest(calls.at(-1)!)).toContain("ЯБЛОКО-НОДА");
+
+    await withRules("ГРУША");
+    const second = (await chatStorage.listMessages(chatId)).filter((message) => message.role === "user").at(-1)!;
+    const response = await endpoint.fetch(
+      new Request(`http://localhost/api/preview/${chatId}/edit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ editedMessageId: second.id, message: { id: `m-${++counter}`, role: "user", parts: [{ type: "text", text: "Расскажу иначе" }] } }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    await response.text();
+
+    const request = wholeRequest(calls.at(-1)!);
+    expect(request).toContain("ГРУША-НОДА");
+    expect(request).toContain("ГРУША-ОБЩЕЕ");
+    expect(request).not.toContain("ЯБЛОКО");
+  });
+
+  it("следующее сообщение после правки — тоже без старых правил", async () => {
+    await withRules("ЯБЛОКО");
+    const chatId = await endpoint.ensurePreview(lead.id);
+    await (await send(chatId, "Привет")).text();
+
+    await withRules("ГРУША");
+    await (await send(chatId, "Дальше")).text();
+    const request = wholeRequest(calls.at(-1)!);
+    expect(request).toContain("ГРУША-НОДА");
+    expect(request).not.toContain("ЯБЛОКО");
+  });
+});
+
+describe("«Автоответ» в тестовом разговоре", () => {
+  it("модель в роли клиента отвечает на последнюю реплику консультанта с темой лидмагнита; в чат ничего не пишется", async () => {
+    const chatId = await endpoint.ensurePreview(lead.id);
+    reply = () => ({ text: "Какой у вас запрос?" });
+    await (await send(chatId, "Привет")).text();
+    const before = await chatStorage.listMessages(chatId);
+    reply = (call) => ({ text: call.system?.includes("Тема бота: Превью") ? "  Хочу похудеть к лету  " : "не та роль" });
+
+    const suggestion = await endpoint.suggestReply(chatId);
+
+    expect(suggestion).toBe("Хочу похудеть к лету");
+    const call = calls.at(-1)!;
+    expect(call.lastUserText).toBe("Какой у вас запрос?");
+    expect(JSON.stringify(call.options.prompt)).toContain("Привет");
+    expect(call.toolNames).toEqual([]);
+    expect(await chatStorage.listMessages(chatId)).toHaveLength(before.length);
+  });
+});
+
+describe("картинки клиента в тестовом разговоре", () => {
+  // Картинка 1×1 PNG: SDK проверяет тип по содержимому, а не по имени
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+  const upload = async (chatId: string) => {
+    const form = new FormData();
+    form.append("file", new Blob([new Uint8Array(png)], { type: "image/png" }), "shot.png");
+    return endpoint.fetch(new Request(`http://localhost/api/preview/${chatId}/attachments`, { method: "POST", body: form }));
+  };
+  const allowImages = async (allowed: boolean) => {
+    const current = (await getLeadMagnet(database.db, lead.id))!;
+    await saveSettings(database.db, lead.id, { ...current.draft, clientImages: allowed }, "manual");
+  };
+
+  it("по умолчанию выключены: загрузка отклонена, в поле ввода скрепки нет", async () => {
+    const chatId = await endpoint.ensurePreview(lead.id);
+    expect((await getLeadMagnet(database.db, lead.id))!.draft.clientImages).toBe(false);
+
+    const response = await upload(chatId);
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    const chat = await (await endpoint.fetch(new Request(`http://localhost/api/preview/${chatId}`))).json();
+    expect(chat.capabilities?.attachments).toBeFalsy();
+  });
+
+  it("включены: картинка клиента доходит до модели в его сообщении", async () => {
+    await allowImages(true);
+    const chatId = await endpoint.ensurePreview(lead.id);
+    const response = await upload(chatId);
+    expect(response.status).toBe(201);
+    const { id: attachmentId } = (await response.json()) as { id: string };
+
+    const sent = await endpoint.fetch(
+      new Request(`http://localhost/api/preview/${chatId}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: {
+            id: `m-${++counter}`,
+            role: "user",
+            parts: [
+              { type: "text", text: "Вот мой экран" },
+              { type: "file", url: `attachment:${attachmentId}`, mediaType: "image/png", filename: "shot.png" },
+            ],
+          },
+        }),
+      }),
+    );
+    expect(sent.status).toBe(200);
+    await sent.text();
+
+    const lastUser = calls.at(-1)!.options.prompt.filter((message) => message.role === "user").at(-1)!;
+    const parts = Array.isArray(lastUser.content) ? lastUser.content : [];
+    expect(parts.some((part) => part.type === "file" && part.mediaType.startsWith("image/"))).toBe(true);
   });
 });
 
@@ -379,6 +629,19 @@ describe("«Следующий день» в тестовом разговоре
     }
   });
 
+  it("«Начать проверку заново» закрывает сценарий прежнего чата: его сроки и касания больше не идут", async () => {
+    const oldChat = await endpoint.ensurePreview(lead.id);
+    await (await send(oldChat, "Хочу приложение для кофейни")).text();
+    await endpoint.flow.settled();
+    expect((await endpoint.flow.readRun(previewOwnerId(oldChat), oldChat))?.endedAt).toBeUndefined();
+
+    const fresh = await endpoint.restartPreview(lead.id);
+    await endpoint.flow.settled();
+
+    expect(await endpoint.flow.readRun(previewOwnerId(oldChat), oldChat)).toMatchObject({ endedAt: expect.any(Number) });
+    expect((await endpoint.flow.readRun(previewOwnerId(fresh), fresh))?.endedAt).toBeUndefined();
+  });
+
   it("не дальше последнего дня программы: модель не зовётся", async () => {
     await (await send(await endpoint.ensurePreview(lead.id), "Привет")).text();
     await endpoint.nextDay(lead.id);
@@ -386,6 +649,20 @@ describe("«Следующий день» в тестовом разговоре
     calls.length = 0;
     await expect(endpoint.nextDay(lead.id)).rejects.toThrow(/последн/i);
     expect(calls).toHaveLength(0);
+  });
+
+  it("после правки сценария перемотка идёт по текущему черновику, как и сообщения", async () => {
+    await saveDraft(database.db, lead.id, { ...lead.draft, instruction: "Ты консультант превью.", stages, program: newProgramSettings(2) }, "manual");
+    await (await send(await endpoint.ensurePreview(lead.id), "Привет")).text();
+    await endpoint.nextDay(lead.id);
+    await endpoint.flow.settled();
+    await expect(endpoint.nextDay(lead.id)).rejects.toThrow(/последн/i);
+
+    // Эксперт добавил день и сразу жмёт «Следующий день», не написав сообщения
+    await saveDraft(database.db, lead.id, { ...lead.draft, instruction: "Ты консультант превью.", stages, program: newProgramSettings(3) }, "manual");
+    await endpoint.nextDay(lead.id);
+    await endpoint.flow.settled();
+    expect(await endpoint.status(lead.id)).toMatchObject({ day: 3, days: 3 });
   });
 
   it("у лидмагнита без программы и у завершённого разговора — отказ", async () => {
@@ -631,5 +908,105 @@ describe("права тестового разговора эксперта: п�
   it("у тестового чата право appNotices включено: эксперт видит, почему агент заговорил первым", async () => {
     const chatId = await endpoint.ensurePreview(lead.id);
     expect(await readCapabilities(chatId)).toMatchObject({ appNotices: true, steer: false });
+  });
+});
+
+describe("«Описание клиентов» консультант не видит", () => {
+  it("запрос консультанта с полем и без него одинаков", async () => {
+    const before = await endpoint.ensurePreview(lead.id);
+    await (await send(before, "Привет")).text();
+    const current = (await getLeadMagnet(database.db, lead.id))!;
+    await saveSettings(database.db, lead.id, { ...current.draft, clientPortrait: "Владельцы маленьких студий йоги, сомневаются в цене" }, "manual");
+    const after = await endpoint.restartPreview(lead.id);
+    await (await send(after, "Привет")).text();
+
+    expect(calls).toHaveLength(2);
+    const [first, second] = calls.map((call) => call.options);
+    expect(second!.tools).toEqual(first!.tools);
+    expect(JSON.stringify(second!.prompt)).toBe(JSON.stringify(first!.prompt));
+    expect(JSON.stringify(second!.prompt)).not.toContain("студий йоги");
+  });
+});
+
+describe("пробный ход консультанта (consultantWouldAnswer)", () => {
+  const history = [
+    { role: "assistant" as const, text: "Здравствуйте! С чем пришли?" },
+    { role: "user" as const, text: "Хочу больше учеников" },
+    { role: "assistant" as const, text: "Сколько их сейчас?" },
+    { role: "user" as const, text: "Пятеро, и все друзья" },
+  ];
+
+  /** Чат пробного хода: создаётся в хранилище чатов один раз. */
+  const trialChats = () => {
+    const created: string[] = [];
+    const original = chatStorage.createChat.bind(chatStorage);
+    vi.spyOn(chatStorage, "createChat").mockImplementation(async (input) => {
+      created.push(input.id);
+      return original(input);
+    });
+    return created;
+  };
+
+  it("модель видит историю в ориентации консультанта; итог — текст ответа; ни чата, ни записи не остаётся", async () => {
+    const previewChat = await endpoint.ensurePreview(lead.id);
+    await (await send(previewChat, "Привет из «Проверки»")).text();
+    const previewMessages = (await chatStorage.listMessages(previewChat)).length;
+    calls.length = 0;
+    const created = trialChats();
+    const ended = vi.spyOn(endpoint.flow, "end");
+    reply = () => ({ text: "А сколько хотите через полгода?" });
+
+    expect(await endpoint.consultantWouldAnswer({ leadMagnetId: lead.id, history })).toBe("А сколько хотите через полгода?");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.system).toContain("Ты консультант превью.");
+    expect(calls[0]!.lastUserText).toContain("Пятеро, и все друзья");
+    const said = calls[0]!.options.prompt.flatMap((message) =>
+      message.role === "user" || message.role === "assistant"
+        ? message.content.flatMap((part) => (part.type === "text" ? [{ role: message.role, text: part.text }] : []))
+        : [],
+    );
+    expect(said).toEqual(expect.arrayContaining([
+      { role: "assistant", text: "Здравствуйте! С чем пришли?" },
+      expect.objectContaining({ role: "user", text: expect.stringContaining("Хочу больше учеников") }),
+      { role: "assistant", text: "Сколько их сейчас?" },
+    ]));
+
+    expect(created).toHaveLength(1);
+    const trialChat = created[0]!;
+    expect(await chatStorage.getChat(trialChat)).toBeNull();
+    expect(await database.db.select().from(previewConversations).where(eq(previewConversations.chatId, trialChat))).toEqual([]);
+    // Сценарий одноразового чата кончен: сроки и касания по нему не идут
+    expect(ended).toHaveBeenCalledWith(expect.objectContaining({ chatId: trialChat, ownerId: previewOwnerId(trialChat) }));
+
+    // «Проверка» не тронута
+    const after = (await getLeadMagnet(database.db, lead.id))!;
+    expect(after.previewChatId).toBe(previewChat);
+    expect(await chatStorage.listMessages(previewChat)).toHaveLength(previewMessages);
+  });
+
+  it("ход идёт с ноды stageId: в запросе — её инструкция", async () => {
+    const stages = [
+      { id: "start", name: "Знакомство", instruction: "Узнай идею.", transitionCondition: "Идея есть", startDay: null, isSale: false },
+      { id: "price", name: "Цена", instruction: "Назови цену курса.", transitionCondition: "", startDay: null, isSale: false },
+    ];
+    await saveDraft(database.db, lead.id, { ...lead.draft, instruction: "Ты консультант превью.", stages }, "manual");
+    reply = () => ({ text: "Курс стоит 30 000." });
+
+    expect(await endpoint.consultantWouldAnswer({ leadMagnetId: lead.id, history, stageId: "price" })).toBe("Курс стоит 30 000.");
+    const prompt = JSON.stringify(calls.at(-1)!.options.prompt);
+    expect(prompt).toContain("Назови цену курса.");
+    expect(prompt).not.toContain("Узнай идею.");
+  });
+
+  it("сбой модели — null, чат всё равно удалён", async () => {
+    const created = trialChats();
+    reply = () => {
+      throw new Error("модель упала");
+    };
+    expect(await endpoint.consultantWouldAnswer({ leadMagnetId: lead.id, history })).toBeNull();
+    expect(created).toHaveLength(1);
+    expect(await chatStorage.getChat(created[0]!)).toBeNull();
+    expect(await database.db.select().from(previewConversations).where(eq(previewConversations.chatId, created[0]!))).toEqual([]);
   });
 });

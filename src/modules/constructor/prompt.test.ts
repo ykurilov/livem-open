@@ -34,6 +34,15 @@ describe("контракт инструкции конструктора", () =>
     expect(prompt).not.toMatch(/```|Твоё первое приложение|ровно один знак|Анна ждёт|Кирилл напишет/);
   });
 
+  it("разбор правок ответов: чтение, запись после согласия, отметка итога", () => {
+    for (const text of ["read_answer_corrections", "resolve_answer_corrections", "applied", "rejected", "already_covered"]) expect(prompt).toContain(text);
+    expect(prompt).toMatch(/согласия[^\n]*edit_lead_magnet, затем resolve_answer_corrections/);
+  });
+
+  it("разбор разговора «Поменяемся ролями»: ответы эксперта сверяются с консультантом, правки клиента — в «Описание клиентов»", () => {
+    for (const text of ["Поменяемся ролями", "Консультант ответил бы", "clientPortrait", "«Описание клиентов» консультант не видит"]) expect(prompt).toContain(text);
+  });
+
   it("сохраняет стабильный текст для кэша без дат и динамических подстановок", () => {
     expect(prompt).not.toMatch(/\{\{|\$\{|%[sd]/);
     expect(prompt).not.toMatch(/\b20\d\d-\d\d-\d\d\b|\b\d{1,2}\.\d{1,2}\.20\d\d\b/);

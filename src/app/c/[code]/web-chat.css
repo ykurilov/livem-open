@@ -1,0 +1,80 @@
+/* Публичный веб-чат лидмагнита: только токены дизайн-системы, тёмная тема приходит вместе с ними. */
+.web-chat { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; background: var(--yk-bg); color: var(--yk-text); }
+.web-chat__feed { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.web-chat__column { width: 100%; max-width: var(--yk-studio-thread-width); margin: 0 auto; padding: 0 var(--yk-space-4); box-sizing: border-box; }
+.web-chat__feed > .web-chat__column { display: flex; flex-direction: column; gap: var(--yk-space-3); padding-top: var(--yk-space-4); padding-bottom: var(--yk-space-4); }
+/* Экран без чата: ссылка не найдена, предел попыток */
+.web-chat-notice { min-height: 100dvh; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--yk-space-3); padding: var(--yk-space-6) var(--yk-space-4); text-align: center; background: var(--yk-bg); color: var(--yk-text); }
+.web-chat-notice h1 { margin: 0; font-size: var(--yk-text-title-size); }
+.web-chat-notice p { margin: 0; max-width: 32rem; color: var(--yk-muted); }
+.web-chat-notice__title { color: var(--yk-text); font-weight: 500; overflow-wrap: anywhere; }
+.web-chat__note { color: var(--yk-muted); text-align: center; margin: var(--yk-space-6) 0; }
+
+.web-chat__bubble { max-width: 85%; display: flex; flex-direction: column; gap: var(--yk-space-2); border-radius: var(--yk-radius-message); padding: var(--yk-space-3) var(--yk-space-4); }
+.web-chat__bubble--bot { align-self: flex-start; background: var(--yk-surface-2); }
+.web-chat__bubble--person { align-self: flex-end; background: var(--yk-ink); color: var(--yk-on-ink); }
+.web-chat__bubble--person a { color: inherit; }
+.web-chat__bubble a { overflow-wrap: anywhere; }
+.web-chat__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.web-chat__image { display: block; max-width: 100%; max-height: 420px; border-radius: var(--yk-radius-md); object-fit: contain; background: var(--yk-surface); }
+.web-chat__video { position: relative; width: min(560px, 70vw); aspect-ratio: 16 / 9; border-radius: var(--yk-radius-md); overflow: hidden; background: #000; }
+.web-chat__video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.web-chat__video-title { margin: 0; font-size: var(--yk-text-small-size); color: var(--yk-muted); }
+
+.web-chat__quick-replies { align-self: flex-start; max-width: 85%; display: flex; flex-wrap: wrap; gap: var(--yk-space-2); }
+.web-chat__quick-reply { height: auto; min-height: 44px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+
+.web-chat__typing { align-self: flex-start; display: flex; gap: 4px; padding: var(--yk-space-3) var(--yk-space-4); border-radius: var(--yk-radius-message); background: var(--yk-surface-2); }
+.web-chat__typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--yk-faint); animation: web-chat-typing 1.2s infinite ease-in-out; }
+.web-chat__typing span:nth-child(2) { animation-delay: .15s; }
+.web-chat__typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes web-chat-typing { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .web-chat__typing span { animation: none; } }
+
+.web-chat__offer { border: 1px solid var(--yk-border); border-radius: var(--yk-radius-lg); padding: var(--yk-space-3) var(--yk-space-4); background: var(--yk-surface); }
+.web-chat__offer p { margin: 0 0 var(--yk-space-3); }
+.web-chat__offer-actions { display: flex; flex-wrap: wrap; gap: var(--yk-space-2); }
+
+/* Линии над полем нет: лента уходит под него мягко */
+.web-chat__composer { position: relative; flex: 0 0 auto; background: var(--yk-bg); padding: var(--yk-space-1) 0 calc(var(--yk-space-3) + env(safe-area-inset-bottom)); }
+.web-chat__composer::before { content: ""; position: absolute; inset: auto 0 100%; height: var(--yk-space-4); background: linear-gradient(to top, var(--yk-bg), transparent); pointer-events: none; }
+.web-chat__error { margin: 0 0 var(--yk-space-2); color: var(--yk-danger); font-size: var(--yk-text-small-size); }
+/* Ошибка над полем — от той же линии, что и текст в нём */
+.web-chat__composer .web-chat__error { padding: 0 var(--yk-space-4); }
+/*
+ * Поле как в привычных чатах: рамка общая, микрофон и отправка внутри неё справа. Строка текста и кнопки одной высоты:
+ * у одной строки кнопки стоят по центру, у нескольких — у нижнего края, отступ от рамки со всех сторон один.
+ */
+.web-chat__field {
+  --web-chat-edge: var(--yk-border-strong);
+  --web-chat-ring: transparent;
+  --web-chat-control: 36px;
+  --web-chat-inset: 6px;
+  display: flex; align-items: flex-end; gap: var(--yk-space-2);
+  padding: var(--web-chat-inset);
+  background: var(--yk-surface); border: 1px solid var(--web-chat-edge); border-radius: var(--yk-radius-composer);
+  box-shadow: 0 0 0 3px var(--web-chat-ring); transition: border-color .15s, box-shadow .15s, background-color .15s;
+}
+.web-chat__field:has(textarea:focus) { --web-chat-edge: var(--yk-accent); --web-chat-ring: var(--yk-accent-soft); }
+.web-chat__field--disabled { background: var(--yk-surface-2); }
+.web-chat__input { flex: 1 1 auto; min-width: 0; }
+/* Рамку держит `.web-chat__field`: у самого поля её нет */
+.web-chat__input .yk-input { min-height: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+/* 16px — меньше Safari на iPhone увеличивает страницу при фокусе. Текст начинается там же, где в сообщениях ленты */
+.web-chat__input textarea.yk-input__control {
+  font-size: 16px; line-height: 24px;
+  min-height: var(--web-chat-control); max-height: calc(var(--web-chat-control) + 24px * 5);
+  padding: calc((var(--web-chat-control) - 24px) / 2) var(--yk-space-1) calc((var(--web-chat-control) - 24px) / 2) calc(var(--yk-space-4) - var(--web-chat-inset) - 1px);
+}
+.web-chat__field-actions { flex: 0 0 auto; display: flex; align-items: center; gap: var(--yk-space-2); }
+/* Кнопки — кружки высотой в строку текста; пальцу отдано 44px: область нажатия шире кружка и помещается в отступы поля */
+.web-chat__field-actions .yk-button { --yk-button-height: var(--web-chat-control); position: relative; border-radius: 50%; }
+.web-chat__field-actions .yk-button::after { content: ""; position: absolute; inset: calc((var(--web-chat-control) - 44px) / 2); }
+.web-chat__field-actions .web-chat__voice { color: var(--yk-muted); }
+@media (hover: hover) { .web-chat__field-actions .web-chat__voice:hover:not(:disabled):not([aria-busy="true"]) { color: var(--yk-text); } }
+/* Идёт запись: красный кружок со «стоп» */
+.web-chat__field-actions .web-chat__voice--recording,
+.web-chat__field-actions .web-chat__voice--recording:hover:not(:disabled):not([aria-busy="true"]) { background: var(--yk-danger-soft); color: var(--yk-danger); }
+/* Отправлять нечего: кнопка тихая, без чёрного пятна в пустом поле */
+.web-chat__field-actions .web-chat__send:disabled { background: var(--yk-surface-2); color: var(--yk-faint); opacity: 1; }
+.web-chat__field--disabled .web-chat__send:disabled { background: var(--yk-surface-3); }

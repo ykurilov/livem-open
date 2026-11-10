@@ -43,16 +43,25 @@ export async function findPublishedTarget(tx: DatabaseExecutor, leadMagnetId: st
 export type NoCodeReply = { kind: "inbox" } | { kind: "start"; target: StartTarget } | { kind: "menu" };
 
 /**
- * Что делать без кода по настройке бота. Лидмагнит по умолчанию снят или в меню нечего показать — как «ничего»:
- * человек не останется без внимания эксперта.
+ * Что делать без кода по настройке бота. Лидмагнит по умолчанию снят, отвязан от этого бота или в меню нечего показать —
+ * как «ничего»: человек не останется без внимания эксперта.
  */
 export async function chooseNoCodeReply(tx: DatabaseExecutor, bot: typeof bots.$inferSelect): Promise<NoCodeReply> {
-  if (bot.noCodeMode === "default" && bot.defaultLeadMagnetId) {
+  if (bot.noCodeMode === "default" && bot.defaultLeadMagnetId && (await isPublishedOnBot(tx, bot.id, bot.defaultLeadMagnetId))) {
     const target = await findPublishedTarget(tx, bot.defaultLeadMagnetId);
     if (target) return { kind: "start", target };
   }
   if (bot.noCodeMode === "menu" && (await publishedLeadMagnetsOfBot(tx, bot.id)).length > 0) return { kind: "menu" };
   return { kind: "inbox" };
+}
+
+/**
+ * Голый /start посреди разговора: меню бота, если в нём есть другой лидмагнит. Разговор не обрывается — человек
+ * либо пишет дальше, либо кнопкой переходит на другой лидмагнит.
+ */
+export async function menuOffersSwitch(tx: DatabaseExecutor, bot: typeof bots.$inferSelect, activeLeadMagnetId: string): Promise<boolean> {
+  if (bot.noCodeMode !== "menu") return false;
+  return (await publishedLeadMagnetsOfBot(tx, bot.id)).some((lead) => lead.leadMagnetId !== activeLeadMagnetId);
 }
 
 /** Меню бота: по кнопке на каждый опубликованный лидмагнит. Показать нечего — `null`. */
@@ -65,7 +74,7 @@ export async function buildMenu(db: DatabaseExecutor, botId: string): Promise<Pi
   };
 }
 
-/** Лидмагнит опубликован на этом боте: только такой запускает кнопка меню. */
+/** Лидмагнит опубликован на этом боте: только такой запускают ссылка, кнопка меню и режим «по умолчанию». */
 export async function isPublishedOnBot(tx: DatabaseExecutor, botId: string, leadMagnetId: string): Promise<boolean> {
   return (await publishedLeadMagnetsOfBot(tx, botId)).some((lead) => lead.leadMagnetId === leadMagnetId);
 }

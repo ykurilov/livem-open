@@ -32,7 +32,7 @@ const peopleFilterSchema = z.strictObject({
 export type FieldCondition = z.infer<typeof fieldConditionSchema>;
 
 /**
- * Фильтр базы — общий для экрана «База» и рассылок (там он хранится в `mailings.filter`).
+ * Фильтр базы — общий для экрана «Люди» и рассылок (там он хранится в `mailings.filter`).
  * Пустой или не заданный список — без ограничения. Лидмагнит, метка и статус относятся к одному прохождению.
  */
 export type PeopleFilter = z.infer<typeof peopleFilterSchema>;
@@ -128,37 +128,49 @@ export async function listPeople(
   filter: PeopleFilter,
   page: { limit: number; offset: number } = { limit: 50, offset: 0 },
 ): Promise<PersonListItem[]> {
-  const lastPassage = db
+  // Сначала страница людей, потом их последние прохождения: иначе последнее прохождение ищется у каждого человека в базе
+  const onPage = db
     .select({
-      leadMagnetName: sql<string>`${leadMagnets.draft} ->> 'name'`.as("lead_magnet_name"),
-      status: passages.status,
+      id: people.id,
+      displayName: people.displayName,
+      channel: people.channel,
+      botTitle: sql<string>`${bots.title}`.as("bot_title"),
+      blockedAt: people.blockedAt,
+      createdAt: people.createdAt,
+      source: people.source,
     })
+    .from(people)
+    .innerJoin(bots, eq(bots.id, people.botId))
+    .where(peopleFilterCondition(filter))
+    .orderBy(desc(people.createdAt), desc(people.id))
+    .limit(page.limit)
+    .offset(page.offset)
+    .as("page");
+
+  const lastPassage = db
+    .select({ leadMagnetId: passages.leadMagnetId, status: passages.status })
     .from(passages)
-    .innerJoin(leadMagnets, eq(leadMagnets.id, passages.leadMagnetId))
-    .where(eq(passages.personId, people.id))
+    .where(eq(passages.personId, onPage.id))
     .orderBy(desc(passages.startedAt))
     .limit(1)
     .as("last_passage");
 
   const rows = await db
     .select({
-      id: people.id,
-      displayName: people.displayName,
-      channel: people.channel,
-      botTitle: bots.title,
-      blockedAt: people.blockedAt,
-      createdAt: people.createdAt,
-      source: people.source,
-      leadMagnetName: lastPassage.leadMagnetName,
+      id: onPage.id,
+      displayName: onPage.displayName,
+      channel: onPage.channel,
+      botTitle: onPage.botTitle,
+      blockedAt: onPage.blockedAt,
+      createdAt: onPage.createdAt,
+      source: onPage.source,
+      leadMagnetName: sql<string>`${leadMagnets.draft} ->> 'name'`,
       status: lastPassage.status,
     })
-    .from(people)
-    .innerJoin(bots, eq(bots.id, people.botId))
+    .from(onPage)
     .leftJoinLateral(lastPassage, sql`true`)
-    .where(peopleFilterCondition(filter))
-    .orderBy(desc(people.createdAt), desc(people.id))
-    .limit(page.limit)
-    .offset(page.offset);
+    .leftJoin(leadMagnets, eq(leadMagnets.id, lastPassage.leadMagnetId))
+    .orderBy(desc(onPage.createdAt), desc(onPage.id));
 
   return rows.map(({ leadMagnetName, status, ...row }) => ({
     ...row,

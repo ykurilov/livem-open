@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
 import type { ChannelAdapters, ChannelKind } from "../channels/channel";
 import { bots, leadMagnetBots } from "../channels/schema";
 import type { DatabaseExecutor } from "../platform/db";
@@ -29,6 +29,28 @@ export interface Publication {
   snapshotId: string | null;
   code: string | null;
   bots: Array<AttachedBot & { link: string | null }>;
+  /** Ссылка на веб-чат: есть у любого опубликованного лидмагнита. */
+  webLink: string | null;
+}
+
+/** Ссылка на веб-чат по коду ссылки лидмагнита. */
+export function webChatLink(adapters: ChannelAdapters, code: string): string | null {
+  return adapters.web?.entryLink({ username: "web", externalId: "web" }, code) ?? null;
+}
+
+/** Веб-ссылки опубликованных лидмагнитов одним запросом — для карточек списка; та же ссылка, что на странице «Публикация». */
+export async function listWebLinksByLeadMagnet(db: DatabaseExecutor, adapters: ChannelAdapters): Promise<Map<string, string>> {
+  const rows = await db
+    .select({ leadMagnetId: entryLinks.leadMagnetId, code: entryLinks.code })
+    .from(entryLinks)
+    .innerJoin(leadMagnets, eq(leadMagnets.id, entryLinks.leadMagnetId))
+    .where(and(isNull(entryLinks.label), isNotNull(leadMagnets.publishedSnapshotId)));
+  const links = new Map<string, string>();
+  for (const { leadMagnetId, code } of rows) {
+    const link = webChatLink(adapters, code);
+    if (link) links.set(leadMagnetId, link);
+  }
+  return links;
 }
 
 /** Привязывает бота к лидмагниту. На мессенджер — один бот: новый заменяет прежнего. */
@@ -40,16 +62,34 @@ export async function attachBot(db: DatabaseExecutor, input: { leadMagnetId: str
     .where(and(eq(bots.id, input.botId), isNull(bots.deletedAt)))
     .for("share");
   if (!bot) throw new PublishError(BOT_NOT_FOUND);
+  const [previous] = await db
+    .select({ botId: leadMagnetBots.botId })
+    .from(leadMagnetBots)
+    .where(and(eq(leadMagnetBots.leadMagnetId, input.leadMagnetId), eq(leadMagnetBots.channel, bot.channel)));
   await db
     .insert(leadMagnetBots)
     .values({ leadMagnetId: input.leadMagnetId, botId: input.botId, channel: bot.channel })
     .onConflictDoUpdate({ target: [leadMagnetBots.leadMagnetId, leadMagnetBots.channel], set: { botId: input.botId } });
+  if (previous && previous.botId !== input.botId) await dropDefaultLeadMagnet(db, previous.botId, input.leadMagnetId);
 }
 
 export async function detachBot(db: DatabaseExecutor, input: { leadMagnetId: string; channel: ChannelKind }): Promise<void> {
-  await db
+  const detached = await db
     .delete(leadMagnetBots)
-    .where(and(eq(leadMagnetBots.leadMagnetId, input.leadMagnetId), eq(leadMagnetBots.channel, input.channel)));
+    .where(and(eq(leadMagnetBots.leadMagnetId, input.leadMagnetId), eq(leadMagnetBots.channel, input.channel)))
+    .returning({ botId: leadMagnetBots.botId });
+  for (const { botId } of detached) await dropDefaultLeadMagnet(db, botId, input.leadMagnetId);
+}
+
+/**
+ * Лидмагнит ушёл с бота, а был у него «по умолчанию»: режим бота — «ничего» (без лидмагнита «по умолчанию» настройки
+ * бота не сохраняются). Иначе новички прежнего бота так и попадали бы в лидмагнит, который эксперт там уже не видит.
+ */
+async function dropDefaultLeadMagnet(db: DatabaseExecutor, botId: string, leadMagnetId: string): Promise<void> {
+  await db
+    .update(bots)
+    .set({ noCodeMode: "nothing", defaultLeadMagnetId: null })
+    .where(and(eq(bots.id, botId), eq(bots.defaultLeadMagnetId, leadMagnetId)));
 }
 
 export async function listAttachedBots(db: DatabaseExecutor, leadMagnetId: string): Promise<AttachedBot[]> {
@@ -59,6 +99,18 @@ export async function listAttachedBots(db: DatabaseExecutor, leadMagnetId: strin
     .innerJoin(bots, eq(bots.id, leadMagnetBots.botId))
     .where(eq(leadMagnetBots.leadMagnetId, leadMagnetId))
     .orderBy(asc(leadMagnetBots.channel));
+}
+
+/** Привязанные боты всех лидмагнитов одним запросом — для карточек списка. */
+export async function listAttachedBotsByLeadMagnet(db: DatabaseExecutor): Promise<Map<string, AttachedBot[]>> {
+  const rows = await db
+    .select({ leadMagnetId: leadMagnetBots.leadMagnetId, botId: bots.id, channel: bots.channel, title: bots.title, username: bots.username, externalId: bots.externalId })
+    .from(leadMagnetBots)
+    .innerJoin(bots, eq(bots.id, leadMagnetBots.botId))
+    .orderBy(asc(leadMagnetBots.channel));
+  const byLeadMagnet = new Map<string, AttachedBot[]>();
+  for (const { leadMagnetId, ...bot } of rows) byLeadMagnet.set(leadMagnetId, [...(byLeadMagnet.get(leadMagnetId) ?? []), bot]);
+  return byLeadMagnet;
 }
 
 /**
@@ -165,6 +217,7 @@ export async function describePublication(
   return {
     snapshotId: lead?.snapshotId ?? null,
     code,
+    webLink: code ? webChatLink(adapters, code) : null,
     bots: attached.map((bot) => ({
       ...bot,
       link: code ? (adapters[bot.channel]?.entryLink(bot, code) ?? null) : null,

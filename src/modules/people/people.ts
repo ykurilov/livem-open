@@ -54,6 +54,7 @@ export async function rememberAboutPerson(
   update: { facts: string[]; fieldValues: Record<string, PersonFieldValue>; source: string; at: Date },
 ): Promise<void> {
   const facts: PersonFact[] = update.facts.map((text) => ({ text, at: update.at.toISOString(), source: update.source }));
+  const dates = Object.fromEntries(Object.keys(update.fieldValues).map((fieldId) => [fieldId, update.at.toISOString()]));
   await db
     .update(people)
     .set({
@@ -65,6 +66,7 @@ export async function rememberAboutPerson(
         )
       ), '[]'::jsonb)`,
       fieldValues: sql`${people.fieldValues} || ${JSON.stringify(update.fieldValues)}::jsonb`,
+      fieldUpdatedAt: sql`${people.fieldUpdatedAt} || ${JSON.stringify(dates)}::jsonb`,
     })
     .where(eq(people.id, personId));
 }

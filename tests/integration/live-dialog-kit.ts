@@ -3,9 +3,11 @@ import { APICallError } from "ai";
 import { randomUUID } from "node:crypto";
 import type { AgentFlow } from "@ykurilov/agent-chat-flows";
 import { createInMemoryChatStorage, extendCatalog, type ChatStorage, type ModelCatalog, type ModelChoice, type UsageSource } from "@ykurilov/agent-chat-core";
+import { createMemoryAttachmentStorage, type Attachments } from "@ykurilov/agent-chat-attachments";
 import { eq } from "drizzle-orm";
 import { createAlerts, type AlertService } from "@/modules/alerts";
-import type { AttachmentKind, BotCredentials, ChannelEvent } from "@/modules/channels";
+import type { AttachmentKind, BotCredentials, ChannelAdapters, ChannelEvent, ChannelKind, OutgoingMessage } from "@/modules/channels";
+import { createWebChatAdapter } from "@/modules/channels/web/adapter";
 import { FakeChannel } from "@/modules/channels/fake";
 import { bots, outboundMessages } from "@/modules/channels/schema";
 import { BURST_QUIET_MS } from "@/modules/consultant/headless-turn";
@@ -16,8 +18,10 @@ import { attachBot, publishLeadMagnet } from "@/modules/lead-magnets/publish";
 import { leadMagnets, leadMagnetVersions } from "@/modules/lead-magnets/schema";
 import { newLeadMagnetSettings } from "@/modules/lead-magnets/settings";
 import { people } from "@/modules/people/schema";
+import { subscribeToSenler, type SenlerApi } from "@/modules/senler";
 import { getFields } from "@/modules/people";
 import { leadMagnetToFlow } from "@/modules/flows";
+import { createChatImages } from "@/modules/platform/chat-attachments";
 import { createFakeClock, type FakeClock } from "@/modules/platform/clock";
 import { createTokenCipher } from "@/modules/platform/crypto";
 import { STUB_MODEL_CHOICE, createAppCatalog } from "@/modules/platform/models-catalog";
@@ -41,6 +45,10 @@ export interface LiveDialogKitOptions {
   realJudge?: { choice: ModelChoice; env: Record<string, string | undefined> };
   /** Настоящая модель вместо подставной (замер скорости): каталог, выбор модели и окружение с ключом. */
   realModel?: { catalog: ModelCatalog; choice: ModelChoice; env: Record<string, string | undefined> };
+  /** Мессенджер бота набора; по умолчанию Telegram. */
+  botChannel?: ChannelKind;
+  /** Подменённый Senler: рассылки эксперта в том же сообществе ВК. */
+  senler?: SenlerApi;
 }
 
 interface QueuedJob {
@@ -72,13 +80,14 @@ export class FakeQueue implements JobEnqueuer {
       throw new Error("Очередь недоступна");
     }
     this.history.push({ name, payload, options });
-    const key = options?.singletonKey;
-    if (key && this.pending.some((job) => job.name === name && job.singletonKey === key)) return;
+    // У очереди хода (`short`) задача без ключа — с пустым ключом, как `coalesce(singleton_key, '')` в pg-boss
+    const key = options?.singletonKey ?? (name === "inbound-turn" ? "" : undefined);
+    if (key !== undefined && this.pending.some((job) => job.name === name && job.singletonKey === key)) return;
     this.pending.push({
       name,
       payload,
       runAt: this.clock.now().getTime() + (options?.delaySeconds ?? 0) * 1000,
-      ...(key && { singletonKey: key }),
+      ...(key !== undefined && { singletonKey: key }),
     });
   }
 
@@ -111,7 +120,13 @@ export interface LiveDialogKit {
   clock: FakeClock;
   queue: FakeQueue;
   chatStorage: ChatStorage;
+  /** Картинки чатов работника (в памяти): сюда ложатся фото клиента из мессенджера. */
+  chatImages: Attachments;
   dialog: LiveDialog;
+  /** Адаптеры работника набора: подделка Telegram и веб-чат с адресом `https://lm.test`. */
+  dialogAdapters: ChannelAdapters;
+  /** Уведомления, которые веб-чат отправил бы посетителям (без проверки, открыта ли страница). */
+  webNotified: Array<{ to: string; message: OutgoingMessage }>;
   /** Тревоги набора; отправленные тексты копятся в `alertTexts`. */
   alerts: AlertService;
   alertTexts: string[];
@@ -139,7 +154,7 @@ export interface LiveDialogKit {
   /** Лидмагнит с настройками консультанта, привязанный к боту набора и опубликованный; `adjustFlow` правит его сценарий. */
   publish(settings?: Partial<LeadMagnetSettings>, adjustFlow?: (flow: AgentFlow) => AgentFlow): Promise<PublishedLeadMagnet>;
   /** Сообщение человека через вебхук. Без `dedupeKey` — новое событие. */
-  send(userId: string, text: string, extra?: { startCode?: string; attachment?: AttachmentKind; dedupeKey?: string }): Promise<WebhookResponse>;
+  send(userId: string, text: string, extra?: { startCode?: string; attachment?: AttachmentKind; imageRef?: string; dedupeKey?: string }): Promise<WebhookResponse>;
   webhook(events: ChannelEvent[], secret?: string): Promise<WebhookResponse>;
   /** Выполняет задачи, чей срок пришёл (кроме `except`); часы не трогает. */
   runDue(except?: JobName): Promise<void>;
@@ -197,8 +212,10 @@ export async function createLiveDialogKit(database: TestDatabase, options: LiveD
   const { db } = database;
   const clock = createFakeClock(options.start ?? new Date("2026-10-01T09:00:00Z"));
   const queue = new FakeQueue(clock);
-  const channel = new FakeChannel();
+  const botChannel = options.botChannel ?? "telegram";
+  const channel = new FakeChannel({ kind: botChannel });
   const chatStorage = options.chatStorage ?? createInMemoryChatStorage();
+  const chatImages = createChatImages(createMemoryAttachmentStorage());
   const kitNumber = ++kitCounter;
 
   // Запасной судья сценария — та же подставная модель: его вопросы узнаются по инструкции и отвечаются `kit.judge`
@@ -219,7 +236,7 @@ export async function createLiveDialogKit(database: TestDatabase, options: LiveD
         id: STUB_MODEL_CHOICE.modelId,
         displayName: "Тестовая модель",
         contextWindowTokens: 100_000,
-        acceptsImages: false,
+        acceptsImages: true,
         reasoning: { replayPastTurns: true },
         providerModelIds: { [STUB_MODEL_CHOICE.providerId]: "stub-v1" },
         pricing: {
@@ -237,7 +254,7 @@ export async function createLiveDialogKit(database: TestDatabase, options: LiveD
   const [botRow] = await db
     .insert(bots)
     .values({
-      channel: "telegram",
+      channel: botChannel,
       title: `Бот ${kitNumber}`,
       externalId: `ext-${token}`,
       username: `kit_bot_${kitNumber}`,
@@ -254,6 +271,11 @@ export async function createLiveDialogKit(database: TestDatabase, options: LiveD
     webhookSecret: botRow.webhookSecret,
   };
 
+  const webNotified: LiveDialogKit["webNotified"] = [];
+  const dialogAdapters: ChannelAdapters = {
+    [botChannel]: channel,
+    web: createWebChatAdapter({ publicBaseUrl: "https://lm.test", notifier: { notify: async (to, message) => void webNotified.push({ to, message }) } }),
+  };
   const alertTexts: string[] = [];
   const alerts = createAlerts({ db, clock, notifier: { send: async (_chatId, text) => void alertTexts.push(text) } });
   const startWorker = () =>
@@ -263,10 +285,12 @@ export async function createLiveDialogKit(database: TestDatabase, options: LiveD
       judgeFallback: options.realJudge?.choice ?? modelChoice,
       queue,
       clock,
-      adapters: { telegram: channel },
+      adapters: dialogAdapters,
       cipher: KIT_CIPHER,
       alerts,
+      ...(options.senler && { senler: options.senler }),
       chatStorage,
+      chatImages,
       catalog,
       env: options.realModel?.env ?? { ...options.realJudge?.env, STUB_MODEL_API_KEY: "test" },
       modelChoice: () => modelChoice,
@@ -288,6 +312,10 @@ export async function createLiveDialogKit(database: TestDatabase, options: LiveD
     "stuck-sweep": () => dialog.sweepStuck(),
     "purchase-congratulate": ({ passageId }) => dialog.congratulatePurchase(passageId),
     "payment-reminder": ({ passageId }) => dialog.remindPayment(passageId),
+    "senler-subscribe": async ({ passageId }) => {
+      if (!options.senler) throw new Error("Задача Senler в наборе без Senler");
+      await subscribeToSenler({ db, cipher: KIT_CIPHER, api: options.senler }, passageId);
+    },
   };
 
   /** Задачи хода, чьё окно тишины ещё идёт: тест не сдвинул часы, как работник, они ждут в фоне. */
@@ -332,7 +360,10 @@ export async function createLiveDialogKit(database: TestDatabase, options: LiveD
     clock,
     queue,
     chatStorage,
+    chatImages,
     dialog,
+    dialogAdapters,
+    webNotified,
     alerts,
     alertTexts,
     bot,
@@ -376,18 +407,19 @@ export async function createLiveDialogKit(database: TestDatabase, options: LiveD
       return kit.webhook([
         {
           type: "message",
-          dedupeKey: extra.dedupeKey ?? `telegram:${bot.id}:${++eventCounter}`,
+          dedupeKey: extra.dedupeKey ?? `${botChannel}:${bot.id}:${++eventCounter}`,
           userId,
           userName: `Человек ${userId}`,
           text,
           ...(extra.attachment && { attachment: extra.attachment }),
+          ...(extra.imageRef && { imageRef: extra.imageRef }),
           ...(extra.startCode && { startCode: extra.startCode }),
         },
       ]);
     },
 
     webhook(events, secret) {
-      return dialog.acceptWebhook({ channel: "telegram", botId: bot.id, request: channel.webhookRequest(bot, events, secret) });
+      return dialog.acceptWebhook({ channel: botChannel, botId: bot.id, request: channel.webhookRequest(bot, events, secret) });
     },
 
     runDue,

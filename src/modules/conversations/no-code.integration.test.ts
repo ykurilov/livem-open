@@ -11,9 +11,11 @@ import {
   type LiveDialogKit,
 } from "../../../tests/integration/live-dialog-kit";
 import { createBotService, type BotService } from "../channels/bots";
-import { bots, outboundMessages, type NoCodeMode } from "../channels/schema";
+import { bots, leadMagnetBots, outboundMessages, type NoCodeMode } from "../channels/schema";
 import { findEntryLinkByCode, publishLeadMagnet, PublishError, unpublishLeadMagnet } from "../lead-magnets";
+import { publishWithBots } from "../lead-magnets/publish";
 import { countUnansweredThreads, listUnansweredThreads } from "../inbox";
+import { createMailing, sendMailingTest } from "../mailings";
 import { MENU_BUTTON_LABEL_LIMIT, MENU_TEXT, menuButtonPayload } from "./no-code";
 import { AUTOREPLY_TEXT } from "./router";
 import { passages } from "./schema";
@@ -95,18 +97,24 @@ describe("режим «ничего»", () => {
 const DAY = 24 * 60 * 60_000;
 
 /** Рассылка человеку: строка исходящих, как её пишет отправка рассылок. */
+/** Сообщение рассылки человеку: ушло или ещё в очереди — тогда, как у порции рассылки, с отсрочкой и своей задачей отправки. */
 async function sentMailing(userId: string, status: "sent" | "queued" = "sent") {
   const found = await kit.personOf(userId);
-  await database.db.insert(outboundMessages).values({
-    botId: kit.bot.id,
-    personId: found!.id,
-    kind: "mailing",
-    mailingId: randomUUID(),
-    text: "Новости",
-    status,
-    idempotencyKey: `mailing-${randomUUID()}`,
-    ...(status === "sent" && { sentAt: kit.clock.now() }),
-  });
+  const delaySeconds = 10;
+  const [row] = await database.db
+    .insert(outboundMessages)
+    .values({
+      botId: kit.bot.id,
+      personId: found!.id,
+      kind: "mailing",
+      mailingId: randomUUID(),
+      text: "Новости",
+      status,
+      idempotencyKey: `mailing-${randomUUID()}`,
+      ...(status === "sent" ? { sentAt: kit.clock.now() } : { nextAttemptAt: new Date(kit.clock.now().getTime() + delaySeconds * 1000) }),
+    })
+    .returning({ id: outboundMessages.id });
+  if (status === "queued") await kit.queue.enqueue("outbound-send", { outboundMessageId: row!.id }, { delaySeconds });
 }
 
 async function finishPassages() {
@@ -127,6 +135,31 @@ describe("режим «лидмагнит по умолчанию»", () => {
 
     expect((await kit.passagesOf(person))[0]).toMatchObject({ leadMagnetId: lead.leadMagnetId, status: "active" });
     expect(kit.textsTo(person)[0]).toContain("Лидмагнит по умолчанию");
+  });
+
+  it("с чем новичок пришёл без кода, консультант видит и отвечает сразу после первого сообщения", async () => {
+    const lead = await kit.publish({ firstMessage: "Лидмагнит по умолчанию" });
+    await setMode("default", lead.leadMagnetId);
+
+    await say("Хочу гайд про нейросети");
+
+    expect(kit.textsTo(person)).toHaveLength(2);
+    expect(kit.textsTo(person)[0]).toContain("Лидмагнит по умолчанию");
+    expect(kit.textsTo(person)[1]).toBe(DEFAULT_CONSULTANT_REPLY);
+    expect(kit.consultantCalls()).toHaveLength(1);
+    expect(kit.consultantCalls()[0]!.lastUserText).toContain("Хочу гайд про нейросети");
+    expect((await kit.inboundOf(person))[0]!.answeredAt).not.toBeNull();
+  });
+
+  it("голый /start у новичка — только первое сообщение, консультант не отвечает", async () => {
+    const lead = await kit.publish({ firstMessage: "Лидмагнит по умолчанию" });
+    await setMode("default", lead.leadMagnetId);
+
+    await say("/start");
+
+    expect(kit.textsTo(person)).toHaveLength(1);
+    expect(kit.textsTo(person)[0]).toContain("Лидмагнит по умолчанию");
+    expect(kit.consultantCalls()).toHaveLength(0);
   });
 
   it("лидмагнит по умолчанию снят с публикации — как «ничего»", async () => {
@@ -248,6 +281,73 @@ describe("режим «меню»", () => {
     expect(await kit.passagesOf(person)).toEqual([]);
     expect(kit.textsTo(person)).toEqual([]);
     expect(kit.channel.answeredButtons).toContain(callbackId);
+  });
+});
+
+describe("смена лидмагнита посреди разговора", () => {
+  it("голый /start в режиме «меню» — меню, разговор не обрывается; кнопка другого лидмагнита — новый разговор с чистой историей", async () => {
+    const wrong = await kit.publish({ name: "Разбор воронки", firstMessage: "Начнём разбор!" });
+    const right = await kit.publish({ name: "Аудит рекламы", firstMessage: "Начнём аудит!" });
+    await setMode("menu");
+    await say(`/start ${wrong.code}`, wrong.code);
+    await say("Мне про воронку");
+
+    await say("/start");
+
+    expect(lastMessage()).toMatchObject({ text: MENU_TEXT });
+    expect(lastMessage()!.buttons!.map((button) => button.payload)).toContain(menuButtonPayload(right.code));
+    expect(await kit.passagesOf(person)).toEqual([expect.objectContaining({ leadMagnetId: wrong.leadMagnetId, status: "active" })]);
+    // Нажал /start случайно и пишет дальше — тот же разговор
+    await say("Продолжим?");
+    expect((await kit.inboundOf(person)).at(-1)).toMatchObject({ route: "passage" });
+    expect(await kit.passagesOf(person)).toHaveLength(1);
+
+    await press(menuButtonPayload(right.code));
+
+    const all = await kit.passagesOf(person);
+    const old = all.find((row) => row.leadMagnetId === wrong.leadMagnetId)!;
+    const fresh = all.find((row) => row.leadMagnetId === right.leadMagnetId)!;
+    expect(old.status).toBe("not_completed");
+    expect(fresh.status).toBe("active");
+    expect(fresh.chatId).not.toBe(old.chatId);
+    expect(kit.textsTo(person).at(-1)).toContain("Начнём аудит!");
+    await say("Привет");
+    expect((await kit.inboundOf(person)).at(-1)).toMatchObject({ route: "passage", passageId: fresh.id });
+  });
+
+  // Человек удалил чат и нажал «Старт»: без повтора он видел бы пустой экран
+  it("голый /start посреди разговора, на боте нет другого лидмагнита — повтор последнего сообщения, без хода модели", async () => {
+    const lead = await kit.publish({ name: "Разбор воронки" });
+    await setMode("menu");
+    await say(`/start ${lead.code}`, lead.code);
+    await say("Мне про воронку");
+    const sent = kit.textsTo(person);
+    const calls = kit.calls.length;
+
+    await say("/start");
+
+    expect(kit.textsTo(person)).toEqual([...sent, sent.at(-1)]);
+    expect(kit.calls).toHaveLength(calls);
+    expect(await kit.passagesOf(person)).toEqual([expect.objectContaining({ status: "active" })]);
+    // Повтор задачи маршрутизации второй копии не шлёт
+    await kit.dialog.routeInbound((await kit.inboundOf(person)).at(-1)!.id);
+    await kit.drain();
+    expect(kit.textsTo(person)).toHaveLength(sent.length + 1);
+  });
+
+  it("голый /start посреди разговора в режиме «по умолчанию» — повтор последнего сообщения, разговор идёт", async () => {
+    const lead = await kit.publish({ firstMessage: "Лидмагнит по умолчанию" });
+    await kit.publish({ name: "Другой" });
+    await setMode("default", lead.leadMagnetId);
+    await say("/start");
+    const sent = kit.textsTo(person);
+
+    await say("/start");
+
+    expect(kit.textsTo(person)).toEqual([...sent, sent.at(-1)]);
+    expect(kit.textsTo(person).at(-1)).toContain("Лидмагнит по умолчанию");
+    expect(await kit.passagesOf(person)).toEqual([expect.objectContaining({ leadMagnetId: lead.leadMagnetId, status: "active" })]);
+    expect((await kit.inboundOf(person)).at(-1)).toMatchObject({ route: "ignored" });
   });
 });
 
@@ -393,6 +493,21 @@ describe("вернувшийся человек", () => {
     expect((await kit.inboundOf(person)).at(-1)).toMatchObject({ route: "inbox", autoreply: true });
   });
 
+  it("эксперт прислал себе пробу рассылки — он всё ещё новичок: без кода начинается лидмагнит по умолчанию", async () => {
+    const lead = await kit.publish({ firstMessage: "Лидмагнит по умолчанию" });
+    await setMode("default", lead.leadMagnetId);
+    await kit.webhook([{ type: "unblocked", dedupeKey: `${person}-allowed`, userId: person }]);
+    await kit.drain();
+    const mailing = await createMailing(database.db, { text: "Проба", filter: {} });
+    await sendMailingTest({ db: database.db, queue: kit.queue, clock: kit.clock }, mailing.id, (await kit.personOf(person))!.id, randomUUID());
+    await kit.drain();
+    expect(kit.textsTo(person)).toEqual(["Проба"]);
+
+    await say("Привет");
+
+    expect((await kit.passagesOf(person))[0]).toMatchObject({ leadMagnetId: lead.leadMagnetId, status: "active" });
+  });
+
   it("рассылка ещё не ушла (в очереди) — человек всё ещё новичок", async () => {
     const lead = await kit.publish({ firstMessage: "Лидмагнит по умолчанию" });
     await setMode("default", lead.leadMagnetId);
@@ -433,6 +548,86 @@ describe("кнопка лидмагнита чужого бота", () => {
     expect(await kit.passagesOf(person)).toEqual([]);
     expect(kit.channel.answeredButtons).toContain(callbackId);
     expect(lastMessage()!.buttons).toEqual([{ label: "Свой", payload: menuButtonPayload(own.code) }]);
+  });
+});
+
+describe("лидмагнит перенесли на другого бота", () => {
+  async function anotherTelegramBot() {
+    const [row] = await database.db
+      .insert(bots)
+      .values({
+        channel: "telegram",
+        title: "Новый бот",
+        externalId: randomUUID(),
+        username: `new_bot_${randomUUID().slice(0, 6)}`,
+        tokenEncrypted: KIT_CIPHER.encrypt(`fake-new-${randomUUID()}`),
+        webhookSecret: "s",
+      })
+      .returning();
+    return row!;
+  }
+
+  it("старая ссылка в прежнем боте — как неизвестный код: лидмагнит не начинается, бот показывает своё меню", async () => {
+    const own = await kit.publish({ name: "Остался" });
+    const moved = await kit.publish({ name: "Переехал" });
+    await publishWithBots(database.db, moved.leadMagnetId, { telegram: (await anotherTelegramBot()).id });
+    await setMode("menu");
+
+    await say(`/start ${moved.code}`, moved.code);
+
+    expect(await kit.passagesOf(person)).toEqual([]);
+    expect(lastMessage()!.buttons).toEqual([{ label: "Остался", payload: menuButtonPayload(own.code) }]);
+  });
+
+  it("старая ссылка посреди разговора в прежнем боте — разговор продолжается, нового не начинается", async () => {
+    const own = await kit.publish({ name: "Остался" });
+    const moved = await kit.publish({ name: "Переехал" });
+    await say(`/start ${own.code}`, own.code);
+    await publishWithBots(database.db, moved.leadMagnetId, { telegram: (await anotherTelegramBot()).id });
+
+    await say(`/start ${moved.code}`, moved.code);
+
+    expect(await kit.passagesOf(person)).toEqual([expect.objectContaining({ leadMagnetId: own.leadMagnetId, status: "active" })]);
+  });
+
+  it("лидмагнит по умолчанию перенесли на другого бота — у прежнего настройка сбрасывается в «ничего», без кода — «Входящие»", async () => {
+    const lead = await kit.publish({ firstMessage: "Лидмагнит по умолчанию" });
+    await setMode("default", lead.leadMagnetId);
+    await publishWithBots(database.db, lead.leadMagnetId, { telegram: (await anotherTelegramBot()).id });
+
+    expect(await botService.getBot(kit.bot.id)).toMatchObject({ noCodeMode: "nothing", defaultLeadMagnetId: null });
+    await say("Привет");
+    expect(await kit.passagesOf(person)).toEqual([]);
+    expect((await kit.inboundOf(person)).map((row) => row.route)).toEqual(["inbox"]);
+  });
+
+  it("лидмагнит по умолчанию отвязали от бота — настройка сбрасывается; у других ботов она не трогается", async () => {
+    const lead = await kit.publish();
+    const other = await createLiveDialogKit(database);
+    const otherLead = await other.publish();
+    await setMode("default", lead.leadMagnetId);
+    await database.db.update(bots).set({ noCodeMode: "default", defaultLeadMagnetId: otherLead.leadMagnetId }).where(eq(bots.id, other.bot.id));
+    const vk = await database.db
+      .insert(bots)
+      .values({ channel: "vk", title: "ВК", externalId: randomUUID(), username: `vk_${randomUUID().slice(0, 6)}`, tokenEncrypted: KIT_CIPHER.encrypt("fake-vk"), webhookSecret: "s" })
+      .returning();
+    await publishWithBots(database.db, lead.leadMagnetId, { vk: vk[0]!.id });
+
+    await publishWithBots(database.db, lead.leadMagnetId, { telegram: null });
+
+    expect(await botService.getBot(kit.bot.id)).toMatchObject({ noCodeMode: "nothing", defaultLeadMagnetId: null });
+    expect(await botService.getBot(other.bot.id)).toMatchObject({ noCodeMode: "default", defaultLeadMagnetId: otherLead.leadMagnetId });
+  });
+
+  it("лидмагнит по умолчанию без привязки к боту (старые данные) — без кода не начинается", async () => {
+    const lead = await kit.publish();
+    await setMode("default", lead.leadMagnetId);
+    await database.db.delete(leadMagnetBots).where(eq(leadMagnetBots.leadMagnetId, lead.leadMagnetId));
+
+    await say("Привет");
+
+    expect(await kit.passagesOf(person)).toEqual([]);
+    expect((await kit.inboundOf(person)).map((row) => row.route)).toEqual(["inbox"]);
   });
 });
 

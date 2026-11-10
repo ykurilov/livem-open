@@ -2,8 +2,10 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import type { AnswerKind, CorrectionContextLine } from "@/modules/corrections";
 
-export const SCENARIO_KINDS = ["normal", "hard", "provocateur", "program"] as const;
+/** `corrections` — эксперт разбирает с конструктором свои правки ответов из «Проверки», лидмагнит — из файла. */
+export const SCENARIO_KINDS = ["normal", "hard", "provocateur", "program", "corrections"] as const;
 export type ScenarioKind = (typeof SCENARIO_KINDS)[number];
 
 /** «На рост» — трудные, проходят плохо; «на поломки» — проходят почти всегда, ловят откат; отложенные лежат в `scenarios-holdout/` и не показываются тому, кто правит промпты. */
@@ -27,6 +29,8 @@ const frontmatterSchema = z.strictObject({
   days: z.coerce.number().int().min(2).max(14).optional(),
   /** JSON лидмагнита в формате scripts/lm.sh (путь от корня проекта): конструктор не участвует. */
   leadMagnet: z.string().min(1).optional(),
+  /** Разбор правок: эксперт соглашается с предложением конструктора или отказывается от него. Как именно — в описании эксперта. */
+  consent: z.enum(["agree", "refuse"]).optional(),
 });
 
 export interface ClientCard {
@@ -40,6 +44,16 @@ export interface ClientCard {
 
 type Frontmatter = z.infer<typeof frontmatterSchema>;
 
+/** Правка ответа консультанта, которую эксперт будто бы сделал в «Проверке»: поля заготовки `seedCorrections`. */
+export interface ScenarioCorrection {
+  title: string;
+  answerKind: AnswerKind;
+  context: CorrectionContextLine[];
+  originalText: string;
+  correctedText: string;
+  reason: string | null;
+}
+
 export interface Scenario extends Omit<Frontmatter, "leadMagnet" | "set"> {
   /** Набор сценария. Нет у сценариев из папок прогонов, снятых до появления наборов. */
   set?: ScenarioSet;
@@ -47,12 +61,19 @@ export interface Scenario extends Omit<Frontmatter, "leadMagnet" | "set"> {
   clients: ClientCard[];
   /** Лидмагнит из файла и правка поверх него из раздела «# Лидмагнит». */
   leadMagnet?: { file: string; overlay: Record<string, unknown> };
+  /** Правки для разбора (вид `corrections`). */
+  corrections?: ScenarioCorrection[];
 }
 
 const EXPERT_HEADING = "Эксперт";
 const GOAL_HEADING = "Цель";
 const CLIENT_PREFIX = "Клиент:";
 const LEAD_MAGNET_HEADING = "Лидмагнит";
+const CORRECTIONS_HEADING = "Правки";
+const CORRECTION_PREFIX = "Правка:";
+const ANSWER_KINDS: Record<string, AnswerKind> = { ответ: "reply", "первое сообщение": "first_message", "ответ с прощанием": "farewell" };
+const ANSWER_KIND_LINE = /^Вид:\s*(.*?)\s*$/;
+const CONTEXT_LINE = /^(Клиент|Консультант):\s*(.*)$/;
 const START_LINE = /^Старт:\s*([01]\d|2[0-3]):([0-5]\d)\s*$/;
 const PROFILE_LINE = /^Профиль:\s*(\S.*?)\s*$/;
 const JSON_BLOCK = /```json\n([\s\S]*?)\n```/;
@@ -96,11 +117,62 @@ export function parseScenario(markdown: string, fileName: string): Scenario {
   if (clients.length === 0) fail(`нет ни одного раздела «# ${CLIENT_PREFIX} …»`);
   for (const client of clients) if (!client.name || !client.card) fail("у клиента нет имени или карточки");
 
-  const { leadMagnet: file, ...frontmatter } = parsed.data;
+  const { leadMagnet: file, consent, ...frontmatter } = parsed.data;
   if (!file && frontmatter.expertReplies === undefined) fail("expertReplies: нужно число реплик эксперта, если лидмагнит не из файла (leadMagnet)");
   const overlaySection = sections.find((section) => section.heading === LEAD_MAGNET_HEADING);
   const overlay = overlaySection ? readOverlay(overlaySection.body, fail) : {};
-  return { ...frontmatter, expert: { card: card.trim(), goal }, clients, ...(file && { leadMagnet: { file, overlay } }) };
+  const correctionsSection = sections.find((section) => section.heading === CORRECTIONS_HEADING);
+  const reviewing = frontmatter.kind === "corrections";
+  if (!reviewing && consent) fail("consent — только у сценария вида corrections");
+  if (!reviewing && correctionsSection) fail(`раздел «# ${CORRECTIONS_HEADING}» — только у сценария вида corrections`);
+  let corrections: ScenarioCorrection[] | undefined;
+  if (reviewing) {
+    if (!file) fail("leadMagnet: у разбора правок лидмагнит берётся из файла");
+    if (frontmatter.expertReplies === undefined) fail("expertReplies: нужно число реплик эксперта для разбора правок");
+    if (!consent) fail("consent: agree или refuse — согласится ли эксперт с предложением конструктора");
+    corrections = splitByHeading(correctionsSection?.body ?? "", "## ")
+      .filter((section) => section.heading.startsWith(CORRECTION_PREFIX))
+      .map((section) => readCorrection(section.heading.slice(CORRECTION_PREFIX.length).trim(), section.body, fail));
+    if (corrections.length === 0) fail(`нет раздела «# ${CORRECTIONS_HEADING}» хотя бы с одной «## ${CORRECTION_PREFIX} …»`);
+  }
+  return {
+    ...frontmatter,
+    ...(consent && { consent }),
+    expert: { card: card.trim(), goal },
+    clients,
+    ...(file && { leadMagnet: { file, overlay } }),
+    ...(corrections && { corrections }),
+  };
+}
+
+/** Правка: строка «Вид: …» (по умолчанию ответ) и разделы «### Разговор», «### Было», «### Стало», «### Почему». */
+function readCorrection(title: string, body: string, fail: (reason: string) => never): ScenarioCorrection {
+  const at = (reason: string) => fail(`правка «${title}»: ${reason}`);
+  const [head = "", ...rest] = `\n${body}`.split(/\n(?=### )/);
+  const parts = Object.fromEntries(splitByHeading(rest.join("\n"), "### ").map((part) => [part.heading, part.body]));
+  const kindLine = head.split("\n").map((line) => ANSWER_KIND_LINE.exec(line.trim())).find(Boolean);
+  const answerKind = kindLine ? ANSWER_KINDS[kindLine[1]!.toLowerCase()] : "reply";
+  if (!answerKind) at(`Вид — ${Object.keys(ANSWER_KINDS).join(", ")}`);
+  const originalText = parts["Было"]?.trim() ?? "";
+  const correctedText = parts["Стало"]?.trim() ?? "";
+  if (!originalText) at("нет раздела «### Было»");
+  if (!correctedText) at("нет раздела «### Стало»");
+  if (originalText === correctedText) at("«Было» и «Стало» совпадают");
+  const context: CorrectionContextLine[] = [];
+  for (const line of (parts["Разговор"] ?? "").split("\n")) {
+    const speaker = CONTEXT_LINE.exec(line);
+    if (speaker) context.push({ role: speaker[1] === "Клиент" ? "user" : "assistant", text: speaker[2]!.trim() });
+    else if (context.length) context[context.length - 1]!.text += `\n${line}`;
+    else if (line.trim()) at(`в «### Разговор» каждая реплика начинается с «Клиент:» или «Консультант:»`);
+  }
+  return {
+    title,
+    answerKind: answerKind!,
+    context: context.map((line) => ({ ...line, text: line.text.trim() })),
+    originalText,
+    correctedText,
+    reason: parts["Почему"]?.trim() || null,
+  };
 }
 
 /** Карточка клиента; первые строки «Старт: 19:30» — во сколько он пишет первым, «Профиль: Марина» — имя в мессенджере. */

@@ -5,24 +5,43 @@ import { Alert, Button, Field, Input, Textarea } from "@/ui/primitives";
 import { Dialog } from "@ykurilov/ds-react";
 import { PencilSimpleIcon as Pencil, TrashIcon as Trash2 } from "@phosphor-icons/react";
 import { IconButton } from "@/ui/icon-button";
+import { isFileTooLarge, keepingFormOnSendFailure } from "@/ui/form-upload";
+import { IMAGE_MAX_BYTES } from "@/modules/images/image-limits";
 import type { ExpertImage } from "@/modules/images";
 import { deleteImageAction, saveImageAction, type ImageActionState } from "./actions";
 
 /** Окно с формой картинки: новая (`image` нет) или правка. Сохранилось — окно закрывается. */
 function ImageFormDialog({ image, trigger, title }: { image?: ExpertImage; trigger: ReactElement<{ onClick?: () => void }>; title: string }) {
   const [open, setOpen] = useState(false);
+  // Каждое открытие — новая форма: прошлый файл, поля и прошлая ошибка не остаются
+  const [opening, setOpening] = useState(0);
+  return (
+    <>
+      {cloneElement(trigger, {
+        onClick: () => {
+          setOpening((count) => count + 1);
+          setOpen(true);
+        },
+      })}
+      <Dialog open={open} onClose={() => setOpen(false)} title={title}>
+        <ImageForm key={opening} image={image} onClose={() => setOpen(false)} />
+      </Dialog>
+    </>
+  );
+}
+
+function ImageForm({ image, onClose }: { image?: ExpertImage; onClose(): void }) {
   const [fileName, setFileName] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const [state, save, saving] = useActionState<ImageActionState, FormData>(saveImageAction.bind(null, image?.id ?? null), {});
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [state, save, saving] = useActionState<ImageActionState, FormData>(keepingFormOnSendFailure(saveImageAction.bind(null, image?.id ?? null)), {});
   useEffect(() => {
-    if (state.done) setOpen(false);
-  }, [state]);
+    if (state.done) onClose();
+  }, [state, onClose]);
 
   return (
     <>
-      {cloneElement(trigger, { onClick: () => setOpen(true) })}
-      <Dialog open={open} onClose={() => setOpen(false)} title={title}>
-        {/* Не `action={save}`: после него React очищает поля, и при ошибке эксперт потерял бы всё набранное */}
+      {/* Не `action={save}`: после него React очищает поля, и при ошибке эксперт потерял бы всё набранное */}
         <form
           className="contents"
           onSubmit={(event) => {
@@ -45,13 +64,21 @@ function ImageFormDialog({ image, trigger, title }: { image?: ExpertImage; trigg
                   aria-label="Файл картинки"
                   className="sr-only"
                   tabIndex={-1}
-                  onChange={(event) => setFileName(event.target.files?.[0]?.name ?? null)}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    // Слишком большую сервер не примет: выбор сбрасывается сразу, набранное остаётся
+                    const tooLarge = isFileTooLarge(file, IMAGE_MAX_BYTES);
+                    if (tooLarge) event.target.value = "";
+                    setFileError(tooLarge ? "Картинка больше 10 МБ — выберите поменьше" : null);
+                    setFileName(tooLarge ? null : (file?.name ?? null));
+                  }}
                 />
                 <Button type="button" variant="secondary" onClick={() => fileInput.current?.click()}>
                   {fileName || image ? "Выбрать другую" : "Выбрать картинку"}
                 </Button>
                 <span className="text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">{fileName ?? (image ? "Прежняя картинка" : "Файл не выбран")}</span>
               </div>
+              {fileError ? <p role="alert" className="text-[length:var(--yk-text-small-size)] text-[var(--yk-danger)]">{fileError}</p> : null}
             </Field>
             <Field label="Название" required>
               <Input name="title" defaultValue={image?.title} />
@@ -62,7 +89,7 @@ function ImageFormDialog({ image, trigger, title }: { image?: ExpertImage; trigg
             {state.error ? <Alert variant="danger" title={state.error} /> : null}
           </div>
           <div className="app-dialog-actions">
-            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+            <Button type="button" variant="secondary" onClick={onClose}>
               Отмена
             </Button>
             <Button type="submit" loading={saving}>
@@ -70,7 +97,6 @@ function ImageFormDialog({ image, trigger, title }: { image?: ExpertImage; trigg
             </Button>
           </div>
         </form>
-      </Dialog>
     </>
   );
 }

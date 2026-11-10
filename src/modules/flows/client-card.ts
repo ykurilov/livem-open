@@ -90,28 +90,41 @@ export function leadMagnetClientCard(db: Database): ClientCardStore {
     async read(ownerId) {
       if (isPreviewOwner(ownerId)) {
         const rows = await db
-          .select({ chatId: previewConversations.chatId, leadMagnetId: previewConversations.leadMagnetId, values: previewConversations.fieldValues, at: previewConversations.createdAt })
+          .select({
+            chatId: previewConversations.chatId,
+            leadMagnetId: previewConversations.leadMagnetId,
+            values: previewConversations.fieldValues,
+            dates: previewConversations.fieldUpdatedAt,
+            at: previewConversations.createdAt,
+          })
           .from(previewConversations)
           .where(currentPreviews);
-        return rows.flatMap((row) => entriesOf(row.values, row.at, row.chatId, row.leadMagnetId));
+        return rows.flatMap((row) => entriesOf(row, row.chatId, row.leadMagnetId));
       }
-      const [row] = await db.select({ values: people.fieldValues, at: people.createdAt }).from(people).where(eq(people.id, ownerId));
-      return row ? entriesOf(row.values, row.at, "", "") : [];
+      const [row] = await db
+        .select({ values: people.fieldValues, dates: people.fieldUpdatedAt, at: people.createdAt })
+        .from(people)
+        .where(eq(people.id, ownerId));
+      return row ? entriesOf(row, "", "") : [];
     },
 
-    async write({ ownerId, fieldId, value, chatId }) {
+    async write({ ownerId, fieldId, value, chatId, at }) {
       const checked = await checkedValue(db, fieldId, value);
       const patch = JSON.stringify({ [fieldId]: checked });
+      const date = JSON.stringify({ [fieldId]: at.toISOString() });
       if (isPreviewOwner(ownerId)) {
         await db
           .update(previewConversations)
-          .set({ fieldValues: sql`${previewConversations.fieldValues} || ${patch}::jsonb` })
+          .set({
+            fieldValues: sql`${previewConversations.fieldValues} || ${patch}::jsonb`,
+            fieldUpdatedAt: sql`${previewConversations.fieldUpdatedAt} || ${date}::jsonb`,
+          })
           .where(eq(previewConversations.chatId, chatId));
         return;
       }
       await db
         .update(people)
-        .set({ fieldValues: sql`${people.fieldValues} || ${patch}::jsonb` })
+        .set({ fieldValues: sql`${people.fieldValues} || ${patch}::jsonb`, fieldUpdatedAt: sql`${people.fieldUpdatedAt} || ${date}::jsonb` })
         .where(eq(people.id, ownerId));
     },
 
@@ -120,13 +133,19 @@ export function leadMagnetClientCard(db: Database): ClientCardStore {
       if (isPreviewOwner(ownerId)) {
         await db
           .update(previewConversations)
-          .set({ fieldValues: cleared ?? sql`${previewConversations.fieldValues} - ${fieldId}::text` })
+          .set({
+            fieldValues: cleared ?? sql`${previewConversations.fieldValues} - ${fieldId}::text`,
+            fieldUpdatedAt: cleared ?? sql`${previewConversations.fieldUpdatedAt} - ${fieldId}::text`,
+          })
           .where(and(currentPreviews, isNotNull(previewConversations.chatId)));
         return;
       }
       await db
         .update(people)
-        .set({ fieldValues: cleared ?? sql`${people.fieldValues} - ${fieldId}::text` })
+        .set({
+          fieldValues: cleared ?? sql`${people.fieldValues} - ${fieldId}::text`,
+          fieldUpdatedAt: cleared ?? sql`${people.fieldUpdatedAt} - ${fieldId}::text`,
+        })
         .where(eq(people.id, ownerId));
     },
 
@@ -138,6 +157,11 @@ export function leadMagnetClientCard(db: Database): ClientCardStore {
   };
 }
 
-function entriesOf(values: Record<string, PersonFieldValue>, at: Date, chatId: string, flowId: string): ClientCardEntry[] {
-  return Object.entries(values).map(([fieldId, value]) => ({ fieldId, value, updatedAt: at.toISOString(), chatId, flowId }));
+/** Значения без своей даты (записаны мимо карточки) датируются появлением человека или тестового разговора. */
+function entriesOf(
+  row: { values: Record<string, PersonFieldValue>; dates: Record<string, string>; at: Date },
+  chatId: string,
+  flowId: string,
+): ClientCardEntry[] {
+  return Object.entries(row.values).map(([fieldId, value]) => ({ fieldId, value, updatedAt: row.dates[fieldId] ?? row.at.toISOString(), chatId, flowId }));
 }

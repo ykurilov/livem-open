@@ -17,6 +17,7 @@ import { getLeadMagnet, saveDraft } from "../lead-magnets";
 import { publishLeadMagnet } from "../lead-magnets/publish";
 import { BURST_QUIET_MS } from "../consultant/headless-turn";
 import { inboundMessages, passages } from "./schema";
+import { UNANSWERED_AFTER_MS } from "./sweep";
 
 const MINUTE = 60_000;
 const FAREWELL = BASE_SETTINGS.farewellMessage!;
@@ -308,6 +309,80 @@ describe("долгий ход", () => {
     expect(inbound.every((row) => row.answeredAt !== null && row.route === "passage")).toBe(true);
     expect(new Set(inbound.map((row) => row.turnId)).size).toBe(1);
     expect(await passageRow(passage.id)).toMatchObject({ handedToExpertAt: null, turnFailures: 0, personMessageCount: 2 });
+  });
+});
+
+describe("ответ на брошенную пачку", () => {
+  /** Обход подмётчика; задачи разговоров других тестов (база общая, их чаты — в чужом наборе) убираются. Возвращает свои. */
+  async function sweepOwn(passageId: string) {
+    await kit.dialog.sweepStuck();
+    const own = kit.queue.pending.filter((job) => job.name !== "inbound-turn" || (job.payload as { passageId: string }).passageId === passageId);
+    kit.queue.pending.splice(0, kit.queue.pending.length, ...own);
+    return own.filter((job) => job.name === "inbound-turn");
+  }
+
+  it("finish_dialog ответил после перезапуска, а доставка упала: подмётчик отправляет итог с прощанием один раз", async () => {
+    const lead = await kit.publish();
+    await kit.send(person, `/start ${lead.code}`, { startCode: lead.code });
+    await kit.drain();
+    const passage = (await kit.passagesOf(person))[0]!;
+    kit.reply = (call) => {
+      if (call.lastToolResult !== undefined) return { text: "Договорились." };
+      if (call.lastUserText.includes("готов"))
+        return { toolCalls: [{ toolName: "finish_dialog", input: { goal: "Цель", stuckAt: "Застрял", chosenStep: "Созвон", outcome: "agreed" } }] };
+      return { text: DEFAULT_CONSULTANT_REPLY };
+    };
+    const before = kit.textsTo(person).length;
+
+    // Сообщение записано, окно тишины ещё идёт — работник останавливается
+    const advance = kit.onBurstRecorded;
+    let stopping: Promise<void> | undefined;
+    kit.onBurstRecorded = () => {
+      stopping = kit.dialog.flush({ waitForAnswersMs: 0 });
+    };
+    await kit.send(person, "Я готов к созвону");
+    await kit.runDue();
+    await stopping;
+    kit.onBurstRecorded = advance;
+    await kit.restartWorker();
+
+    // Обход нового работника отвечает на пачку, а доставка ответа падает на чтении истории
+    const getMessage = kit.chatStorage.getMessage.bind(kit.chatStorage);
+    let failed = false;
+    vi.spyOn(kit.chatStorage, "getMessage").mockImplementation(async (id) => {
+      const message = await getMessage(id);
+      if (!failed && message?.role === "assistant") {
+        failed = true;
+        throw new Error("база недоступна");
+      }
+      return message;
+    });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Окно и удержание пачки упавшим работником прошли; брошенную пачку обход отдаёт службе версии — её заводит другой разговор
+    kit.clock.advance(BURST_QUIET_MS + 31_000);
+    const newcomer = `user-${randomUUID().slice(0, 8)}`;
+    await kit.send(newcomer, `/start ${lead.code}`, { startCode: lead.code });
+    await kit.drain();
+    await kit.send(newcomer, "Привет");
+    await kit.drain();
+    await kit.dialog.tickBursts();
+    await kit.dialog.settled();
+    await kit.dialog.flow.settled();
+    expect(logged.mock.calls.some(([line]) => String(line).includes("не доставлен"))).toBe(true);
+    expect((await passageRow(passage.id)).status).toBe("completed");
+    expect(kit.textsTo(person).slice(before)).toEqual([]);
+
+    kit.clock.advance(UNANSWERED_AFTER_MS + MINUTE);
+    await sweepOwn(passage.id);
+    await kit.drain();
+    expect(kit.textsTo(person).slice(before)).toEqual([FAREWELL]);
+    expect((await kit.inboundOf(person)).at(-1)).toMatchObject({ route: "passage", answeredAt: expect.any(Date) });
+
+    // Доставлено: следующий обход ход не ставит
+    kit.clock.advance(UNANSWERED_AFTER_MS + MINUTE);
+    expect(await sweepOwn(passage.id)).toEqual([]);
+    await kit.drain();
+    expect(kit.textsTo(person).slice(before)).toEqual([FAREWELL]);
   });
 });
 

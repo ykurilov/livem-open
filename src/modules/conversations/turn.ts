@@ -3,6 +3,7 @@ import { SpendingLimitReachedError } from "@ykurilov/agent-chat-core";
 import { and, asc, eq, gte, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { AlertService } from "../alerts";
 import { enqueueOutbound, outboundMessages } from "../channels";
+import { attachClientImages, type ClientImagesDependencies } from "./client-images";
 import { sentImagePath } from "../images";
 import type { ShownVideoLink } from "../videos";
 import { appClosingAfter, buildConsultantTail } from "../consultant";
@@ -31,19 +32,27 @@ import { attachmentNoteOf, personMessageText } from "./person-message";
 import { MESSAGE_LIMIT_REASON, passageStatusOf } from "../flows/events";
 import { noteCongratulationDelivered } from "../purchases/orders";
 import { tagPassageTexts } from "../purchases/outgoing";
-import { endActivePassages, type PassageEndStatus } from "./passage-end";
+import { endActivePassages, releaseHeldMessages, type PassageEndStatus } from "./passage-end";
 import { inboundMessages, passages } from "./schema";
 
 /** Ход остановлен вместе с работником — через столько его повторит новый. */
 const RETRY_AFTER_STOP_SECONDS = 5;
 
 /**
- * Ключ отложенного хода (утро после лимита, повтор после сбоя модели). Свой, не ключ прохождения: отложенная задача не
- * держит живую — человек написал после сброса лимита, ход идёт сразу, а утренний находит, что отвечать нечего.
+ * Ключ утреннего хода после лимита. Свой, не ключ прохождения: отложенная задача не держит живую — человек написал
+ * после сброса лимита, ход идёт сразу, а утренний находит, что отвечать нечего.
  */
 export const delayedTurnKey = (passageId: string) => `inbound-turn:later:${passageId}`;
+/** Ключ повтора упавшего хода. Свой, не утренний: ждущая утра задача не держит повтор до утра. Двух ответов не будет — на одну пачку SDK начинает один ход. */
+export const retryTurnKey = (passageId: string) => `inbound-turn:retry:${passageId}`;
 
-export interface TurnDependencies {
+/** Причина для эксперта: ход закончился без текста, ролика и картинки. */
+export const SILENT_TURN_REASON = "не нашёл, что ответить";
+/** Причины для эксперта: разговор закончен отказом или уходом человека, последнего слова консультант не написал. Не сбой. */
+export const DECLINED_SILENT_REASON = "человек отказался, и консультант закрыл разговор, ничего не написав";
+const LEFT_SILENT_REASON = "человек ушёл, и консультант закрыл разговор, ничего не написав";
+
+export interface TurnDependencies extends ClientImagesDependencies {
   db: Database;
   queue: JobEnqueuer;
   clock: Clock;
@@ -90,14 +99,9 @@ interface TurnRef {
   messageIds: string[];
 }
 
-/** Сообщения прохождения, на которые консультант ещё не ответил. */
+/** Сообщения прохождения, на которые консультант ещё не ответил. Начавшее разговор — тоже, если это текст новичка без кода. */
 const waitingFor = (passageId: string) =>
-  and(
-    eq(inboundMessages.passageId, passageId),
-    eq(inboundMessages.route, "passage"),
-    eq(inboundMessages.startedPassage, false),
-    isNull(inboundMessages.answeredAt),
-  );
+  and(eq(inboundMessages.passageId, passageId), eq(inboundMessages.route, "passage"), isNull(inboundMessages.answeredAt));
 
 /** Неотвеченные сообщения хода: отмеченные им и отданные вызовом. */
 const unansweredOf = (ref: TurnRef): SQL =>
@@ -142,11 +146,12 @@ async function turnIdOf(db: DatabaseExecutor, inboundMessageId: string): Promise
 /**
  * Начало хода SDK на пачку (`beforeTurn`, и у хода без вызова): сообщения пачки отмечаются одним ходом и идут в счёт
  * сообщений человека; хвост хода — по новому счёту. Повтор той же пачки (ход не начался, упал) — тот же ход, счёт прежний.
- * Чат не прохождение — `null`.
+ * `day` — день программы сейчас (`readRun().day`): человек пишет в этот день — в отчёте он до него дошёл, даже без
+ * перехода. Чат не прохождение — `null`.
  */
 export async function reserveBurstTurn(
   deps: Pick<TurnDependencies, "db">,
-  input: { chatId: string; burstMessageIds: string[] },
+  input: { chatId: string; burstMessageIds: string[]; day?: number },
 ): Promise<{ tail: string | null } | null> {
   return deps.db.transaction(async (tx) => {
     const [passage] = await tx.select().from(passages).where(eq(passages.chatId, input.chatId)).for("update");
@@ -160,7 +165,10 @@ export async function reserveBurstTurn(
     const personMessageCount = passage.personMessageCount + fresh.length;
     if (fresh.length > 0) {
       await tx.update(inboundMessages).set({ turnId }).where(inArray(inboundMessages.id, fresh.map((row) => row.id)));
-      await tx.update(passages).set({ personMessageCount }).where(eq(passages.id, passage.id));
+      await tx
+        .update(passages)
+        .set({ personMessageCount, ...(input.day && { furthestDay: sql`greatest(${passages.furthestDay}, ${input.day})` }) })
+        .where(eq(passages.id, passage.id));
     }
     const snapshot = await getVersion(tx, passage.snapshotId);
     if (!snapshot) throw new Error(`Снимок ${passage.snapshotId} не найден`);
@@ -308,7 +316,7 @@ async function handleFailedTurn(deps: TurnDependencies, ref: TurnRef, failure: C
   await deps.queue.enqueue(
     "inbound-turn",
     { passageId: passage.id },
-    { singletonKey: delayedTurnKey(passage.id), delaySeconds: turnRetryDelaySeconds(failures) },
+    { singletonKey: retryTurnKey(passage.id), delaySeconds: turnRetryDelaySeconds(failures) },
   );
   if (failures >= MODEL_DELAY_AFTER_TURN_FAILURES) await sendModelDelay(deps, ref);
 }
@@ -378,7 +386,9 @@ async function answerTurn(deps: TurnDependencies, claim: TurnClaim): Promise<voi
   const { passage } = claim;
   // Решение сценария о входящем: разговор закончился — эксперту; рамку дня и паузу держат ворота хода службы
   const decision = await deps.flow.admit({ ownerId: passage.personId, chatId: passage.chatId });
-  if (decision.kind === "ended") return endedBeforeTurn(deps, claim, passageStatusOf(decision.reason));
+  // Разговор закрыл сам этот ход (`finish_dialog`), а ответ не дошёл: сценарий уже закончен, но итог с прощанием доводим
+  const finishing = passage.status === "completed" && Boolean(claim.turnId);
+  if (decision.kind === "ended" && !finishing) return endedBeforeTurn(deps, claim, passageStatusOf(decision.reason));
   const answer = await askConsultant(deps, claim);
   // Отвечает другой вызов (следующее сообщение пачки) или ход без вызова: ответ доставит он
   if (answer.elsewhere) return;
@@ -424,7 +434,8 @@ async function deliverAnswer(deps: TurnDependencies, ref: TurnRef, answer: TurnA
   // Ответ — в очередь до пометки «отвечено»: упадём между ними — повтор найдёт готовый ответ, ключ не даст дубля.
   // Разговор за время хода ушёл в другой лидмагнит или человек заблокировал бота — ответ уже не к месту.
   let delivered = false;
-  if (after.status === "active" || after.status === "completed") {
+  const closedDuringTurn = after.status !== "active" && after.status !== "completed";
+  if (!closedDuringTurn) {
     const botId = await botOf(deps, passage.personId);
     if (text || video || image) {
       // Ссылки продукта — с личным кодом человека: по нему узнаем об оплате. История модели остаётся без меток
@@ -438,17 +449,32 @@ async function deliverAnswer(deps: TurnDependencies, ref: TurnRef, answer: TurnA
         ...(video && { video, followUps: taggedFarewell ? [taggedFarewell] : [] }),
         // Картинка уходит фото, ответ — подписью к ней
         ...(image && { imagePath: sentImagePath(image) }),
+        // Готовые ответы — пока разговор идёт; пустой список убирает прежние кнопки мессенджера
+        quickReplies: completed ? [] : (answer.quickReplies ?? []),
         idempotencyKey: `turn:${turnKey(ref)}`,
       });
       delivered = true;
     }
   }
 
+  // Модель закончила ход без слов (после инструментов замолчала): человеку нечего отправить — эксперту, а не «отвечено».
+  // Повтор не поможет: он вернёт тот же готовый ответ
+  const silent = !closedDuringTurn && !delivered;
+  // Отказ или уход без последнего слова — конец по желанию человека: без тревоги и «отвечу чуть позже», но с объяснением
+  const outcome = after.status === "completed" && !reachedLimit ? after.summary?.outcome : undefined;
+  const quietEndReason = !silent ? null : outcome === "declined" ? DECLINED_SILENT_REASON : outcome === "left" ? LEFT_SILENT_REASON : null;
   const chatCost = await deps.consultant.chatCost(passage.chatId);
   const now = deps.clock.now();
   // Тишину после ответа и сообщения первым ведёт сценарий SDK: касания, ночь, потолок дня
   const moreWaiting = await deps.db.transaction(async (tx) => {
-    await tx.update(inboundMessages).set({ answeredAt: now }).where(unansweredOf(ref));
+    // Консультант не ответил: сообщения — эксперту во «Входящие», как у разговора, закрытого до хода
+    if (closedDuringTurn) await tx.update(inboundMessages).set({ route: "inbox" }).where(or(unansweredOf(ref), waitingFor(passageId)));
+    else if (silent) await tx.update(inboundMessages).set({ route: "inbox" }).where(unansweredOf(ref));
+    else {
+      await tx.update(inboundMessages).set({ answeredAt: now }).where(unansweredOf(ref));
+      // Ответ видит всю переписку, в том числе отложенное до утра
+      await releaseHeldMessages(tx, passageId);
+    }
     // `payment_check` этого хода нашёл оплату — поздравление ушло в ответе, запасная задача его не повторит
     if (delivered && ref.turnId) await noteCongratulationDelivered(tx, { passageId, turnId: ref.turnId, at: now });
     await tx
@@ -459,12 +485,14 @@ async function deliverAnswer(deps: TurnDependencies, ref: TurnRef, answer: TurnA
         turnFailures: 0,
         dailyLimitPausedAt: null,
         ...(reachedLimit && { status: "completed" as const, endedAt: now }),
+        ...(quietEndReason && { handedToExpertAt: now, handoverReason: quietEndReason }),
       })
       .where(eq(passages.id, passageId));
     const left = await tx.select({ id: inboundMessages.id }).from(inboundMessages).where(waitingFor(passageId)).limit(1);
     return left.length > 0;
   });
   if (reachedLimit) await endFlowAtLimit(deps, passage, settings.maxPersonMessages);
+  if (silent && !quietEndReason) await handOverToExpert(deps, ref, SILENT_TURN_REASON);
   return moreWaiting;
 }
 
@@ -503,7 +531,7 @@ async function heldWithoutAnswer(deps: TurnDependencies, ref: TurnRef, paused: b
   return deps.db.transaction(async (tx) => {
     await tx
       .update(inboundMessages)
-      .set(paused ? { route: "inbox" } : { answeredAt: now })
+      .set(paused ? { route: "inbox" } : { answeredAt: now, heldAt: now })
       .where(unansweredOf(ref));
     const left = await tx.select({ id: inboundMessages.id }).from(inboundMessages).where(waitingFor(ref.passage.id)).limit(1);
     return left.length > 0;
@@ -511,22 +539,30 @@ async function heldWithoutAnswer(deps: TurnDependencies, ref: TurnRef, paused: b
 }
 
 async function askConsultant(deps: TurnDependencies, claim: TurnClaim): Promise<TurnAnswer> {
-  const { passage, settings, turnId, messages } = claim;
+  const { passage, settings, turnId } = claim;
   const { maxMessageChars } = await readSettings(deps.db);
+  // Фото клиента консультант видит, только если лидмагнит их принимает; иначе — прежняя пометка о вложении
+  const { messages, images } = settings.clientImages
+    ? await attachClientImages(deps, { ownerId: passage.personId, chatId: passage.chatId, messages: claim.messages })
+    : { messages: claim.messages, images: new Map() };
+  const timeZone = await timeZoneOf(deps, passage.personId);
   return deps.consultant.runTurn({
     snapshotId: passage.snapshotId,
     settings,
     ownerId: passage.personId,
     chatId: passage.chatId,
-    // Каждое сообщение — своим сообщением SDK с id входящего; пустое (без текста и вложения) модели не нужно
+    // Каждое сообщение — своим сообщением SDK с id входящего, фото — его частью; пустое (без текста и вложения) модели не нужно
     messages: messages.flatMap((message) => {
       const text = personMessageText(message, maxMessageChars);
-      return text ? [{ id: message.id, text }] : [];
+      const image = images.get(message.id);
+      return text || image ? [{ id: message.id, text, ...(image && { image }) }] : [];
     }),
     ...(turnId && { turnId }),
     // Хвост повтора упавшего хода; у хода на пачку его даёт начало хода (`reserveBurstTurn`) по новому счёту
     tail: tailOf(settings, passage.personMessageCount, messages),
     expertReplies: await expertRepliesDuring(deps, passage),
+    // «Сегодня» в хвосте — по поясу человека; неизвестен — Москва
+    ...(timeZone && { timeZone }),
   });
 }
 

@@ -42,11 +42,29 @@ function bareAddress(link: string): string {
   return slash < 0 ? bare.toLowerCase() : bare.slice(0, slash).toLowerCase() + bare.slice(slash);
 }
 
+/** Страница продукта для сравнения: без протокола, www и косых в конце, сайт строчными. */
+export function productPage(product: ProductLink): string {
+  return bareAddress(product.url);
+}
+
 /** Ссылка ведёт на страницу продукта или глубже неё. */
 export function isProductLink(link: string, product: ProductLink): boolean {
   const address = bareAddress(link.split(/[?#]/)[0]!);
-  const own = bareAddress(product.url);
+  const own = productPage(product);
   return address === own || address.startsWith(`${own}/`);
+}
+
+/** Продукт ссылки: из подходящих — с самой длинной страницей, чтобы `/course/pro` не взял метку `/course`. */
+function productOfLink(link: string, products: readonly ProductLink[]): ProductLink | null {
+  let best: ProductLink | null = null;
+  for (const product of products)
+    if (isProductLink(link, product) && (!best || productPage(product).length > productPage(best).length)) best = product;
+  return best;
+}
+
+/** Продукт заказа по метке кампании. Метки нет или она чужая — единственный продукт, а из нескольких никакой: чужой курс не называем. */
+export function productOfCampaign(products: readonly ProductLink[], campaign: string | null | undefined): ProductLink | null {
+  return products.find((product) => campaign && product.campaign === campaign) ?? (products.length === 1 ? products[0]! : null);
 }
 
 function taggedLink(link: string, product: ProductLink, tag: ProductLinkTag): string {
@@ -80,7 +98,7 @@ export function tagProductLinks(text: string, products: readonly ProductLink[], 
   if (products.length === 0) return text;
   return text.replace(LINK, (found) => {
     const link = found.replace(TRAILING, "");
-    const product = products.find((candidate) => isProductLink(link, candidate));
+    const product = productOfLink(link, products);
     return product ? taggedLink(link, product, tag) + found.slice(link.length) : found;
   });
 }

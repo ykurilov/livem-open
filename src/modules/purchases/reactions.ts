@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { outboundMessages, recordOutbound, scheduleOutboundSend } from "../channels";
 import { inboundMessages, passages } from "../conversations/schema";
 import { getVersion } from "../lead-magnets";
@@ -10,10 +10,11 @@ import type { JobEnqueuer } from "../platform/queue";
 import { sentImagePath, type ShownImage } from "../images";
 import type { ShownVideoLink } from "../videos/shown-video";
 import { productLinksOf, tagPassageText } from "./outgoing";
-import { hasPaidOrder, markPurchased, ordersOfPassage, unmarkPurchased, type RecordedOrder } from "./orders";
+import { hasEverPaid, hasPaidOrder, markPurchased, ordersOfPassage, unmarkPurchased, type RecordedOrder } from "./orders";
+import { paymentReminderKey, purchaseCongratulationKey } from "./outreach-keys";
 import { formatMoney } from "./money";
 import { orderKindOf } from "./getcourse";
-import type { ProductLink } from "./product-links";
+import { productOfCampaign, type ProductLink } from "./product-links";
 import { productOrders, type ProductOrder } from "./schema";
 
 /** Напоминание об оплате — назавтра в это время по часам человека. */
@@ -29,6 +30,12 @@ export const REMINDER_CLAIM_MS = 10 * 60_000;
 export const REACTION_STALE_MS = 60_000;
 /** Поздравление, которое модель пишет в ответе на `payment_check`, — запасная задача через столько секунд. */
 export const CHECK_CONGRATULATION_DELAY_SECONDS = 60;
+/**
+ * Поздравление или напоминание не ушло через столько после срока — задача потерялась (исчерпала повторы): её ставит
+ * подмётчик. Старше окна не будим: поздно.
+ */
+export const REACTION_LOST_AFTER_MS = 15 * 60_000;
+const REACTION_RECOVERY_WINDOW_MS = 3 * 24 * 60 * 60_000;
 const RECOVERY_BATCH = 100;
 
 /** Агент пишет первым по событию приложения: служебное сообщение в историю, ход, готовый проверенный ответ. */
@@ -86,8 +93,8 @@ export async function settleOrderReactions(db: DatabaseExecutor, orders: readonl
 
 /**
  * Подмётчик покупок (`stuck-sweep`): реакции на заказы, не исполненные после записи (процесс упал между записью и
- * постановкой задачи), и напоминания, чей захват истёк без отправки (процесс упал посреди хода). Ставит только
- * существующие задачи, повтор безвреден. Возвращает, сколько восстановлено.
+ * постановкой задачи), напоминания, чей захват истёк без отправки (процесс упал посреди хода), и поздравления и
+ * напоминания, чья задача потерялась. Ставит только существующие задачи, повтор безвреден. Возвращает, сколько восстановлено.
  */
 export async function recoverPurchaseReactions(deps: PurchaseDependencies): Promise<number> {
   const now = deps.clock.now().getTime();
@@ -111,7 +118,32 @@ export async function recoverPurchaseReactions(deps: PurchaseDependencies): Prom
     .where(and(lt(passages.paymentReminderClaimedAt, new Date(now - REMINDER_CLAIM_MS)), isNull(passages.paymentReminderSentAt)))
     .limit(RECOVERY_BATCH);
   for (const { id } of stale) await deps.queue.enqueue("payment-reminder", { passageId: id });
-  return recovered + stale.length;
+
+  const lostBefore = new Date(now - REACTION_LOST_AFTER_MS);
+  const windowStart = new Date(now - REACTION_RECOVERY_WINDOW_MS);
+  const uncongratulated = await deps.db
+    .select({ id: passages.id })
+    .from(passages)
+    .innerJoin(people, eq(people.id, passages.personId))
+    .where(and(lt(passages.purchasedAt, lostBefore), gt(passages.purchasedAt, windowStart), isNull(passages.purchaseCongratulatedAt), isNull(people.blockedAt)))
+    .limit(RECOVERY_BATCH);
+  for (const { id } of uncongratulated) await deps.queue.enqueue("purchase-congratulate", { passageId: id }, { singletonKey: `purchase-congratulate:${id}` });
+  // Напоминать не о чем — задача снимет срок, подмётчик её больше не будит
+  const unreminded = await deps.db
+    .select({ id: passages.id })
+    .from(passages)
+    .where(
+      and(
+        lt(passages.paymentReminderDueAt, lostBefore),
+        gt(passages.paymentReminderDueAt, windowStart),
+        isNull(passages.paymentReminderSentAt),
+        isNull(passages.paymentReminderClaimedAt),
+        isNull(passages.purchasedAt),
+      ),
+    )
+    .limit(RECOVERY_BATCH);
+  for (const { id } of unreminded) await deps.queue.enqueue("payment-reminder", { passageId: id }, { singletonKey: `payment-reminder:${id}` });
+  return recovered + stale.length + uncongratulated.length + unreminded.length;
 }
 
 /** Одно напоминание об оплате назавтра в 11:00 по поясу человека. Повторный вызов безвреден: отправит одно. */
@@ -125,12 +157,17 @@ export async function schedulePaymentReminder(deps: PurchaseDependencies, passag
   const now = deps.clock.now();
   const at = atLocalTime(addDays(localDate(now, row.timeZone), 1), PAYMENT_REMINDER_AT, row.timeZone);
   const delaySeconds = Math.max(0, Math.ceil((at.getTime() - now.getTime()) / 1000));
+  // Срок — до постановки задачи: она потеряется — подмётчик найдёт его. Повторный вызов срок не сдвигает
+  await deps.db
+    .update(passages)
+    .set({ paymentReminderDueAt: sql`coalesce(${passages.paymentReminderDueAt}, ${at})` })
+    .where(eq(passages.id, passageId));
   await deps.queue.enqueue("payment-reminder", { passageId }, { delaySeconds, singletonKey: `payment-reminder:${passageId}` });
 }
 
-/** Продукт заказа: по метке кампании, иначе первый из настроек снимка. */
+/** Продукт заказа по метке кампании (`productOfCampaign`). */
 function productOf(products: readonly ProductLink[], order: ProductOrder | null): ProductLink | null {
-  return products.find((product) => order?.utmCampaign === product.campaign) ?? products[0] ?? null;
+  return productOfCampaign(products, order?.utmCampaign);
 }
 
 /** Служебное сообщение модели об оплате: что случилось и что сделать. Видит только модель. */
@@ -142,7 +179,7 @@ export function congratulationNotice(product: ProductLink | null, order: Product
   const tariff = details ? ` (${details})` : "";
   return (
     `Пришла оплата ${what}${tariff}: человек купил. Напиши ему первым одно короткое тёплое поздравление с покупкой. ` +
-    "Не продавай и не напоминай об оплате — ни сейчас, ни потом. Если он сейчас делает своё приложение, предложи продолжить."
+    "Не продавай и не напоминай об оплате — ни сейчас, ни потом. Если вы сейчас вместе над чем-то работаете, предложи продолжить."
   );
 }
 
@@ -158,7 +195,7 @@ export function reminderNotice(product: ProductLink | null): string {
 
 /** Готовые тексты, если хода модели не было (лимит, чат закрыт). */
 export const congratulationFallback = (product: ProductLink | null) =>
-  `Вижу оплату${product ? ` курса «${product.title}»` : ""} — поздравляю! Отличный шаг. Если понадобится помощь с приложением, пишите.`;
+  `Вижу оплату${product ? ` курса «${product.title}»` : ""} — поздравляю! Отличный шаг. Если появятся вопросы, пишите.`;
 export const reminderFallback = (product: ProductLink | null) =>
   `Напоминаю про ${product ? `курс «${product.title}»` : "оплату"}${product ? `: ${product.url}` : ""}. Если что-то помешало оплатить, напишите — подскажу.`;
 
@@ -229,7 +266,7 @@ export async function congratulatePurchase(deps: PurchaseDependencies & { writer
       text,
       ...(answer.video && { video: answer.video }),
       ...(answer.image && { imagePath: sentImagePath(answer.image) }),
-      idempotencyKey: `purchase-congratulate:${passageId}`,
+      idempotencyKey: purchaseCongratulationKey(passageId),
     });
     await tx
       .update(passages)
@@ -287,7 +324,7 @@ export async function congratulationInAnswer(deps: PurchaseDependencies, passage
 
 /**
  * Задача `payment-reminder`: одно доброе напоминание об оплате, если человек обещал или оформил заказ, а оплаты нет.
- * Не идёт оплатившему, твёрдо отказавшемуся, попросившему прекратить и заблокировавшему бота; второе не идёт никогда.
+ * Не идёт оплатившему (и вернувшему деньги), твёрдо отказавшемуся, попросившему прекратить и заблокировавшему бота; второе не идёт никогда.
  * Пока пишется — захват (`payment_reminder_claimed_at`) держит вторую задачу; процесс упал — захват истекает, и
  * напоминание берёт повтор. Отметка «ушло» — в транзакции записи исходящего; исходящее уже есть — только отметка.
  */
@@ -300,13 +337,15 @@ export async function remindPayment(deps: PurchaseDependencies & { writer: First
   if (!state || state.sentAt) return;
   const now = deps.clock.now();
   const staleClaim = lt(passages.paymentReminderClaimedAt, new Date(now.getTime() - REMINDER_CLAIM_MS));
-  const { paid, unpaid } = await ordersOfPassage(deps.db, passageId);
-  if (!target || state.purchasedAt || state.saleAnswer?.firm || state.summary?.outcome === "declined" || target.blocked || paid || (!state.promisedAt && !unpaid)) {
-    // Напоминать не о чем: истёкший захват снят, иначе подмётчик будил бы задачу снова
+  const { unpaid } = await ordersOfPassage(deps.db, passageId);
+  const paidOnce = await hasEverPaid(deps.db, passageId);
+  if (!target || state.purchasedAt || state.saleAnswer?.firm || state.summary?.outcome === "declined" || target.blocked || paidOnce || (!state.promisedAt && !unpaid)) {
+    // Напоминать не о чем: истёкший захват и срок сняты, иначе подмётчик будил бы задачу снова
     await deps.db.update(passages).set({ paymentReminderClaimedAt: null }).where(and(eq(passages.id, passageId), staleClaim));
+    await deps.db.update(passages).set({ paymentReminderDueAt: null }).where(and(eq(passages.id, passageId), isNull(passages.paymentReminderClaimedAt)));
     return;
   }
-  const key = `payment-reminder:${passageId}`;
+  const key = paymentReminderKey(passageId);
   const markSent = () =>
     deps.db.update(passages).set({ paymentReminderSentAt: deps.clock.now(), paymentReminderClaimedAt: null }).where(and(eq(passages.id, passageId), isNull(passages.paymentReminderSentAt)));
   if (await outboundExists(deps.db, key)) return void (await markSent());
@@ -347,7 +386,7 @@ export async function remindPayment(deps: PurchaseDependencies & { writer: First
         .from(passages)
         .where(eq(passages.id, passageId))
         .for("update");
-      if (!fresh || fresh.sentAt || fresh.purchasedAt || (await hasPaidOrder(tx, passageId))) return null;
+      if (!fresh || fresh.sentAt || fresh.purchasedAt || (await hasEverPaid(tx, passageId))) return null;
       const message = await recordOutbound(tx, deps.clock, {
         botId: target.botId,
         personId: target.personId,

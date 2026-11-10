@@ -12,7 +12,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 - `src/app` — страницы кабинета (Next.js) и маршруты API: вход, вебхуки мессенджеров, GetCourse, картинки.
 - `src/modules` — модули предметной области, у каждого свой `index.ts`: лидмагниты, сценарии (`flows`), консультант,
-  каналы Telegram/MAX/VK (`channels`), рассылки, люди и разговоры, учётные записи для входа (`accounts`), платформа (база, очередь, модели).
+  каналы Telegram/MAX/VK (`channels`), веб-чат на сайте (`web-chat`), голосовой ввод (`voice`), Senler (`senler`), рассылки, люди и разговоры, учётные записи для входа (`accounts`), платформа (база, очередь, модели).
 - `src/auth` — вход: по паролю (по умолчанию) или через единый вход OIDC (`AUTH_MODE=sso`).
 - `src/worker` — работник: миграции при старте, очередь, касания и рассылки.
 - `prompts` — инструкции моделей. `drizzle` — миграции базы (`pnpm db:generate` после правки схем `schema.ts`).

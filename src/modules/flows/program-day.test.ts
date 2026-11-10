@@ -80,12 +80,13 @@ describe("«Продажа» не раньше своего дня програ�
 });
 
 describe("касания молчуну в «Твоём первом приложении» (first-app.json)", () => {
-  it("потолок по дням программы: день 1 — три, со дня 2 — два; частые касания нод — только в день входа и только в день 1", () => {
+  it("потолок по дням программы: день 1 — три, со дня 2 — два; частые касания нод — до конца дня 1, без «только в день входа»", () => {
     const flow = firstAppJsonFlow();
     expect(flow.schedule?.firstMessages?.maxPerDayByDay).toEqual([3, 2]);
     expect(flow.schedule?.nudges).toEqual(PROGRAM_NUDGES);
     const own = flow.states.flatMap((state) => (state.nudges && state.nudges !== "off" ? [state.nudges] : []));
     expect(own.length).toBeGreaterThan(0);
-    for (const nudges of own) expect(nudges).toMatchObject({ days: 1, untilProgramDay: 1 });
+    for (const nudges of own) expect(nudges).toMatchObject({ untilProgramDay: 1 });
+    for (const nudges of own) expect(nudges).not.toHaveProperty("days");
   });
 });

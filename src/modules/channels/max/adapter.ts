@@ -121,11 +121,21 @@ export function createMaxAdapter(config: MaxAdapterConfig = {}): ChannelAdapter 
       }
     },
 
-    async checkConnection(bot): Promise<ConnectionCheck> {
+    async checkConnection(bot, webhookUrl): Promise<ConnectionCheck> {
       const outcome = await call(bot.token, "GET", "/me");
-      if (outcome.ok) return { ok: true };
-      return { ok: false, kind: outcome.status === 401 ? "invalid_token" : "temporary", error: outcome.description };
+      if (!outcome.ok) return { ok: false, kind: outcome.status === 401 ? "invalid_token" : "temporary", error: outcome.description };
+      if (!webhookUrl) return { ok: true };
+      const listed = await call(bot.token, "GET", "/subscriptions");
+      if (!listed.ok) return { ok: false, kind: "temporary", error: listed.description };
+      const { subscriptions } = listed.data as { subscriptions?: Array<{ url: string }> };
+      // Подписку сняли или заменили чужой: сообщения к нам уже не приходят
+      if (!(subscriptions ?? []).some((subscription) => subscription.url === webhookUrl)) {
+        return { ok: false, kind: "taken_over", error: "у бота сняли подписку на наш адрес, сообщения людей сюда не приходят" };
+      }
+      return { ok: true };
     },
+
+    downloadImage: (_bot, url) => loadImage(url, request, timeoutMs),
 
     async parseWebhook(webhook, bot): Promise<ParsedWebhook> {
       if (!secretsMatch(webhook.headers[MAX_SECRET_HEADER], alphanumericSecret(bot.webhookSecret))) {
@@ -164,6 +174,11 @@ export function createMaxAdapter(config: MaxAdapterConfig = {}): ChannelAdapter 
       // чтобы повтор после сбоя продолжил с места остановки, а не слал сначала.
       const chunks = text ? splitText(text, MESSAGE_LIMIT) : message.imagePath ? [""] : [];
       const uploadKey = `${bot.id}:${message.idempotencyKey}`;
+      // Готовые ответы — кнопками «сообщение» под последней частью: нажатие шлёт их текст. Кнопки сообщения важнее
+      const replyKeyboard = message.quickReplies?.length
+        ? { type: "inline_keyboard", payload: { buttons: message.quickReplies.map((text) => [{ type: "message", text }]) } }
+        : undefined;
+      const lastIndex = chunks.length + followUps.length - 1;
       const parts = [...chunks, ...followUps].map((chunk, index) => async (): Promise<SendResult> => {
         const attachments: object[] = [];
         let uploadedToken: string | undefined;
@@ -174,6 +189,7 @@ export function createMaxAdapter(config: MaxAdapterConfig = {}): ChannelAdapter 
           uploadedToken = image.uploadedToken;
         }
         if (index === chunks.length - 1 && keyboard) attachments.push(keyboard);
+        else if (index === lastIndex && replyKeyboard) attachments.push(replyKeyboard);
         const { result, notReady } = await sendMessage(bot, to, chunk, attachments);
         // Max ещё обрабатывает картинку: токен нужен повтору. Любой другой исход — токен больше не нужен
         if (uploadedToken) {
@@ -310,7 +326,7 @@ interface MaxUpdate {
   message?: {
     sender?: MaxUser;
     recipient?: { chat_type?: string };
-    body?: { mid?: string; text?: string | null; attachments?: Array<{ type: string }> };
+    body?: { mid?: string; text?: string | null; attachments?: Array<{ type: string; payload?: { url?: string } }> };
   };
 }
 
@@ -342,6 +358,7 @@ function eventsFromUpdate(update: MaxUpdate, botId: string): ChannelEvent[] {
     if (message?.recipient?.chat_type !== "dialog" || !message.sender || message.sender.is_bot) return [];
     const text = message.body?.text ?? "";
     const attachment = attachmentOf(message.body?.attachments);
+    const imageRef = message.body?.attachments?.find((item) => item.type === "image")?.payload?.url;
     // Служебные сообщения без текста и вложения — не разговор
     if (!text && !attachment) return [];
     const userId = String(message.sender.user_id);
@@ -354,6 +371,7 @@ function eventsFromUpdate(update: MaxUpdate, botId: string): ChannelEvent[] {
         ...nameOf(message.sender),
         text,
         ...(attachment && { attachment }),
+        ...(imageRef && { imageRef }),
       },
     ];
   }

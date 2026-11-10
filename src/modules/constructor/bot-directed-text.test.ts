@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import recorded from "./recorded/farewells.json";
-import { assistantHandoffIn, botDirectionIn } from "./bot-directed-text";
+import { assistantHandoffIn, botDirectionIn, greetingDirectionIn } from "./bot-directed-text";
 
 describe("указание консультанту вместо текста для человека", () => {
   it("находит: «попрощайся», «порадуйся», «поблагодари», «скажи» в начале фразы, «если человек»", () => {
@@ -39,5 +39,18 @@ describe("прощание, где помощник «передал» что-т
     ];
     for (const text of [...recorded.farewells, ...others])
       expect(assistantHandoffIn(text), text).toBeNull();
+  });
+});
+
+describe("указание консультанту в первом сообщении", () => {
+  it("находит «Поздоровайся», «Поприветствуй», «Представься» в начале фразы и «если человек»", () => {
+    for (const text of ["Поздоровайся и спроси имя.", "Тепло поприветствуй человека.", "Привет! Представься и расскажи о курсе.", "Спроси цель. Если человек молчит — подожди."])
+      expect(greetingDirectionIn(text), text).not.toBeNull();
+    expect(greetingDirectionIn("Тепло поприветствуй человека.")).toBe("Тепло поприветствуй");
+  });
+
+  it("не трогает обращения к человеку на «ты»: «Скажи», «Напомни», «Расскажи»", () => {
+    for (const text of ["Привет! Скажи, чем ты занимаешься?", "Напомни, как тебя зовут?", "Здравствуйте! Расскажите о себе."])
+      expect(greetingDirectionIn(text), text).toBeNull();
   });
 });

@@ -29,6 +29,7 @@ function inboundRow(botId: string, event: ChannelEvent): typeof inboundMessages.
         userName: event.userName ?? null,
         text: event.text,
         attachmentKind: event.attachment ?? null,
+        imageRef: event.imageRef ?? null,
         startCode: event.startCode ?? null,
       };
     case "button":
@@ -60,10 +61,25 @@ export async function acceptWebhook(
   if (parsed.kind === "rejected") return REJECTED;
   if (parsed.kind === "handshake") return { status: 200, body: parsed.responseBody };
 
-  for (const event of parsed.events) {
+  if ((await acceptChannelEvents(deps, found.bot.id, parsed.events)) === "retry") return RETRY_LATER;
+  return { status: 200, body: parsed.responseBody };
+}
+
+/**
+ * Запись входящих событий канала и задача `inbound-route` на каждое: общий вход вебхуков и веб-чата.
+ * `retry` — задачу поставить не удалось, запись убрана: источник должен повторить событие.
+ * `receivedAt` — время получения по часам приложения; без него — время базы.
+ */
+export async function acceptChannelEvents(
+  deps: Pick<WebhookDependencies, "db" | "queue">,
+  botId: string,
+  events: ChannelEvent[],
+  options: { receivedAt?: Date } = {},
+): Promise<"ok" | "retry"> {
+  for (const event of events) {
     const [stored] = await deps.db
       .insert(inboundMessages)
-      .values(inboundRow(found.bot.id, event))
+      .values({ ...inboundRow(botId, event), ...(options.receivedAt && { receivedAt: options.receivedAt }) })
       .onConflictDoNothing({ target: inboundMessages.dedupeKey })
       .returning({ id: inboundMessages.id });
     // Повтор события: задача нужна, только если запись ещё не разобрана (лишняя задача безвредна — разбор идемпотентен)
@@ -80,9 +96,9 @@ export async function acceptWebhook(
       await deps.queue.enqueue("inbound-route", { inboundMessageId });
     } catch (error) {
       if (stored) await deps.db.delete(inboundMessages).where(eq(inboundMessages.id, stored.id));
-      console.error("Вебхук: не удалось поставить задачу, мессенджер повторит:", error instanceof Error ? error.message : error);
-      return RETRY_LATER;
+      console.error("Входящее: не удалось поставить задачу, источник повторит:", error instanceof Error ? error.message : error);
+      return "retry";
     }
   }
-  return { status: 200, body: parsed.responseBody };
+  return "ok";
 }

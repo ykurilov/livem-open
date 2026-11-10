@@ -1,24 +1,28 @@
-import { telegramApiFromEnv } from "../platform/env";
+import { optionalEnv, telegramApiFromEnv } from "../platform/env";
 import type { ChannelAdapters } from "./channel";
 import { FakeChannel } from "./fake";
 import { createMaxAdapter } from "./max/adapter";
 import { createTelegramAdapter } from "./telegram/adapter";
 import { createVkAdapter } from "./vk/adapter";
+import { createWebChatAdapter, type WebChatNotifier } from "./web/adapter";
 
 /**
  * Адаптеры мессенджеров, подключённые в приложении.
  * `STUB_CHANNEL=fake` — для сквозных проверок: вместо Telegram подделка в памяти, в продакшене запрещена.
+ * Веб-чат есть всегда; `webChatNotifier` — уведомления закрытой странице (их шлёт только работник).
  */
 export function createChannelAdapters(
   env: Record<string, string | undefined> = process.env,
-  options: { fetch?: typeof fetch } = {},
+  options: { fetch?: typeof fetch; webChatNotifier?: WebChatNotifier } = {},
 ): ChannelAdapters {
+  const web = createWebChatAdapter({ publicBaseUrl: optionalEnv("PUBLIC_BASE_URL", env) ?? "", notifier: options.webChatNotifier });
   if (env.STUB_CHANNEL === "fake") {
     if (env.NODE_ENV === "production")
       throw new Error("STUB_CHANNEL задана в продакшене: подделка мессенджера только для проверок. Уберите переменную.");
-    return { telegram: new FakeChannel() };
+    return { telegram: new FakeChannel(), web };
   }
   return {
+    web,
     telegram: createTelegramAdapter({ ...telegramApiFromEnv(env), fetch: options.fetch }),
     vk: createVkAdapter({ fetch: options.fetch }),
     max: createMaxAdapter({ fetch: options.fetch }),

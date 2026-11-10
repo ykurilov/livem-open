@@ -2,10 +2,17 @@ import { expect, test } from "@playwright/test";
 import { seal } from "../../src/auth/core/cookie-seal";
 import { createLeadMagnet, saveDraft } from "../../src/modules/lead-magnets";
 import { connectDatabase } from "../../src/modules/platform/db";
+import { openTab } from "./open-tab";
 import { E2E_BASE_URL, E2E_COOKIE_SECRET, E2E_EMAIL, e2eDatabaseUrl } from "./e2e-env";
 
-for (const width of [1440, 390]) for (const theme of ["light", "dark"] as const) {
-  test(`Одуванчик: ${theme}, ${width}px - кабинет, формы, навигация и чат`, async ({ page, context }) => {
+// Сценарий проходит один раз на экран: компьютер и телефон в светлой теме. Тёмная тема — главная страница: цвета и снимок
+const CASES = [
+  { width: 1440, theme: "light", full: true },
+  { width: 390, theme: "light", full: true },
+  { width: 1440, theme: "dark", full: false },
+] as const;
+for (const { width, theme, full } of CASES) {
+  test(`Одуванчик: ${theme}, ${width}px - ${full ? "кабинет, формы, навигация и чат" : "главная"}`, async ({ page, context }) => {
     test.setTimeout(120_000);
     const connection = connectDatabase(e2eDatabaseUrl(), { poolSize: 1 });
     try {
@@ -20,41 +27,69 @@ for (const width of [1440, 390]) for (const theme of ["light", "dark"] as const)
       await page.goto("/");
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       await expect(page.getByRole("heading", { name: "Лидмагниты", exact: true })).toBeVisible();
-      await expect(page.getByLabel("Название", { exact: true })).toBeVisible();
+      // Форма создания скрыта за кнопкой в шапке и не отодвигает список; пустое название ловит своя подсказка, а не браузер
+      await expect(page.getByLabel("Название", { exact: true })).toBeHidden();
+      await page.getByRole("button", { name: "Новый лидмагнит" }).click();
+      await expect(page.getByLabel("Название", { exact: true })).toBeFocused();
       const create = page.getByRole("button", { name: "Создать", exact: true });
       await expect(create).toHaveClass(/yk-button--primary/);
       await expect(create).toHaveCSS("background-color", theme === "light" ? "rgb(20, 20, 20)" : "rgb(242, 242, 240)");
+      await create.click();
+      await expect(page.getByText("Напишите название лидмагнита")).toBeVisible();
+      await expect(page.getByLabel("Название", { exact: true })).toBeFocused();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.screenshot({ path: test.info().outputPath(`oduvanchik-home-${theme}-${width}.png`) });
+      if (!full) return;
       if (width === 390) {
         await page.getByRole("button", { name: "Открыть меню" }).click();
         const menu = page.getByRole("dialog", { name: "Разделы кабинета" });
         await expect(menu).toBeVisible();
+        await page.screenshot({ path: test.info().outputPath(`oduvanchik-menu-${theme}-${width}.png`) });
         await menu.getByRole("link", { name: "Настройки", exact: true }).click();
         await expect(menu).toBeHidden();
       } else {
-        // Меню раскрывается с названиями разделов, выбор переживает перезагрузку
+        // Меню раскрыто с названиями разделов, свёрнутое переживает перезагрузку
         const navigation = page.getByRole("navigation", { name: "Разделы кабинета" });
-        // Клик до гидратации страницы пропадает: повторяем, пока меню не раскроется
+        await expect(navigation.getByText("Лидмагниты", { exact: true })).toBeVisible();
+        await page.screenshot({ path: test.info().outputPath(`oduvanchik-menu-${theme}-${width}.png`) });
+        // Клик до гидратации страницы пропадает: повторяем, пока меню не свернётся
         await expect(async () => {
-          await navigation.getByRole("button", { name: "Раскрыть меню" }).click({ timeout: 1000 });
-          await expect(navigation.getByText("Лидмагниты", { exact: true })).toBeVisible({ timeout: 1000 });
+          await page.getByRole("button", { name: "Свернуть меню" }).click({ timeout: 1000 });
+          await expect(navigation.getByText("Лидмагниты", { exact: true })).toBeHidden({ timeout: 1000 });
         }).toPass({ timeout: 30_000 });
         await page.reload();
-        await expect(navigation.getByRole("button", { name: "Свернуть меню" })).toHaveAttribute("aria-expanded", "true");
-        await page.screenshot({ path: test.info().outputPath(`oduvanchik-menu-${theme}-${width}.png`) });
-        await navigation.getByRole("button", { name: "Свернуть меню" }).click();
-        await expect(navigation.getByText("Лидмагниты", { exact: true })).toBeHidden();
+        await expect(page.getByRole("button", { name: "Раскрыть меню" })).toHaveAttribute("aria-expanded", "false");
+        await expect(navigation.getByRole("link", { name: "Лидмагниты", exact: true })).toHaveAttribute("aria-current", "page");
+        await page.screenshot({ path: test.info().outputPath(`oduvanchik-menu-collapsed-${theme}-${width}.png`) });
+        await page.getByRole("button", { name: "Раскрыть меню" }).click();
+        await expect(navigation.getByText("Лидмагниты", { exact: true })).toBeVisible();
+        // Выход — в меню аккаунта: аватар с почтой внизу панели
+        await page.getByRole("button", { name: E2E_EMAIL }).click();
+        await expect(page.getByRole("menuitem", { name: "Выйти" })).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("menuitem", { name: "Выйти" })).toBeHidden();
         await page.getByRole("link", { name: "Настройки", exact: true }).click();
       }
       await expect(page.getByRole("heading", { name: "Настройки", exact: true })).toBeVisible();
       await page.screenshot({ path: test.info().outputPath(`oduvanchik-settings-${theme}-${width}.png`) });
+      if (width === 1440 && theme === "light") {
+        // Тема выбирается в настройках: сразу применяется и запоминается; «Автоматически» отдаёт её устройству
+        const themes = page.getByRole("radiogroup", { name: "Тема" });
+        await expect(themes.getByRole("radio", { name: "Светлая" })).toHaveAttribute("aria-checked", "true");
+        await themes.getByRole("radio", { name: "Тёмная" }).click();
+        await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+        expect(await page.evaluate(() => localStorage.getItem("theme"))).toBe("dark");
+        await themes.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: test.info().outputPath("oduvanchik-settings-theme.png"), animations: "disabled" });
+        await themes.getByRole("radio", { name: "Автоматически" }).click();
+        await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
+        expect(await page.evaluate(() => localStorage.getItem("theme"))).toBeNull();
+      }
       const response = await page.goto(`/lead-magnets/${lead.id}`);
       expect(response?.status()).toBe(200);
-      await page.getByRole("tab", { name: "Разговор", exact: true }).click();
       const chat = page.getByRole("tabpanel", { name: "Разговор", exact: true });
+      await openTab(page, "Разговор", chat.getByRole("paragraph").filter({ hasText: "Здравствуйте! Что вы хотите создать?" }));
       await expect(chat.locator(".oduvanchik-field textarea")).toBeVisible();
-      await expect(chat.getByRole("paragraph").filter({ hasText: "Здравствуйте! Что вы хотите создать?" })).toBeVisible({ timeout: 30_000 });
       await expect(chat.locator(".oduvanchik-field")).toBeVisible();
       await page.screenshot({ path: test.info().outputPath(`oduvanchik-chat-${theme}-${width}.png`) });
       expect(errors).toEqual([]);

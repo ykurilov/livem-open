@@ -14,6 +14,7 @@ import type {
   SendResult,
   WebhookRequest,
 } from "../channel";
+import type { ImageLoadResult } from "../image-source";
 import { followUpChunks, splitText } from "../split-text";
 
 export const TELEGRAM_SECRET_HEADER = "x-telegram-bot-api-secret-token";
@@ -192,6 +193,9 @@ export function createTelegramAdapter(config: TelegramAdapterConfig = {}): Chann
       const imagePath = message.imagePath;
       const followUps = followUpChunks(message.followUps, MESSAGE_LIMIT);
       if (!text && !imagePath && followUps.length === 0) return { ok: false, reason: "empty" };
+      // Готовые ответы — клавиатурой ответа под последней частью; кнопки сообщения важнее: разметка у части одна
+      const replyMarkup = quickRepliesMarkup(message.quickReplies);
+      const mainMarkup = markup ?? (followUps.length === 0 ? replyMarkup : undefined);
 
       // Сообщение — цепочка частей: картинка, затем текст кусками, затем дополнительные сообщения. Прогресс (`sentParts`) хранит вызывающий,
       // чтобы повтор после сбоя продолжил с места остановки, а не слал сначала.
@@ -199,12 +203,12 @@ export function createTelegramAdapter(config: TelegramAdapterConfig = {}): Chann
       if (imagePath) {
         const captionFits = text.length <= CAPTION_LIMIT;
         const caption = captionFits && text ? text : undefined;
-        parts.push(() => sendPhoto(bot, to, imagePath, caption, captionFits ? markup : undefined));
-        if (!captionFits) parts.push(...textParts(bot, to, text, markup));
+        parts.push(() => sendPhoto(bot, to, imagePath, caption, captionFits ? mainMarkup : undefined));
+        if (!captionFits) parts.push(...textParts(bot, to, text, mainMarkup));
       } else if (text) {
-        parts.push(...textParts(bot, to, text, markup));
+        parts.push(...textParts(bot, to, text, mainMarkup));
       }
-      parts.push(...followUps.map((chunk) => () => sendText(bot, to, chunk, undefined)));
+      parts.push(...followUps.map((chunk, index) => () => sendText(bot, to, chunk, index === followUps.length - 1 ? replyMarkup : undefined)));
 
       // Прогресс больше числа частей — значит, он потерян или устарел: лучше повторить последнюю часть, чем потерять
       const first = Math.min(Math.max(message.sentParts ?? 0, 0), parts.length - 1);
@@ -217,6 +221,29 @@ export function createTelegramAdapter(config: TelegramAdapterConfig = {}): Chann
         return retryable && last.sentParts === undefined ? { ...last, sentParts: index } : last;
       }
       return last;
+    },
+
+    async downloadImage(bot, fileId): Promise<ImageLoadResult> {
+      const file = await call(bot.token, "getFile", { file_id: fileId });
+      if (!file.ok) {
+        const reason = file.status === 0 || file.status === 429 || file.status >= 500 ? "temporary" : "permanent";
+        return { ok: false, reason, error: `Telegram не отдал фото: ${file.description}` };
+      }
+      const path = (file.result as { file_path?: string }).file_path;
+      if (!path) return { ok: false, reason: "permanent", error: "Telegram не дал путь к фото" };
+      let response: Response;
+      try {
+        response = await request(`${baseUrl}/file/bot${bot.token}/${path}`, { headers: proxyHeaders, signal: AbortSignal.timeout(timeoutMs) });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return { ok: false, reason: "temporary", error: `Не удалось скачать фото: ${reason.replaceAll(bot.token, "***")}` };
+      }
+      if (!response.ok) {
+        return { ok: false, reason: response.status >= 500 ? "temporary" : "permanent", error: `Фото не скачалось (ответ ${response.status})` };
+      }
+      const filename = basename(path);
+      const contentType = response.headers.get("content-type")?.split(";")[0] || IMAGE_TYPES[extname(filename).toLowerCase()] || "application/octet-stream";
+      return { ok: true, image: { bytes: new Uint8Array(await response.arrayBuffer()), filename, contentType } };
     },
 
     async answerButton(bot, callbackId) {
@@ -284,6 +311,13 @@ export function createTelegramAdapter(config: TelegramAdapterConfig = {}): Chann
     form.set("photo", new Blob([new Uint8Array(file)], { type }), basename(imagePath));
     return toSendResult(await call(bot.token, "sendPhoto", form));
   }
+}
+
+/** Клавиатура готовых ответов: по одной кнопке в ряду, прячется после нажатия. Пустой список убирает прежнюю. */
+function quickRepliesMarkup(replies: readonly string[] | undefined): object | undefined {
+  if (!replies) return undefined;
+  if (replies.length === 0) return { remove_keyboard: true };
+  return { keyboard: replies.map((reply) => [{ text: reply }]), one_time_keyboard: true, resize_keyboard: true };
 }
 
 /** Адрес вебхука наш, если совпадает путь: в нём id бота. Домен может поменяться вместе с пересылкой. */
@@ -381,6 +415,7 @@ function eventsFromUpdate(update: TelegramUpdate, botId: string): ChannelEvent[]
   if (message?.chat?.type === "private" && message.from && !message.from.is_bot) {
     const text = message.text ?? message.caption ?? "";
     const attachment = attachmentOf(message);
+    const imageRef = imageRefOf(message);
     // Служебные сообщения без текста и вложения (закрепили, сменили фото) — не разговор
     if (!text && !attachment) return [];
     const startCode = message.text ? START_COMMAND.exec(message.text)?.[1] : undefined;
@@ -393,6 +428,7 @@ function eventsFromUpdate(update: TelegramUpdate, botId: string): ChannelEvent[]
         ...(userName && { userName }),
         text,
         ...(attachment && { attachment }),
+        ...(imageRef && { imageRef }),
         ...(startCode && { startCode }),
       },
     ];
@@ -422,8 +458,25 @@ function displayName(user: TelegramUser): string | undefined {
   return fullName || user.username || undefined;
 }
 
+interface TelegramFile {
+  file_id: string;
+  mime_type?: string;
+}
+
+/** Снимок экрана, отправленный файлом без сжатия: документ с картинкой. */
+const imageDocumentOf = (message: TelegramMessage) => {
+  const document = message.document as TelegramFile | undefined;
+  return document?.mime_type?.startsWith("image/") ? document : undefined;
+};
+
+/** file_id фото: самый большой размер (Telegram присылает их по возрастанию) или снимок экрана файлом. */
+function imageRefOf(message: TelegramMessage): string | undefined {
+  const sizes = message.photo as TelegramFile[] | undefined;
+  return sizes?.at(-1)?.file_id ?? imageDocumentOf(message)?.file_id;
+}
+
 function attachmentOf(message: TelegramMessage): AttachmentKind | undefined {
-  if (message.photo) return "image";
+  if (message.photo || imageDocumentOf(message)) return "image";
   if (message.voice || message.video_note) return "voice";
   if (message.sticker) return "sticker";
   if (message.document || message.audio) return "file";

@@ -33,7 +33,6 @@ const DEFAULT_REPLIES: Record<string, () => VkReply> = {
   // Ключ с правами «Управление сообществом», «Сообщения сообщества», «Фотографии»
   "groups.getTokenPermissions": () => ok({ mask: 262144 + 4096 + 4, permissions: [] }),
   "groups.getCallbackConfirmationCode": () => ok({ code: "a1b2c3d4" }),
-  "groups.setCallbackSettings": () => ok(1),
   "messages.send": () => ok(4001),
   "messages.sendMessageEventAnswer": () => ok(1),
   "photos.getMessagesUploadServer": () => ok({ upload_url: UPLOAD_URL, album_id: -64, group_id: 222333 }),
@@ -44,6 +43,8 @@ export interface VkCallbackServer {
   id: number;
   url: string;
   title: string;
+  /** Включённые события сервера (`message_new: 1`…), как их задал `groups.setCallbackSettings`. */
+  events?: Record<string, number>;
 }
 
 export class FakeVkApi {
@@ -113,6 +114,19 @@ export class FakeVkApi {
       const id = this.nextServerId++;
       this.callbackServers.push({ id, url: params.url ?? "", title: params.title ?? "" });
       return ok({ server_id: id });
+    }
+    if (method === "groups.setCallbackSettings") {
+      const server = this.callbackServers.find((candidate) => String(candidate.id) === params.server_id);
+      if (server) {
+        const { access_token: _token, v: _version, group_id: _group, server_id: _server, api_version: _api, ...events } = params;
+        server.events = Object.fromEntries(Object.entries(events).map(([name, value]) => [name, Number(value)]));
+      }
+      return ok(1);
+    }
+    if (method === "groups.getCallbackSettings") {
+      const server = this.callbackServers.find((candidate) => String(candidate.id) === params.server_id);
+      if (!server) return vkError(100, "One of the parameters specified was missing or invalid: server_id is undefined");
+      return ok({ api_version: "5.199", events: server.events ?? {} });
     }
     if (method === "groups.deleteCallbackServer") {
       this.callbackServers = this.callbackServers.filter((server) => String(server.id) !== params.server_id);

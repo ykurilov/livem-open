@@ -3,6 +3,7 @@ import { SALE_TAG, withLeadMagnetFlow } from "../flows";
 import {
   appendManualEditNotes,
   getVersion,
+  InvalidLeadMagnetSettingsError,
   lockLeadMagnet,
   saveDraft,
   validateLeadMagnetSettings,
@@ -14,12 +15,14 @@ import {
 import { deletedFieldIds, getFields } from "../people";
 import { getImages } from "../images";
 import { getVideos } from "../videos";
+import { getKnowledgeBases, knowledgeOverLimit } from "../knowledge";
 import type { Database, DatabaseExecutor } from "../platform/db";
 import { AGENT_TIME_ZONE } from "../platform/models-catalog";
 
 const textLabels = {
   name: "Название",
   cardDescription: "Описание карточки",
+  clientPortrait: "Описание клиентов",
   firstMessage: "Первое сообщение",
   endCondition: "Условие завершения",
   farewellMessage: "Прощальное сообщение",
@@ -187,6 +190,7 @@ export function describeManualEdits(
   fieldNames: ReadonlyMap<string, string>,
   videoTitles: ReadonlyMap<string, string> = new Map(),
   imageTitles: ReadonlyMap<string, string> = new Map(),
+  knowledgeTitles: ReadonlyMap<string, string> = new Map(),
 ): string[] {
   const notes: string[] = [];
   for (const [field, label] of Object.entries(textLabels) as Array<[keyof typeof textLabels, string]>)
@@ -205,24 +209,40 @@ export function describeManualEdits(
   const image = (ids: string[], others: string[], verb: string) =>
     ids.flatMap((id) => (others.includes(id) || !imageTitles.has(id) ? [] : [`Картинки: ${verb} картинка «${imageTitles.get(id)}»`]));
   notes.push(...image(after.imageIds, before.imageIds, "включена"), ...image(before.imageIds, after.imageIds, "выключена"));
+  const knowledge = (ids: string[], others: string[], verb: string) =>
+    ids.flatMap((id) => (others.includes(id) || !knowledgeTitles.has(id) ? [] : [`Базы знаний: ${verb} «${knowledgeTitles.get(id)}»`]));
+  const [afterKnowledge, beforeKnowledge] = [after.knowledgeIds ?? [], before.knowledgeIds ?? []];
+  notes.push(...knowledge(afterKnowledge, beforeKnowledge, "прикреплена"), ...knowledge(beforeKnowledge, afterKnowledge, "откреплена"));
   return notes;
 }
 
-/** Хвост сообщения эксперта конструктору. Нет заметок — нет хвоста. */
-export function constructorTail(notes: readonly string[]): string | null {
-  if (notes.length === 0) return null;
-  return ["Эксперт вручную изменил:", ...notes.map((note) => `— ${note}`)].join("\n");
+/**
+ * Строка о правках «Проверки» и записях «Поменяемся ролями», о которых конструктор ещё не говорил эксперту. Таких нет —
+ * строки нет.
+ */
+export function answerCorrectionsLine({ fresh, pending }: { fresh: number; pending: number }): string | null {
+  if (fresh === 0) return null;
+  return `Новые правки и ответы эксперта для разбора: ${fresh}, всего неразобранных: ${pending}.`;
+}
+
+/** Хвост сообщения эксперта конструктору: строка о новых правках ответов и заметки о ручных правках. Нечего сказать — нет хвоста. */
+export function constructorTail(notes: readonly string[], correctionsLine: string | null = null): string | null {
+  const parts = [
+    ...(correctionsLine ? [correctionsLine] : []),
+    ...(notes.length > 0 ? [["Эксперт вручную изменил:", ...notes.map((note) => `— ${note}`)].join("\n")] : []),
+  ];
+  return parts.length > 0 ? parts.join("\n\n") : null;
 }
 
 /**
- * Заметки, которые влезают в хвост длиной `maxLength`: самые свежие важнее, порядок — от старых к новым.
- * Не влезшие остаются в очереди до следующего хода.
+ * Заметки, которые влезают в хвост длиной `maxLength` вместе со строкой правок: самые свежие важнее, порядок — от
+ * старых к новым. Не влезшие остаются в очереди до следующего хода.
  */
-export function fitManualEditNotes<T extends { text: string }>(notes: readonly T[], maxLength: number): T[] {
+export function fitManualEditNotes<T extends { text: string }>(notes: readonly T[], maxLength: number, correctionsLine: string | null = null): T[] {
   const fitted: T[] = [];
   for (let index = notes.length - 1; index >= 0; index--) {
     const candidate = [notes[index]!, ...fitted];
-    if ((constructorTail(candidate.map((note) => note.text)) ?? "").length > maxLength) break;
+    if ((constructorTail(candidate.map((note) => note.text), correctionsLine) ?? "").length > maxLength) break;
     fitted.unshift(notes[index]!);
   }
   return fitted;
@@ -336,11 +356,17 @@ export async function saveEditBesideConstructor(
   const checked = validateLeadMagnetSettings(await withoutDeletedFields(tx, validateLeadMagnetSettings(settings)));
   const videos = await getVideos(tx, [...new Set([...lead.draft.videoIds, ...checked.videoIds])]);
   const images = await getImages(tx, [...new Set([...lead.draft.imageIds, ...checked.imageIds])]);
+  const knowledge = await getKnowledgeBases(tx, [...new Set([...(lead.draft.knowledgeIds ?? []), ...checked.knowledgeIds])]);
   const valid = {
     ...checked,
     videoIds: checked.videoIds.filter((id) => videos.some((video) => video.id === id)),
     imageIds: checked.imageIds.filter((id) => images.some((image) => image.id === id)),
+    knowledgeIds: checked.knowledgeIds.filter((id) => knowledge.some((base) => base.id === id)),
   };
+  const overLimit = knowledgeOverLimit(
+    knowledge.filter((base) => valid.knowledgeIds.includes(base.id)).reduce((sum, base) => sum + base.charCount, 0),
+  );
+  if (overLimit) throw new InvalidLeadMagnetSettingsError(overLimit);
   const version = await saveDraft(tx, lead.id, valid, source);
   const fields = await getFields(tx, [...new Set([...lead.draft.flow.clientCard, ...valid.flow.clientCard].map((field) => field.id))]);
   const notes = describeManualEdits(
@@ -349,6 +375,7 @@ export async function saveEditBesideConstructor(
     new Map(fields.map((one) => [one.id, one.name])),
     new Map(videos.map((one) => [one.id, one.title])),
     new Map(images.map((one) => [one.id, one.title])),
+    new Map(knowledge.map((one) => [one.id, one.title])),
   );
   await appendManualEditNotes(tx, lead.id, [...leadingNotes, ...notes]);
   return version;

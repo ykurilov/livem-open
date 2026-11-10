@@ -161,7 +161,14 @@ describe("конструктор узнаёт о ручной правке", () 
   it("инструменты конструктора видят свой лидмагнит по чату", async () => {
     const chatId = await endpoint.ensureChat(lead.id);
     await sendToConstructor(chatId, "Привет");
-    expect([...calls[0]!.toolNames].sort()).toEqual(["edit_lead_magnet", "read_test_conversation", "view_lead_magnet"]);
+    expect([...calls[0]!.toolNames].sort()).toEqual([
+      "edit_lead_magnet",
+      "read_answer_corrections",
+      "read_test_conversation",
+      "reopen_test_conversation",
+      "resolve_answer_corrections",
+      "view_lead_magnet",
+    ]);
   });
 });
 

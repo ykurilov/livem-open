@@ -47,13 +47,15 @@ export async function morningAfter(
   program?: { morningAt: string; timeZone: string | null },
 ): Promise<Date> {
   const reset = resetsAt ? new Date(resetsAt) : deps.clock.nextMskTime("00:00", deps.clock.now());
-  if (program) return nextLocalTime(program.morningAt, reset, program.timeZone);
+  // Утро ровно в момент сброса (UTC+12: полночь по Москве — 9:00 у человека) — тоже утро, а не следующие сутки
+  if (program) return nextLocalTime(program.morningAt, new Date(reset.getTime() - 1), program.timeZone);
   return deps.clock.nextMskTime(FIRST_MESSAGES_QUIET_HOURS.to, reset);
 }
 
 /**
- * Дневной лимит подняли: отложенным до утра разговорам — ход сразу. Без ключа одиночки: его держит утренняя задача,
- * она потом найдёт, что отвечать нечего. Двух ходов разом не будет — на одну пачку SDK начинает один ход.
+ * Дневной лимит подняли: отложенным до утра разговорам — ход сразу. Ключ — живого хода прохождения, не утренний: тот
+ * держит утренняя задача, она потом найдёт, что отвечать нечего. Без ключа очередь хода (`short`) приняла бы только
+ * одну задачу на всех. Двух ходов разом не будет — на одну пачку SDK начинает один ход.
  */
 export async function resumeDailyLimitedPassages(deps: { db: Database; queue: JobEnqueuer; clock: Clock }): Promise<number> {
   const postponed = await deps.db
@@ -61,7 +63,7 @@ export async function resumeDailyLimitedPassages(deps: { db: Database; queue: Jo
     .from(passages)
     .where(and(isNotNull(passages.dailyLimitPausedAt), eq(passages.status, "active")));
   for (const { id } of postponed) {
-    await deps.queue.enqueue("inbound-turn", { passageId: id });
+    await deps.queue.enqueue("inbound-turn", { passageId: id }, { singletonKey: id });
     await deps.db.update(passages).set({ dailyLimitPausedAt: null }).where(eq(passages.id, id));
   }
   return postponed.length;

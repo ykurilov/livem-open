@@ -98,6 +98,8 @@ export const previewConversations = appSchema.table("preview_conversations", {
   stageHistory: jsonb("stage_history").$type<StageHistoryEntry[]>().notNull().default([]),
   facts: jsonb("facts").$type<string[]>().notNull().default([]),
   fieldValues: jsonb("field_values").$type<Record<string, FieldValue>>().notNull().default({}),
+  /** Когда записано каждое значение поля, по часам тестового чата: `{ fieldId: ISO-время }`. */
+  fieldUpdatedAt: jsonb("field_updated_at").$type<Record<string, string>>().notNull().default({}),
   summary: jsonb("summary").$type<DialogSummary>(),
   /** Не используется: часы тестового чата и день хранит сценарий SDK (`advanceTestClock`). Колонку уберёт отдельная миграция. */
   dayOffset: integer("day_offset").notNull().default(0),

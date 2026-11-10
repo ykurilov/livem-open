@@ -14,6 +14,7 @@ import { BOT_REPAIR_RESEND_WINDOW_DAYS } from "../channels/outbound";
 import { outboundMessages } from "../channels/schema";
 import { mediaSentWith } from "../consultant/sent-media";
 import { sentImagePath } from "../images";
+import { releaseHeldMessages } from "../conversations/passage-end";
 import { inboundMessages, passages } from "../conversations/schema";
 import { tagPassageText } from "../purchases/outgoing";
 import { getPerson, markPersonBlocked } from "../people";
@@ -120,11 +121,11 @@ export function createFirstMessageDelivery(deps: FirstMessageDeliveryDependencie
     const row = claimed.row;
 
     const claim = holdSendClaim(deps, row);
-    let sending: { target: SendTarget; result: Awaited<ReturnType<typeof attemptSend>> } | null;
+    let sending: SendOutcome | null;
     try {
       const target = await sendTargetOf(deps, db, row);
       if (target) await deps.rateLimiter?.acquire(target.bot.id, target.adapter.ratePerSecond);
-      sending = target && { target, result: await attemptSend(target, row) };
+      sending = target && (await sendDroppingRefusedImage(deps, target, row));
     } finally {
       await claim.release();
     }
@@ -133,7 +134,7 @@ export function createFirstMessageDelivery(deps: FirstMessageDeliveryDependencie
     const settle = (patch: Partial<typeof outboundMessages.$inferInsert>) =>
       db
         .update(outboundMessages)
-        .set({ attempts: row.attempts + 1, ...patch })
+        .set({ attempts: row.attempts + 1, ...(sending?.imageDropped && { imagePath: null }), ...patch })
         .where(and(eq(outboundMessages.id, row.id), eq(outboundMessages.status, "sending"), eq(outboundMessages.nextAttemptAt, claim.heldUntil())));
     const fail = (status: "failed" | "blocked", error: string | null, sentParts = row.sentParts) => settle({ status, error, sentParts });
 
@@ -144,6 +145,8 @@ export function createFirstMessageDelivery(deps: FirstMessageDeliveryDependencie
     const { result } = sending;
     if (result.ok) {
       await settle({ status: "sent", error: null, externalMessageId: result.externalMessageId, sentAt: clock.now() });
+      // Утреннее и другие сообщения первым пишутся по всей переписке: отложенное до утра больше не ждёт
+      if (!deadlineFarewell) await releaseHeldMessages(db, passage.id);
       return { status: "delivered" };
     }
     switch (result.reason) {
@@ -179,6 +182,25 @@ export function createFirstMessageDelivery(deps: FirstMessageDeliveryDependencie
       }
     }
   };
+}
+
+type SendOutcome = { result: Awaited<ReturnType<typeof attemptSend>>; imageDropped: boolean };
+
+/**
+ * Мессенджер окончательно не принял картинку, а ни одна часть ещё не ушла: касание важнее картинки — уходит текстом, как
+ * в очереди исходящих. Текст ушёл — отказ от картинки пишется в запись вместе с итогом, повтор тоже идёт без неё.
+ * Не ушёл и он — беда не в картинке (сеть, токен): она остаётся до повтора.
+ */
+async function sendDroppingRefusedImage(
+  deps: Pick<FirstMessageDeliveryDependencies, "logError">,
+  target: SendTarget,
+  row: OutboundMessageRecord,
+): Promise<SendOutcome> {
+  const result = await attemptSend(target, row);
+  if (!row.imagePath || result.ok || result.reason !== "permanent" || (result.sentParts ?? row.sentParts) > 0) return { result, imageDropped: false };
+  deps.logError?.(`[сценарий] исходящее ${row.id}: картинка не принята (${result.error}), уходит текстом`);
+  const withoutImage = await attemptSend(target, { ...row, imagePath: null });
+  return { result: withoutImage, imageDropped: withoutImage.ok || (withoutImage.sentParts ?? 0) > 0 };
 }
 
 /**

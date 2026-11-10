@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { unseal } from "../../auth/core/cookie-seal";
 import { FLOW_COOKIE } from "../../auth/cookies";
-import { SILENT_CHECK_COOKIE } from "./access";
+import { SILENT_CHECK_COOKIE, SILENT_NEXT_COOKIE } from "./access";
 import { createSilentLogin } from "./silent-login";
 
 const env = {
@@ -51,6 +51,11 @@ describe("тихая проверка единого входа", () => {
   it("ставит метку «тихая проверка уже была», чтобы не было бесконечных перенаправлений", async () => {
     const response = await run("/");
     expect(response.headers.getSetCookie().some((entry) => entry.startsWith(`${SILENT_CHECK_COOKIE}=1`))).toBe(true);
+  });
+
+  it("запоминает адрес возврата отдельно: модуль входа при отказе ведёт на главную и его теряет", async () => {
+    const response = await run("/bots?tab=1");
+    expect(decodeURIComponent(cookieValue(response, SILENT_NEXT_COOKIE))).toBe("/bots?tab=1");
   });
 
   it("чужой адрес возврата заменяет на главную", async () => {

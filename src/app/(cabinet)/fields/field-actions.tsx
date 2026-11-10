@@ -9,19 +9,24 @@ import {
 import { Dialog } from "@ykurilov/ds-react";
 import { CheckIcon as Check, TrashIcon as Trash2 } from "@phosphor-icons/react";
 import { IconButton } from "@/ui/icon-button";
+import { submitKeepingFields } from "@/ui/submit-keeping-fields";
 import { deleteFieldAction, renameFieldAction, type FieldActionState } from "./actions";
+import { ACTION_SEND_FAILED, keepingFormOnSendFailure } from "@/ui/form-upload";
 
 /** Переименовать и удалить поле словаря. */
 export function FieldActions({ field }: { field: { id: string; name: string } }) {
-  const [renameState, rename, renaming] = useActionState<FieldActionState, FormData>(renameFieldAction.bind(null, field.id), {});
-  const [deleteState, remove, deleting] = useActionState<FieldActionState>(deleteFieldAction.bind(null, field.id), {});
+  const [renameState, rename, renaming] = useActionState<FieldActionState, FormData>(keepingFormOnSendFailure(renameFieldAction.bind(null, field.id)), {});
+  const [deleteState, remove, deleting] = useActionState<FieldActionState, FormData>(
+    keepingFormOnSendFailure(deleteFieldAction.bind(null, field.id), ACTION_SEND_FAILED),
+    {},
+  );
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   return (
     <div className="flex flex-col items-end gap-2">
       {/* На телефоне поле ввода сжимается, чтобы галочка и корзина остались с ним в одной строке */}
       <div className="flex w-full items-center justify-end gap-2">
-        <form action={rename} className="flex min-w-0 flex-1 items-center justify-end gap-2">
+        <form onSubmit={submitKeepingFields(rename)} className="flex min-w-0 flex-1 items-center justify-end gap-2">
           <Input
             name="name"
             aria-label={`Новое имя поля «${field.name}»`}
@@ -44,6 +49,11 @@ export function FieldActions({ field }: { field: { id: string; name: string } })
             <div>
               Уже записанные значения не потеряются: они перейдут в свободные факты людей, например «{field.name}: да».
             </div>
+            {deleteState.error ? (
+              <Alert variant="danger" title="Поле не удалено" className="mt-[var(--yk-space-4)]">
+                {deleteState.error}
+              </Alert>
+            ) : null}
             <div className="app-dialog-actions">
 
                 <Button type="button" variant="secondary" onClick={() => setConfirmOpen(false)}>
@@ -60,7 +70,6 @@ export function FieldActions({ field }: { field: { id: string; name: string } })
         </Dialog>
       </div>
       {renameState.error ? <Alert variant="danger" title={renameState.error} /> : null}
-      {deleteState.error ? <Alert variant="danger" title={deleteState.error} /> : null}
     </div>
   );
 }

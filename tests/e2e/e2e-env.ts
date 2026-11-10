@@ -32,6 +32,7 @@ export function e2eServerEnv(): Record<string, string> {
     PUBLIC_BASE_URL: E2E_BASE_URL,
     STUB_MODEL: "scripted",
     STUB_CHANNEL: "fake",
+    STUB_SENLER: "fake",
     BOT_TOKEN_KEY: E2E_BOT_TOKEN_KEY,
   };
 }

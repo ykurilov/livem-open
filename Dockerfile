@@ -1,5 +1,5 @@
 # Один образ для web и worker:
-#   web:    node server.js
+#   web:    node dist/app-server.js (Next.js и WebSocket голосового ввода)
 #   worker: node dist/worker.js
 #   консольная команда агента: node dist/lead-magnet-cli.js
 FROM node:22-bookworm-slim AS base
@@ -18,7 +18,7 @@ COPY . .
 # в образ не попадают: при запуске настоящие значения приходят из .env
 RUN AUTH_URL=https://auth.build.invalid AUTH_APP_URL=https://app.build.invalid \
     AUTH_COOKIE_SECRET=build-time-placeholder-not-a-real-secret \
-    pnpm build && pnpm worker:build && pnpm cli:build
+    pnpm build && pnpm server:build && pnpm worker:build && pnpm cli:build
 
 FROM base AS runtime
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
@@ -33,4 +33,5 @@ COPY --from=build /app/deploy/worker-ready.cjs ./deploy/worker-ready.cjs
 # Работнику нужны пакеты, которые бандл не включает
 COPY --from=build /app/node_modules ./node_modules
 EXPOSE 3000
-CMD ["node", "server.js"]
+# Свой сервер вместо server.js сборки: на том же порту WebSocket голосового ввода (src/server/app-server.ts)
+CMD ["node", "dist/app-server.js"]

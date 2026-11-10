@@ -5,7 +5,7 @@ import { requireUser } from "@/modules/access";
 import { listMailings, type MailingListItem } from "@/modules/mailings";
 import { getDatabase } from "@/modules/platform/db";
 import { DataTable, PageHeader, type DataTableColumn } from "@/ui";
-import { MAILING_STATUS_BADGES, MAILING_STATUS_LABELS, mskDateTime } from "./status-labels";
+import { mailingHeadline, mskDateTime } from "./status-labels";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,10 @@ const columns: DataTableColumn<MailingListItem>[] = [
   {
     key: "status",
     header: "Состояние",
-    render: (mailing) => <Badge variant={MAILING_STATUS_BADGES[mailing.status]}>{MAILING_STATUS_LABELS[mailing.status]}</Badge>,
+    render: (mailing) => {
+      const { badge } = mailingHeadline({ ...mailing, startedAt: null }, new Date());
+      return <Badge variant={badge.variant}>{badge.label}</Badge>;
+    },
   },
   {
     key: "when",

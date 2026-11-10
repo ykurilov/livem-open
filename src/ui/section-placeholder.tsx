@@ -1,10 +1,10 @@
 import { Card, CardContent } from "@/ui/primitives";
-import { CABINET_SECTIONS } from "./cabinet-sections";
+import { CABINET_SECTIONS, SETTINGS_SECTION } from "./cabinet-sections";
 import { PageHeader } from "./page-header";
 
 /** Заглушка раздела, пока его экран не сделан. Заменяется экраном целиком. */
 export function SectionPlaceholder({ href }: { href: string }) {
-  const section = CABINET_SECTIONS.find((candidate) => candidate.href === href);
+  const section = [...CABINET_SECTIONS, SETTINGS_SECTION].find((candidate) => candidate.href === href);
   if (!section) throw new Error(`Нет раздела кабинета ${href}`);
   return (
     <>

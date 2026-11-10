@@ -10,6 +10,11 @@ export interface DataTableColumn<Row> {
   /** Выравнивание содержимого колонки, по умолчанию слева. */
   align?: "left" | "right";
   numeric?: boolean;
+  /**
+   * На узком экране — короткой строкой под заголовком карточки, а не парой «подпись — значение»:
+   * `labeled` — с подписью колонки впереди, `plain` — без неё (значение и так понятно).
+   */
+  cardLine?: "labeled" | "plain";
 }
 
 export interface DataTableProps<Row> {
@@ -24,6 +29,7 @@ export interface DataTableProps<Row> {
 function cardPlace(column: DataTableColumn<unknown>, index: number) {
   if (index === 0) return "title";
   if (!column.header) return "action";
+  if (column.cardLine) return "line";
   return "field";
 }
 
@@ -73,13 +79,16 @@ export function DataTable<Row>({ columns, rows, rowKey, empty }: DataTableProps<
                       key={column.key}
                       role="cell"
                       numeric={column.numeric}
-                      data-label={place === "field" ? column.header : undefined}
+                      data-label={place === "field" || column.cardLine === "labeled" ? column.header : undefined}
                       className={cn(
-                        "px-4 py-3 max-sm:p-0",
+                        // Отступы и линия ячейки у Одуванчика вне слоёв Tailwind: на узком экране их снимает только «!», иначе карточка — стопка полос
+                        "px-4 py-3 max-sm:!border-0 max-sm:!p-0",
                         column.align === "right" && "text-right",
                         place === "title" && "max-sm:order-0 max-sm:min-w-0 max-sm:grow max-sm:basis-32 max-sm:text-left max-sm:font-semibold",
                         // Короткое действие встаёт справа от заголовка, широкое (форма) переносится на свою строку
                         place === "action" && "max-sm:order-1 max-sm:ml-auto max-sm:max-w-full",
+                        place === "line" && "max-sm:order-2 max-sm:-mt-1 max-sm:basis-full max-sm:!text-left max-sm:!font-[inherit] max-sm:!text-[length:inherit] max-sm:text-[var(--yk-muted)]",
+                        column.cardLine === "labeled" && "max-sm:before:mr-1 max-sm:before:content-[attr(data-label)]",
                         place === "field" && "max-sm:order-2 max-sm:basis-full max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-3 max-sm:text-right",
                         // Подпись колонки — псевдоэлементом: она не попадает в текст ячейки и не дублирует заголовок таблицы
                         place === "field" &&

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { BotCredentials, ChannelEvent, WebhookRequest } from "../channel";
 import { createTelegramAdapter, TELEGRAM_SECRET_HEADER } from "./adapter";
-import { FakeTelegramApi, getUpdatesConflict, telegramError, webhookInfo } from "./fake-telegram-api";
+import { FakeTelegramApi, fileInfo, getUpdatesConflict, telegramError, webhookInfo } from "./fake-telegram-api";
 import * as updates from "./recorded-updates";
 
 const API_BASE = "https://tg-proxy.test/telegram";
@@ -523,6 +523,27 @@ describe("отправка: длинный текст, пустой текст, 
         expect(last?.body).not.toHaveProperty("reply_markup");
   });
 
+  it("готовые ответы: клавиатура ответа под последней частью, по одной в ряду, прячется после нажатия", async () => {
+    await send("Ответ", { followUps: ["Пока!"], quickReplies: ["Да", "Пока нет"] });
+    const [first, last] = api.callsTo("sendMessage");
+    expect(first?.body).not.toHaveProperty("reply_markup");
+    expect(last?.body).toMatchObject({
+      reply_markup: { keyboard: [[{ text: "Да" }], [{ text: "Пока нет" }]], one_time_keyboard: true, resize_keyboard: true },
+    });
+  });
+
+  it("готовые ответы с картинкой и короткой подписью: клавиатура на фото", async () => {
+    await send("Подпись", { imagePath: "https://cdn.test/cover.png", quickReplies: ["Понятно"] });
+    expect(api.callsTo("sendPhoto")[0]?.body).toMatchObject({ reply_markup: { keyboard: [[{ text: "Понятно" }]] } });
+  });
+
+  it("пустой список готовых ответов убирает прежнюю клавиатуру; без списка — ничего не трогает", async () => {
+    await send("Ответ", { quickReplies: [] });
+    expect(api.callsTo("sendMessage")[0]?.body).toMatchObject({ reply_markup: { remove_keyboard: true } });
+    await send("Напоминание");
+    expect(api.callsTo("sendMessage")[1]?.body).not.toHaveProperty("reply_markup");
+  });
+
   it("сбой на дополнительном сообщении: повтор шлёт только остаток", async () => {
     api.replyOnce("sendMessage", { status: 200, body: { ok: true, result: { message_id: 1 } } });
     api.replyOnce("sendMessage", telegramError(500, "Internal Server Error"));
@@ -682,5 +703,50 @@ describe("проверка здоровья: не перехватили ли н
     api.replyOnce("getMe", telegramError(401, "Unauthorized"));
     expect(await adapter.checkConnection(bot, OUR_WEBHOOK)).toMatchObject({ ok: false, kind: "invalid_token" });
     expect(api.callsTo("getWebhookInfo")).toEqual([]);
+  });
+});
+
+describe("фото клиента", () => {
+  it("фото — ссылка на самый большой размер (file_id), по ней работник скачает байты", async () => {
+    expect(await eventsOf(updates.photoWithCaption)).toEqual([expect.objectContaining({ attachment: "image", imageRef: "AgAD-big" })]);
+  });
+
+  it("снимок экрана файлом (документ-картинка) — тоже картинка со ссылкой", async () => {
+    expect(await eventsOf(updates.screenshotDocument)).toEqual([expect.objectContaining({ attachment: "image", imageRef: "BQAD-screen", text: "" })]);
+  });
+
+  it("документ не картинка, голосовое, стикер — без ссылки на фото", async () => {
+    for (const update of [updates.documentMessage, updates.voiceMessage, updates.stickerMessage]) {
+      const [event] = await eventsOf(update);
+      expect(event).not.toHaveProperty("imageRef");
+    }
+  });
+
+  it("скачивание: getFile, затем файл по пути — через тот же адрес API и пропуск прокси", async () => {
+    const proxied = createTelegramAdapter({ apiBaseUrl: API_BASE, proxyToken: "proxy-pass", fetch: api.fetch });
+    api.replyOnce("getFile", fileInfo("AgAD-big", "photos/file_7.jpg"));
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 1, 2, 3]);
+    api.serveFile("photos/file_7.jpg", bytes, "image/jpeg");
+
+    const result = await proxied.downloadImage!(bot, "AgAD-big");
+
+    expect(result).toEqual({ ok: true, image: { bytes, filename: "file_7.jpg", contentType: "image/jpeg" } });
+    expect(api.callsTo("getFile")[0]!.body).toEqual({ file_id: "AgAD-big" });
+    expect(api.fileDownloads).toEqual([{ token: bot.token, path: "photos/file_7.jpg", headers: expect.objectContaining({ "x-proxy-token": "proxy-pass" }) }]);
+  });
+
+  it("скачивание не удалось — итог без исключения и без токена в тексте ошибки", async () => {
+    api.replyOnce("getFile", telegramError(400, "Bad Request: file is too big"));
+    const tooBig = await adapter.downloadImage!(bot, "AgAD-big");
+    expect(tooBig).toMatchObject({ ok: false, reason: "permanent" });
+
+    api.replyOnce("getFile", fileInfo("AgAD-big", "photos/missing.jpg"));
+    const missing = await adapter.downloadImage!(bot, "AgAD-big");
+    expect(missing).toMatchObject({ ok: false });
+
+    api.replyOnce("getFile", new Error(`connect ECONNREFUSED ${API_BASE}/bot${bot.token}/getFile`));
+    const offline = await adapter.downloadImage!(bot, "AgAD-big");
+    expect(offline).toMatchObject({ ok: false, reason: "temporary" });
+    for (const failure of [tooBig, missing, offline]) expect(JSON.stringify(failure)).not.toContain(bot.token);
   });
 });

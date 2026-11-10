@@ -22,6 +22,7 @@ import { createPassageConversationStore } from "../conversations/passage-store";
 import { PREVIEW_MEDIUM, previewTrackingCode } from "./preview-code";
 import { providerOutage } from "../../../tests/integration/live-dialog-kit";
 import { requeueStuckOutbound } from "../channels";
+import { PURCHASE_USAGE_SOURCE } from "./outreach-keys";
 
 // 14:00 по Москве 21 октября
 const START = new Date("2026-10-21T11:00:00Z");
@@ -266,6 +267,21 @@ describe("отчёт «Покупки»", () => {
     await say("Беру курс");
 
     expect(await purchaseReport(kit.db, lead.leadMagnetId)).toEqual({ ordered: 1, paid: 1, refunded: 0, paidByCurrency: [{ currency: "RUB", amount: 1990 }], promised: 0 });
+  });
+
+  it("«Вернули» — только те, у кого не осталось оплаты без возврата: вернул один из двух заказов — всё ещё «Оплатили»", async () => {
+    const lead = await start();
+    await say("Дайте ссылку на курс");
+    const { trackingCode } = await passage();
+    const [first, second] = [`gc-${randomUUID().slice(0, 6)}`, `gc-${randomUUID().slice(0, 6)}`];
+    await notify({ event: "order_paid", id: first, status: "Завершён", cost: "1990", utm_content: trackingCode });
+    await notify({ event: "order_paid", id: second, status: "Завершён", cost: "990", utm_content: trackingCode });
+
+    await notify({ event: "order_refunded", id: first, status: "Возврат", cost: "1990", utm_content: trackingCode });
+    expect(await purchaseReport(kit.db, lead.leadMagnetId)).toMatchObject({ ordered: 1, paid: 1, refunded: 0 });
+
+    await notify({ event: "order_refunded", id: second, status: "Возврат", cost: "990", utm_content: trackingCode });
+    expect(await purchaseReport(kit.db, lead.leadMagnetId)).toMatchObject({ ordered: 1, paid: 0, refunded: 1 });
   });
 
   it("лидмагнит без ссылок продуктов и заказов — без отчёта", async () => {
@@ -514,6 +530,68 @@ describe("находки аудита", () => {
     expect(calls).toBe(0);
     expect(await firstMessagesToPerson()).toEqual(["Напоминаю про курс"]);
     expect((await passage()).paymentReminderSentAt).not.toBeNull();
+  });
+
+  /** Задача исчерпала повторы очереди (модель или база лежали): в очереди её больше нет. */
+  const loseJobs = (name: "purchase-congratulate" | "payment-reminder") => {
+    const lost = kit.queue.pending.filter((job) => job.name === name).length;
+    kit.queue.pending.splice(0, kit.queue.pending.length, ...kit.queue.pending.filter((job) => job.name !== name));
+    return lost;
+  };
+  /** Сколько задач подмётчик поставил этому прохождению: в базе есть и прохождения других тестов. */
+  const recoveredFor = async (passageId: string) => {
+    const before = kit.queue.history.length;
+    await reactions.recoverPurchaseReactions({ db: kit.db, queue: kit.queue, clock: kit.clock });
+    return kit.queue.history.slice(before).filter((job) => (job.payload as { passageId?: string }).passageId === passageId).length;
+  };
+
+  it("задача поздравления исчерпала повторы: подмётчик ставит её снова, поздравление уходит один раз", async () => {
+    await start();
+    await say("Дайте ссылку на курс");
+    const { id, trackingCode } = await passage();
+    await notify({ event: "order_paid", id: `gc-${randomUUID().slice(0, 6)}`, status: "Завершён", utm_content: trackingCode });
+    expect(loseJobs("purchase-congratulate")).toBe(1);
+    // Свежая оплата: задача, может быть, ещё повторяется
+    expect(await recoveredFor(id)).toBe(0);
+
+    kit.clock.advance(20 * 60_000);
+    expect(await recoveredFor(id)).toBe(1);
+    await kit.drain();
+    expect(await firstMessagesToPerson()).toEqual(["Поздравляю с покупкой курса! 🎉"]);
+
+    kit.clock.advance(20 * 60_000);
+    expect(await recoveredFor(id)).toBe(0);
+  });
+
+  it("задача напоминания исчерпала повторы: после срока подмётчик ставит её снова, напоминание уходит один раз", async () => {
+    await start();
+    await say("Беру курс");
+    expect(loseJobs("payment-reminder")).toBe(1);
+    const { id } = await passage();
+
+    // Срок напоминания — назавтра в 11:00 по Москве; до него подмётчик не трогает
+    kit.clock.set(new Date("2026-10-22T07:00:00Z"));
+    expect(await recoveredFor(id)).toBe(0);
+
+    kit.clock.set(new Date("2026-10-22T08:20:00Z"));
+    expect(await recoveredFor(id)).toBe(1);
+    await kit.drain();
+    expect(await firstMessagesToPerson()).toEqual([expect.stringContaining("Напоминаю про курс")]);
+
+    kit.clock.advance(20 * 60_000);
+    expect(await recoveredFor(id)).toBe(0);
+  });
+
+  it("напоминать стало не о чем (оплатил): подмётчик больше задачу не ставит", async () => {
+    await start();
+    await say("Беру курс");
+    loseJobs("payment-reminder");
+    const { id, trackingCode } = await passage();
+    await notify({ event: "order_paid", id: `gc-${randomUUID().slice(0, 6)}`, status: "Завершён", utm_content: trackingCode });
+    await kit.drain();
+
+    kit.clock.set(new Date("2026-10-22T08:20:00Z"));
+    expect(await recoveredFor(id)).toBe(0);
   });
 
   it("тестовая оплата из «Проверки» не связывается с боевым человеком ни при приёме, ни при сверке по почте", async () => {
@@ -822,6 +900,43 @@ describe("находки аудита", () => {
 
     expect((await passage()).purchasedAt).not.toBeNull();
     expect(await firstMessagesToPerson()).toEqual(["Поздравляю с покупкой курса! 🎉"]);
+  });
+
+  it("оплатил и вернул деньги после обещания оплатить — напоминание «оплаты пока нет» не приходит", async () => {
+    await start();
+    await say("Беру курс");
+    const { trackingCode } = await passage();
+    const orderId = `gc-${randomUUID().slice(0, 6)}`;
+    await notify({ event: "order_paid", id: orderId, status: "Завершён", utm_content: trackingCode });
+    await kit.runDue();
+    await notify({ event: "order_refunded", id: orderId, status: "Возврат", utm_content: trackingCode });
+    await kit.runDue();
+
+    kit.clock.set(new Date("2026-10-22T09:00:00Z"));
+    await kit.drain();
+    expect(await firstMessagesToPerson()).toEqual(["Поздравляю с покупкой курса! 🎉"]);
+  });
+
+  it("опоздавшее «создан» после оплаты не меняет сумму и валюту оплаченного заказа", async () => {
+    await start();
+    await say("Дайте ссылку на курс");
+    const { trackingCode } = await passage();
+    const orderId = `gc-${randomUUID().slice(0, 6)}`;
+    await notify({ event: "order_paid", id: orderId, status: "Завершён", cost: "2990", currency: "RUB", utm_content: trackingCode });
+    await notify({ event: "order_created", id: orderId, status: "Новый", cost: "3500", currency: "USD", utm_content: trackingCode });
+    const [order] = await kit.db.select().from(productOrders).where(eq(productOrders.externalOrderId, orderId));
+    expect(order).toMatchObject({ status: "Завершён", amount: "2990.00", currency: "RUB" });
+  });
+
+  it("расход поздравления — своей строкой журнала, не строкой сообщений первым программы", async () => {
+    await start();
+    await say("Дайте ссылку на курс");
+    const { trackingCode, chatId } = await passage();
+    await notify({ event: "order_paid", id: `gc-${randomUUID().slice(0, 6)}`, status: "Завершён", utm_content: trackingCode });
+    await kit.drain();
+    expect(await firstMessagesToPerson()).toEqual(["Поздравляю с покупкой курса! 🎉"]);
+    expect(await kit.chatStorage.sumUsage({ chatId, source: "first_message" })).toEqual([]);
+    expect(await kit.chatStorage.sumUsage({ chatId, source: PURCHASE_USAGE_SOURCE })).not.toEqual([]);
   });
 
   it("finish_dialog после оплаты не перетирает итог купившего: остаётся «согласился»", async () => {

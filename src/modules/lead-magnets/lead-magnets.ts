@@ -17,21 +17,30 @@ export interface LeadMagnetCard {
   updatedAt: Date;
   /** Средняя цена завершённого прохождения, $; `null` — завершённых ещё нет. */
   averagePassageCostUsd: number | null;
+  /** Версия черновика — для публикации прямо с карточки. */
+  draftVersionId: string;
 }
 
 function asLeadMagnet(row: typeof leadMagnets.$inferSelect): LeadMagnet {
   if (!row.draftVersionId) throw new Error(`У лидмагнита ${row.id} нет версии черновика`);
-  return { ...row, draftVersionId: row.draftVersionId };
+  // У черновиков, сохранённых до «Описания клиентов», поля нет: читается пустым, как его ставит схема настроек
+  return { ...row, draft: { ...row.draft, clientPortrait: row.draft.clientPortrait ?? "" }, draftVersionId: row.draftVersionId };
 }
 
 /** Новый лидмагнит: черновик с настройками по умолчанию и его первая версия. */
 export async function createLeadMagnet(
   db: DatabaseExecutor,
-  input: { name: string; cardDescription?: string },
+  input: { name: string; cardDescription?: string; id?: string },
 ): Promise<LeadMagnet> {
   const settings = validateLeadMagnetSettings(newLeadMagnetSettings(input.name, input.cardDescription));
   return db.transaction(async (tx) => {
-    const [created] = await tx.insert(leadMagnets).values({ draft: settings }).returning();
+    const [created] = await tx
+      .insert(leadMagnets)
+      .values({ id: input.id, draft: settings })
+      .onConflictDoNothing({ target: leadMagnets.id })
+      .returning();
+    // `id` пришёл из формы: повтор той же отправки отдаёт уже созданный лидмагнит, а не второй
+    if (!created) return asLeadMagnet((await tx.select().from(leadMagnets).where(eq(leadMagnets.id, input.id!)))[0]!);
     const [version] = await tx
       .insert(leadMagnetVersions)
       .values({ leadMagnetId: created!.id, settings, source: "manual" })
@@ -119,6 +128,27 @@ export async function listVersions(db: DatabaseExecutor, leadMagnetId: string): 
     .orderBy(desc(leadMagnetVersions.createdAt));
 }
 
+export interface LeadMagnetVersionSummary {
+  id: string;
+  source: VersionSource;
+  createdAt: Date;
+  name: string;
+}
+
+/** Версии для «Истории», свежие сверху: без самих настроек — у каждой версии они весят десятки килобайт. */
+export async function listVersionSummaries(db: DatabaseExecutor, leadMagnetId: string): Promise<LeadMagnetVersionSummary[]> {
+  return db
+    .select({
+      id: leadMagnetVersions.id,
+      source: leadMagnetVersions.source,
+      createdAt: leadMagnetVersions.createdAt,
+      name: sql<string>`${leadMagnetVersions.settings}->>'name'`,
+    })
+    .from(leadMagnetVersions)
+    .where(eq(leadMagnetVersions.leadMagnetId, leadMagnetId))
+    .orderBy(desc(leadMagnetVersions.createdAt));
+}
+
 export async function getVersion(db: DatabaseExecutor, versionId: string): Promise<LeadMagnetVersion | null> {
   const [version] = await db.select().from(leadMagnetVersions).where(eq(leadMagnetVersions.id, versionId));
   return version ?? null;
@@ -126,16 +156,28 @@ export async function getVersion(db: DatabaseExecutor, versionId: string): Promi
 
 export async function listLeadMagnetCards(db: DatabaseExecutor): Promise<LeadMagnetCard[]> {
   const [rows, averageCosts] = await Promise.all([
-    db.select().from(leadMagnets).orderBy(desc(leadMagnets.updatedAt)),
+    // Из черновика нужны только имя и описание: сам черновик с инструкцией весит десятки килобайт
+    db
+      .select({
+        id: leadMagnets.id,
+        name: sql<string>`${leadMagnets.draft} ->> 'name'`,
+        cardDescription: sql<string>`${leadMagnets.draft} ->> 'cardDescription'`,
+        publishedSnapshotId: leadMagnets.publishedSnapshotId,
+        draftVersionId: leadMagnets.draftVersionId,
+        updatedAt: leadMagnets.updatedAt,
+      })
+      .from(leadMagnets)
+      .orderBy(desc(leadMagnets.updatedAt)),
     averagePassageCosts(db),
   ]);
   return rows.map((row) => ({
     id: row.id,
-    name: row.draft.name,
-    cardDescription: row.draft.cardDescription,
+    name: row.name,
+    cardDescription: row.cardDescription,
     published: row.publishedSnapshotId !== null,
     updatedAt: row.updatedAt,
     averagePassageCostUsd: averageCosts.get(row.id) ?? null,
+    draftVersionId: row.draftVersionId ?? "",
   }));
 }
 

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { leadMagnetToFlow } from "../flows/settings-to-flow";
 import { validateLeadMagnetFlow, type FlowSettingsIssue } from "../flows/validate-flow";
 import { DEFAULT_MODEL_CHOICE } from "../platform/models-catalog";
-import { productLinkSchema } from "../purchases/product-links";
+import { productLinkSchema, productPage, type ProductLink } from "../purchases/product-links";
 import { textLinkSchema } from "../text-links/text-link";
 
 export const DEFAULT_MAX_PERSON_MESSAGES = 60;
@@ -90,6 +90,11 @@ function sentAsIs(where: string) {
 export const leadMagnetSettingsSchema = z.object({
   name: z.string().trim().min(1, "У лидмагнита должно быть название"),
   cardDescription: z.string(),
+  /**
+   * «Описание клиентов»: кто приходит к лидмагниту, как пишет, в чём сомневается. По нему агент-клиент «Поменяемся
+   * ролями» придумывает клиента; консультант его не получает. В настройках, записанных до поля, — пусто.
+   */
+  clientPortrait: z.string().default(""),
   instruction: z.string(),
   firstMessage: sentAsIs("первом сообщении"),
   providerId: z.string().min(1),
@@ -105,8 +110,14 @@ export const leadMagnetSettingsSchema = z.object({
   videoIds: z.array(z.string().uuid()),
   /** Картинки архива (скриншоты «куда нажать»), которые консультант может показывать. Сохранённые до архива — без картинок. */
   imageIds: z.array(z.string().uuid()).default([]),
+  /** Текстовые базы знаний, которые консультант получает в начале контекста; порядок — порядок прикрепления. */
+  knowledgeIds: z.array(z.string().uuid()).default([]),
   /** Консультант смотрит снимок страницы по ссылке, которую прислал человек. */
   viewsLinks: z.boolean(),
+  /** Консультант принимает картинки клиента (фото, снимки экрана) и видит их. По умолчанию выключено. */
+  clientImages: z.boolean().default(false),
+  /** Кнопка микрофона в веб-чате и в «Проверке»: человек диктует, текст появляется в поле. По умолчанию выключено. */
+  voiceInput: z.boolean().default(false),
   /** Программа на несколько дней; `null` — один разговор, как раньше. */
   program: programSettingsSchema.nullable().default(null),
   /**
@@ -160,6 +171,7 @@ export function newLeadMagnetSettings(name: string, cardDescription = ""): LeadM
   return {
     name,
     cardDescription,
+    clientPortrait: "",
     instruction: "",
     firstMessage: "",
     providerId: DEFAULT_MODEL_CHOICE.providerId,
@@ -171,7 +183,10 @@ export function newLeadMagnetSettings(name: string, cardDescription = ""): LeadM
     maxPersonMessages: DEFAULT_MAX_PERSON_MESSAGES,
     fieldIds: [],
     videoIds: [],
+    clientImages: false,
+    voiceInput: false,
     imageIds: [],
+    knowledgeIds: [],
     viewsLinks: false,
     program: null,
     flow: leadMagnetToFlow({ name, instruction: "", stages: [], program: null, fieldIds: [], viewsLinks: false }, []),
@@ -228,13 +243,26 @@ function checkProgram(settings: LeadMagnetSettings): void {
 }
 
 /** Проверяет настройки целиком; ошибка — понятным текстом (его видит и эксперт, и конструктор). */
+/** У одной страницы — одна метка кампании: иначе непонятно, какой продукт купили. */
+function checkProductPages(products: readonly ProductLink[]): void {
+  const campaigns = new Map<string, string>();
+  for (const product of products) {
+    const page = productPage(product);
+    const known = campaigns.get(page);
+    if (known !== undefined && known !== product.campaign)
+      throw new InvalidLeadMagnetSettingsError(`Ссылки продуктов: у страницы ${page} две метки кампании («${known}» и «${product.campaign}») — одна страница, один продукт`);
+    campaigns.set(page, product.campaign);
+  }
+}
+
 export function validateLeadMagnetSettings(settings: unknown): LeadMagnetSettings {
   const parsed = leadMagnetSettingsSchema.safeParse(settings);
   if (parsed.success) {
     const ids = parsed.data.stages.map((stage) => stage.id);
     if (new Set(ids).size !== ids.length) throw new InvalidLeadMagnetSettingsError("У этапов повторяются id");
-    const checked = { ...parsed.data, videoIds: [...new Set(parsed.data.videoIds)], imageIds: [...new Set(parsed.data.imageIds)], flow: checkedFlow(parsed.data.flow) };
+    const checked = { ...parsed.data, videoIds: [...new Set(parsed.data.videoIds)], imageIds: [...new Set(parsed.data.imageIds)], knowledgeIds: [...new Set(parsed.data.knowledgeIds)], flow: checkedFlow(parsed.data.flow) };
     checkProgram(checked);
+    checkProductPages(checked.productLinks ?? []);
     return checked;
   }
   throw new InvalidLeadMagnetSettingsError(parsed.error.issues.map((issue) => issue.message).join("; "));

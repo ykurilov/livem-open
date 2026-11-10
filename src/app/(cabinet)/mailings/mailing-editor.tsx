@@ -2,20 +2,17 @@ import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 import { Alert, Card, CardContent, CardHeader, CardTitle } from "@/ui/primitives";
 import { countRecipients, lastTestPersonId, listMailingFilterOptions, listTestRecipients, type Mailing } from "@/modules/mailings";
-import { listFields, parsePeopleFilter } from "@/modules/people";
+import { listFields } from "@/modules/people";
 import { getDatabase } from "@/modules/platform/db";
-import { filterFromSearchParams, type SearchParams } from "../people/filter-params";
-import { PeopleFilterForm } from "../people/people-filter-form";
+import type { SearchParams } from "../people/filter-params";
 import { MailingForm } from "./mailing-form";
+import { recipientFilter } from "./recipient-filter";
+import { MailingRecipientFilterForm, RecipientFilterAppliedProvider } from "./recipient-filter-applied";
 import { testRecipientOption } from "./test-recipient-option";
-
-const FILTER_KEYS = ["bot", "lead", "link", "status", "fields"];
 
 /** Черновик рассылки: кому (фильтр базы и число получателей) и что (текст, картинка, проба, время). */
 export async function MailingEditor({ mailing, params, basePath }: { mailing: Mailing | null; params: SearchParams; basePath: string }) {
-  // Фильтр в адресе — то, что эксперт только что выбрал; без него — сохранённый в черновике
-  const fromUrl = FILTER_KEYS.some((key) => params[key] !== undefined);
-  const { filter, error } = fromUrl || !mailing ? filterFromSearchParams(params) : { filter: parsePeopleFilter(mailing.filter), error: undefined };
+  const { filter, error, broken } = recipientFilter(params, mailing?.filter ?? null);
   const { db } = getDatabase();
   const lastTester = mailing?.testPersonId ?? (await lastTestPersonId(db));
   const [options, fields, recipientCount, testRecipients] = await Promise.all([
@@ -26,13 +23,14 @@ export async function MailingEditor({ mailing, params, basePath }: { mailing: Ma
   ]);
 
   return (
+    <RecipientFilterAppliedProvider>
     <div className="flex flex-col gap-[var(--yk-space-6)]">
       <Card>
         <CardHeader>
           <CardTitle>Кому</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-[var(--yk-space-4)]">
-          <PeopleFilterForm basePath={basePath} options={options} fields={fields} filter={filter} />
+          <MailingRecipientFilterForm basePath={basePath} markAll options={options} fields={fields} filter={filter} />
           {error ? <Alert variant="warm" title={error} /> : null}
           <p className="font-semibold" data-testid="recipient-count">
             Получателей: {recipientCount}
@@ -53,6 +51,7 @@ export async function MailingEditor({ mailing, params, basePath }: { mailing: Ma
             imageName={mailing?.imagePath ? basename(mailing.imagePath) : null}
             filterJson={JSON.stringify(filter)}
             recipientCount={recipientCount}
+            recipientFilterBroken={broken}
             testRecipients={testRecipients.map(testRecipientOption)}
             testPersonId={testRecipients.some((person) => person.id === lastTester) ? lastTester : null}
             requestId={randomUUID()}
@@ -60,5 +59,6 @@ export async function MailingEditor({ mailing, params, basePath }: { mailing: Ma
         </CardContent>
       </Card>
     </div>
+    </RecipientFilterAppliedProvider>
   );
 }

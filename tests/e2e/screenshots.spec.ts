@@ -41,7 +41,7 @@ const THEMES = ["light", "dark"] as const;
  * Переписки во «Входящих» — карточки-ссылки, их пишут параллельные тесты входящих: прячется содержимое колонки, сама колонка остаётся.
  * Из-за тех же переписок в меню появляется счётчик неотвеченных.
  */
-const CHANGING_PARTS = 'main table, main ul, main ol, main [data-testid], main time, main code, main nav[aria-label="Неотвеченные"] > *, .app-navigation-count';
+const CHANGING_PARTS = 'main table, main ul, main ol, main [data-testid], main time, main code, main nav[aria-label="Неотвеченные"] > *, .yk-app-shell__badge';
 
 /** Подписка чата `GET …/watch` открыта всё время, пока виден чат: тишины в сети на редакторе не бывает. */
 const isLongLived = (url: string) => new URL(url).pathname.endsWith("/watch");
@@ -86,7 +86,8 @@ async function shoot(page: Page, path: string, name: string, mask: string | unde
     await loading;
     // Значок разработки Next.js в углу — не часть кабинета; заодно прячутся меняющиеся куски
     await page.addStyleTag({ content: `/* ${HIDING_MARK} */ nextjs-portal, ${CHANGING_PARTS} { display: none !important; }` });
-    await expect(page.locator("html")).toHaveAttribute("data-theme", colorScheme);
+    // Выбора в «Настройках» нет: тема автоматическая и следует системной настройке, которую задаёт emulateMedia
+    await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
     await expect(page).toHaveScreenshot(`${name}-${colorScheme}.png`, {
       maxDiffPixelRatio: 0.01,
       animations: "disabled",

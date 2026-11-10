@@ -2,10 +2,11 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { jpegOf, pngOf } from "../images/test-images";
 import { MAILING_IMAGE_MAX_BYTES, MailingImageError, removeMailingImage, saveMailingImage, uploadsDir } from "./images";
 
-const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
-const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2]);
+const PNG = pngOf(800, 600);
+const JPEG = jpegOf(800, 600);
 
 let dir: string;
 beforeEach(async () => {
@@ -29,6 +30,11 @@ describe("картинка рассылки", () => {
     const big = new Uint8Array(MAILING_IMAGE_MAX_BYTES + 1);
     big.set(PNG);
     await expect(saveMailingImage({ name: "big.png", bytes: big }, dir)).rejects.toThrow(MailingImageError);
+  });
+
+  it("слишком вытянутую или большую для мессенджеров не берёт и говорит, что поправить", async () => {
+    await expect(saveMailingImage({ name: "screenshot.png", bytes: pngOf(1080, 24_000) }, dir)).rejects.toThrow(/вытянутая.*обрежьте/);
+    await expect(saveMailingImage({ name: "huge.png", bytes: pngOf(8000, 6000) }, dir)).rejects.toThrow(/слишком большая.*уменьшите/);
   });
 
   it("папка: UPLOADS_DIR, в продакшене по умолчанию /app/data/uploads", () => {

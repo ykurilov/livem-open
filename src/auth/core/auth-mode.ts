@@ -1,4 +1,4 @@
-import { resolveEnv, type LoadConfigOptions } from './config.js';
+import { resolveEnv, type LoadConfigOptions } from './config';
 
 // Способ входа: логин и пароль (своя учётная запись в базе приложения) или свой сервис единого входа (OIDC).
 export type AuthMode = 'password' | 'sso';

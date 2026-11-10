@@ -2,7 +2,7 @@ import { RobotIcon as Bot } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/ui/primitives";
 import { CHANNEL_LABELS, createBotServiceFromEnv, type BotSummary, type NoCodeMode } from "@/modules/channels";
-import { DataTable, PageHeader, type DataTableColumn } from "@/ui";
+import { DataTable, PageHeader, SectionTabs, SETTINGS_TABS, type DataTableColumn } from "@/ui";
 import { ConnectBotForm } from "./connect-bot-form";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +54,7 @@ export default async function Page() {
 
   return (
     <>
-      <PageHeader title="Боты" />
+      <PageHeader title="Настройки" tabs={<SectionTabs label="Разделы настроек" tabs={SETTINGS_TABS} />} />
       <div className="flex flex-col gap-[var(--yk-space-6)]">
         <Card>
           <CardHeader>

@@ -1,0 +1,1 @@
+ALTER TABLE "app"."people" ADD COLUMN "conversations_reset_at" timestamp with time zone;

@@ -179,6 +179,27 @@ describe("подъём лимита в настройках", () => {
     expect(kit.calls).toHaveLength(1);
   });
 
+  it("ждали несколько человек — ход сразу получает каждый", async () => {
+    const waiting = [];
+    for (let index = 0; index < 3; index++) {
+      person = `user-${randomUUID().slice(0, 8)}`;
+      // Без перевода часов: утренние ходы прежних не наступают
+      const lead = await kit.publish();
+      await kit.send(person, `/start ${lead.code}`, { startCode: lead.code });
+      await kit.runDue();
+      await exhaustDailyLimit();
+      await say(`Вопрос до утра ${index}`);
+      waiting.push(person);
+    }
+    expect(kit.calls).toHaveLength(0);
+
+    await save("5");
+    await kit.runDue();
+
+    expect(kit.calls).toHaveLength(3);
+    for (const waiter of waiting) expect(kit.textsTo(waiter).at(-1)).toBe(DEFAULT_CONSULTANT_REPLY);
+  });
+
   it("лимит снизили — отложенные ходы ждут утра", async () => {
     await startPassage();
     await exhaustDailyLimit();

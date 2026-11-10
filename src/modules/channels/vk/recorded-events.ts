@@ -94,7 +94,21 @@ export const photoWithCaption = {
       ...messageBase,
       id: 45,
       text: "Вот мой текущий сайт",
-      attachments: [{ type: "photo", photo: { id: 1, owner_id: 5550001, sizes: [], access_key: "k" } }],
+      attachments: [
+        {
+          type: "photo",
+          photo: {
+            id: 1,
+            owner_id: 5550001,
+            access_key: "k",
+            sizes: [
+              { type: "s", width: 75, height: 50, url: "https://sun9-1.userapi.test/s.jpg" },
+              { type: "w", width: 1280, height: 853, url: "https://sun9-1.userapi.test/w.jpg" },
+              { type: "x", width: 604, height: 403, url: "https://sun9-1.userapi.test/x.jpg" },
+            ],
+          },
+        },
+      ],
     },
     client_info: clientInfo,
   },

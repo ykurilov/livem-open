@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { AgentFlow, ClientCardField, FlowState } from "@ykurilov/agent-chat-flows/format";
 import { FINAL_STATE_ID, LEAD_MAGNET_TOOLS, SALE_TAG } from "../flows";
 import { newLeadMagnetSettings, type LeadMagnetSettings } from "../lead-magnets";
-import { constructorTail, describeManualEdits } from "./manual-edits";
+import { CONSTRUCTOR_TAIL_MAX_LENGTH } from "./endpoint";
+import { answerCorrectionsLine, constructorTail, describeManualEdits, fitManualEditNotes } from "./manual-edits";
 
 const before = {
   ...newLeadMagnetSettings("Разбор"),
@@ -40,6 +41,11 @@ describe("заметки о ручной правке", () => {
     expect(note).toContain("ты");
     expect(note!.length).toBeLessThan(400);
     expect(note).not.toContain(head);
+  });
+
+  it("«Описание клиентов» подписано своим именем", () => {
+    const notes = describeManualEdits(before, { ...before, clientPortrait: "Владельцы маленьких студий" }, new Map());
+    expect(notes).toEqual(["Описание клиентов: было «» → стало «Владельцы маленьких студий»"]);
   });
 
   it("числа и модель тоже попадают в заметки", () => {
@@ -103,6 +109,35 @@ describe("заметки о ручной правке", () => {
 
   it("нет заметок — нет хвоста", () => {
     expect(constructorTail([])).toBeNull();
+  });
+});
+
+describe("правки ответов консультанта в хвосте конструктора", () => {
+  it("строка о новых правках — только когда есть неупомянутые; одна на правки и ответы эксперта", () => {
+    expect(answerCorrectionsLine({ fresh: 2, pending: 5 })).toBe("Новые правки и ответы эксперта для разбора: 2, всего неразобранных: 5.");
+    expect(answerCorrectionsLine({ fresh: 0, pending: 5 })).toBeNull();
+  });
+
+  it("строка правок — хвост и без заметок о ручных правках, и вместе с ними", () => {
+    const line = answerCorrectionsLine({ fresh: 1, pending: 1 })!;
+    expect(constructorTail([], line)).toBe(line);
+    const tail = constructorTail(["Название: было «x» → стало «y»"], line)!;
+    expect(tail).toContain(line);
+    expect(tail).toContain("Эксперт вручную изменил:\n— Название: было «x» → стало «y»");
+    expect(constructorTail([], null)).toBeNull();
+  });
+
+  it("с длинными заметками строка правок остаётся, а хвост влезает в предел", () => {
+    const line = answerCorrectionsLine({ fresh: 3, pending: 7 })!;
+    const notes = Array.from({ length: 30 }, (_, index) => ({ text: `Заметка ${index}: ${"х".repeat(280)}` }));
+    const fitted = fitManualEditNotes(notes, CONSTRUCTOR_TAIL_MAX_LENGTH, line);
+    const tail = constructorTail(fitted.map((note) => note.text), line)!;
+    expect(tail).toContain(line);
+    expect(tail.length).toBeLessThanOrEqual(CONSTRUCTOR_TAIL_MAX_LENGTH);
+    expect(fitted.length).toBeGreaterThan(0);
+    // Ещё одна заметка со строкой правок уже не влезла бы: строка занимает место в том же пределе
+    const next = notes[notes.length - fitted.length - 1]!;
+    expect(constructorTail([next, ...fitted].map((note) => note.text), line)!.length).toBeGreaterThan(CONSTRUCTOR_TAIL_MAX_LENGTH);
   });
 });
 

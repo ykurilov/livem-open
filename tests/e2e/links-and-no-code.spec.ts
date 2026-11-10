@@ -52,6 +52,8 @@ test("ссылка с меткой попадает в отчёт; бот в р�
 
   // Ссылка с меткой
   await page.goto(`/lead-magnets/${main.id}/publish`);
+  // Правила рекламных ссылок свёрнуты: форма новой ссылки стоит первой
+  await page.getByText("Рекламщик может сам вписать метку в ссылку").click();
   const advertising = page.getByRole("list", { name: "Примеры рекламных ссылок" });
   const example = `https://fake.test/${bot!.username}?start=${main.code}__ad_campaign__video_01`;
   await expect(advertising.getByText(example, { exact: true })).toBeVisible();
@@ -61,10 +63,25 @@ test("ссылка с меткой попадает в отчёт; бот в р�
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(example);
   await expect(page.getByRole("columnheader", { name: "Начали разговор" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Расход ИИ", exact: true })).toBeVisible();
-  await page.getByLabel("Метка новой ссылки").fill("Блогер Маша");
+  // Лишнюю ссылку удаляют после вопроса прямо в строке; «Отмена» её оставляет
+  await page.getByLabel("Для кого ссылка").fill("Лишняя");
+  await page.getByRole("button", { name: "Новая ссылка" }).click();
+  const extra = page.getByTestId("labeled-link").filter({ hasText: "Лишняя" });
+  await extra.getByRole("button", { name: "Удалить" }).click();
+  await extra.getByRole("button", { name: "Отмена" }).click();
+  await extra.getByRole("button", { name: "Удалить" }).click();
+  await expect(extra.getByText("Удалить ссылку «Лишняя»? Вернуть её не получится.")).toBeVisible();
+  await extra.getByRole("group", { name: "Подтверждение" }).getByRole("button", { name: "Удалить" }).click();
+  await expect(extra).toHaveCount(0, { timeout: 30_000 });
+
+  await page.getByLabel("Для кого ссылка").fill("Блогер Маша");
   await page.getByRole("button", { name: "Новая ссылка" }).click();
   const labeled = page.getByTestId("labeled-link-telegram");
   await expect(labeled).toBeVisible({ timeout: 30_000 });
+  // У готовой ссылки своя «Копировать»
+  const mashaRow = page.getByTestId("labeled-link").filter({ hasText: "Блогер Маша" });
+  await mashaRow.getByRole("button", { name: /Копировать · Блогер Маша, Telegram/ }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await labeled.textContent());
   const code = /start=([A-Za-z0-9]{8})$/.exec((await labeled.textContent()) ?? "")?.[1];
   expect(code).toBeDefined();
 
@@ -94,8 +111,14 @@ test("ссылка с меткой попадает в отчёт; бот в р�
   await page.getByRole("combobox", { name: "Что делает бот без кода" }).selectOption({ label: "Меню" });
   await page.getByRole("button", { name: "Сохранить" }).click();
   await expect(page.getByText("Сохранено")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("combobox", { name: "Что делает бот без кода" }), "после сохранения выбор остаётся на экране").toHaveValue("menu");
+  await page.getByRole("combobox", { name: "Что делает бот без кода" }).selectOption({ label: "Ничего" });
+  await expect(page.getByText("Сохранено"), "новый выбор ещё не сохранён").toBeHidden();
+  await page.getByRole("combobox", { name: "Что делает бот без кода" }).selectOption({ label: "Меню" });
   await page.getByRole("button", { name: "Удалить бота" }).click();
-  await expect(page.getByText(/снимите с публикации/).last()).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("dialog", { name: "Удалить бота?" }).getByRole("button", { name: "Удалить", exact: true }).click();
+  await expect(page.getByRole("dialog").getByText(/снимите с публикации/)).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("dialog").getByRole("button", { name: "Отмена" }).click();
 
   // Снятие с публикации: ссылка ведёт в меню бота, где остался только второй лидмагнит
   await page.goto(`/lead-magnets/${main.id}/publish`);

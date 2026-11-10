@@ -119,7 +119,12 @@ test("эксперт переводит идущий разговор на но�
 
   // Перевод виден в «Логе»
   await page.goto(`/lead-magnets/${lead.id}`);
-  await page.getByRole("tab", { name: "Лог" }).click();
+  const logTab = page.getByRole("tab", { name: "Лог" });
+  // Клик до гидратации страницы пропадает: повторяем, пока вкладка не выберется
+  await expect(async () => {
+    await logTab.click();
+    await expect(logTab).toHaveAttribute("aria-selected", "true", { timeout: 1000 });
+  }).toPass({ timeout: 30_000 });
   const entry = page.getByRole("tabpanel", { name: "Лог" }).getByTestId("log-migration");
   await expect(entry).toContainText("Перевод на новую версию: 1 разговор");
   await expect(entry).toContainText(`Перевёл: ${E2E_EMAIL}`);

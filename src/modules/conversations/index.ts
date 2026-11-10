@@ -6,3 +6,4 @@ export { acceptWebhook } from "./webhook";
 export type { WebhookDependencies } from "./webhook";
 export { AUTOREPLY_TEXT } from "./router";
 export { STUCK_SWEEP_CRON } from "./sweep";
+export { startConversationsOver } from "./start-over";

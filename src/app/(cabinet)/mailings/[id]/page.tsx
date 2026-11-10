@@ -1,25 +1,26 @@
 import { UsersIcon as Users } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
-import { Alert, Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@/ui/primitives";
+import { Alert, Badge, Card, CardContent, CardHeader, CardTitle } from "@/ui/primitives";
 import { requireUser } from "@/modules/access";
 import { CHANNEL_LABELS } from "@/modules/channels";
 import { REPLY_WINDOW_DAYS, getMailing, loadMailingReport, type MailingReportRow, type RecipientOutcome } from "@/modules/mailings";
 import { getDatabase } from "@/modules/platform/db";
 import { DataTable, PageHeader, type DataTableColumn } from "@/ui";
 import type { SearchParams } from "../../people/filter-params";
-import { cancelMailingAction } from "../actions";
+import { pageFromSearchParams } from "../../people/filter-params";
 import { MailingEditor } from "../mailing-editor";
-import { MAILING_STATUS_BADGES, MAILING_STATUS_LABELS, mskDateTime } from "../status-labels";
+import { CancelMailingButton } from "./cancel-mailing-button";
+import { mailingHeadline } from "../status-labels";
+import { RefreshWhileSending } from "./refresh-while-sending";
 
 export const dynamic = "force-dynamic";
 
-/** Сколько строк получателей показывать: недоставленные идут первыми. */
-const REPORT_ROWS = 300;
+/** Сколько строк получателей на странице отчёта: недоставленные идут первыми. */
+const REPORT_PAGE_SIZE = 100;
 
 const DONE_NOTICES: Record<string, string> = {
   test: "Проба отправлена — проверьте мессенджер.",
   save: "Черновик сохранён.",
-  now: "Рассылка запущена.",
   schedule: "Рассылка запланирована.",
 };
 
@@ -28,6 +29,7 @@ const OUTCOMES: Record<RecipientOutcome, { label: string; variant: "cool" | "neu
   failed: { label: "Не доставлено", variant: "warm" },
   blocked: { label: "Заблокировал", variant: "warm" },
   waiting: { label: "В очереди", variant: "neutral" },
+  skipped: { label: "Пропущен", variant: "neutral" },
 };
 
 const columns: DataTableColumn<MailingReportRow>[] = [
@@ -96,14 +98,19 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     );
   }
 
-  const report = await loadMailingReport(db, mailing.id);
+  const page = pageFromSearchParams(query);
+  const report = await loadMailingReport(db, mailing.id, { limit: REPORT_PAGE_SIZE, offset: (page - 1) * REPORT_PAGE_SIZE });
+  const headline = mailingHeadline({ ...mailing, sentCount: report?.sent ?? 0 }, new Date());
+  const pages = Math.max(1, Math.ceil((report?.recipients ?? 0) / REPORT_PAGE_SIZE));
+  const pageLink = (target: number) => `/mailings/${mailing.id}${target > 1 ? `?page=${target}` : ""}`;
   return (
     <>
+      {headline.live ? <RefreshWhileSending /> : null}
       <PageHeader
         title="Рассылка"
         action={
-          <Badge variant={MAILING_STATUS_BADGES[mailing.status]} data-testid="mailing-status">
-            {MAILING_STATUS_LABELS[mailing.status]}
+          <Badge variant={headline.badge.variant} data-testid="mailing-status">
+            {headline.badge.label}
           </Badge>
         }
       />
@@ -111,25 +118,12 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         {notices}
         <Card>
           <CardHeader>
-            <CardTitle>
-              {mailing.status === "scheduled" && mailing.scheduledAt
-                ? `Уйдёт ${mskDateTime.format(mailing.scheduledAt)} по Москве`
-                : mailing.startedAt
-                  ? `Началась ${mskDateTime.format(mailing.startedAt)} по Москве`
-                  : "Не отправлялась"}
-            </CardTitle>
+            <CardTitle>{headline.title}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-[var(--yk-space-4)]">
             <p className="whitespace-pre-wrap">{mailing.text}</p>
             {mailing.imagePath ? <p className="text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">С картинкой</p> : null}
-            {mailing.status === "scheduled" ? (
-              <form action={cancelMailingAction}>
-                <input type="hidden" name="mailingId" value={mailing.id} />
-                <Button type="submit" variant="destructive">
-                  Отменить
-                </Button>
-              </form>
-            ) : null}
+            {headline.canCancel ? <CancelMailingButton mailingId={mailing.id} /> : null}
           </CardContent>
         </Card>
 
@@ -142,10 +136,34 @@ export default async function Page({ params, searchParams }: { params: Promise<{
               <Stat label="Ответили" value={report.replied} hint={`в течение ${REPLY_WINDOW_DAYS} дней`} />
             </dl>
             {report.waiting > 0 ? <p className="text-[var(--yk-muted)]">Ещё в очереди: {report.waiting}</p> : null}
-            <DataTable columns={columns} rows={report.people.slice(0, REPORT_ROWS)} rowKey={(row) => row.personId} empty={{ icon: Users, title: "Получателей нет" }} />
+            {report.skipped > 0 ? (
+              <p className="text-[var(--yk-muted)]">
+                Пропущено: {report.skipped} — к отправке были посреди лидмагнита, рассылка не стала мешать разговору.
+              </p>
+            ) : null}
+            <DataTable columns={columns} rows={report.people} rowKey={(row) => row.personId} empty={{ icon: Users, title: "Получателей нет" }} />
+            {pages > 1 ? (
+              <nav aria-label="Страницы отчёта" className="flex items-center gap-[var(--yk-space-4)] text-[length:var(--yk-text-small-size)]">
+                {page > 1 ? (
+                  <Link href={pageLink(page - 1)} className="app-focus underline">
+                    ← Назад
+                  </Link>
+                ) : null}
+                <span className="text-[var(--yk-muted)]">
+                  Страница {page} из {pages}
+                </span>
+                {page < pages ? (
+                  <Link href={pageLink(page + 1)} className="app-focus underline">
+                    Дальше →
+                  </Link>
+                ) : null}
+              </nav>
+            ) : null}
           </>
         ) : mailing.status === "done" ? (
-          <p className="text-[var(--yk-muted)]">Под фильтр никто не подошёл — рассылка никому не ушла.</p>
+          <Alert variant="warm" title="Рассылка никому не ушла: получателей не нашлось">
+            При запуске под условие «Кому» не подошёл ни один человек. Возможно, после планирования удалили поле или бота из условия. Проверьте условие и создайте рассылку заново.
+          </Alert>
         ) : null}
       </div>
     </>

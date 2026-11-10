@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tagProductLinks, type ProductLink } from "./product-links";
+import { productOfCampaign, tagProductLinks, type ProductLink } from "./product-links";
 
 const COURSE: ProductLink = { url: "https://school.example.com/ai_agent_course", title: "Свой ИИ-агент", campaign: "ai_agent_course" };
 const TAG = { medium: "telegram", content: "k7m2p9qa" };
@@ -53,5 +53,35 @@ describe("tagProductLinks", () => {
   it("повторная разметка ничего не меняет", () => {
     const once = tagProductLinks(COURSE.url, [COURSE], TAG);
     expect(tagProductLinks(once, [COURSE], TAG)).toBe(once);
+  });
+});
+
+describe("вложенные страницы продуктов", () => {
+  const BASIC: ProductLink = { url: "https://school.ru/course", title: "Курс", campaign: "basic" };
+  const PRO: ProductLink = { url: "https://school.ru/course/pro", title: "Курс Про", campaign: "pro" };
+
+  it("ссылка получает метку самого точного продукта, в каком бы порядке их ни сохранили", () => {
+    for (const products of [[BASIC, PRO], [PRO, BASIC]]) {
+      expect(tagProductLinks("https://school.ru/course/pro", products, TAG)).toContain("utm_campaign=pro");
+      expect(tagProductLinks("https://school.ru/course/pro/pay", products, TAG)).toContain("utm_campaign=pro");
+      expect(tagProductLinks("https://school.ru/course", products, TAG)).toContain("utm_campaign=basic");
+      expect(tagProductLinks("https://school.ru/course/lite", products, TAG)).toContain("utm_campaign=basic");
+    }
+  });
+});
+
+describe("productOfCampaign", () => {
+  const BASIC: ProductLink = { url: "https://school.ru/course", title: "Курс", campaign: "basic" };
+  const PRO: ProductLink = { url: "https://school.ru/pro", title: "Курс Про", campaign: "pro" };
+
+  it("продукт по метке кампании", () => {
+    expect(productOfCampaign([BASIC, PRO], "pro")).toBe(PRO);
+  });
+
+  it("кампания неизвестна: единственный продукт — он, из нескольких — никакой", () => {
+    expect(productOfCampaign([BASIC], null)).toBe(BASIC);
+    expect(productOfCampaign([BASIC, PRO], null)).toBeNull();
+    expect(productOfCampaign([BASIC, PRO], "other")).toBeNull();
+    expect(productOfCampaign([], null)).toBeNull();
   });
 });

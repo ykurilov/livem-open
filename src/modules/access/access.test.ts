@@ -29,7 +29,7 @@ describe("список разрешённых адресов", () => {
 });
 
 describe("открытые адреса", () => {
-  it.each(["/api/health", "/api/auth/login", "/api/auth/silent", "/api/auth/callback", "/login", "/api/webhooks/telegram/abc", "/api/integrations/getcourse/secret", "/i/K7mP2xQ"])(
+  it.each(["/api/health", "/api/auth/login", "/api/auth/silent", "/api/auth/callback", "/login", "/api/webhooks/telegram/abc", "/api/integrations/getcourse/secret", "/i/K7mP2xQ", "/c/K7mP2xQ", "/api/web-chat/messages", "/web-chat-sw.js", "/web-chat/icon-192.png"])(
     "%s открыт без входа",
     (pathname) => expect(isPublicPath(pathname)).toBe(true),
   );
@@ -62,6 +62,21 @@ describe("решение о доступе", () => {
 
   it("тихая проверка уже была — показываем экран «Войти», а не гоняем по кругу", () => {
     expect(decideAccess({ ...base, silentCheckDone: true, pathname: "/bots", user: null })).toEqual({
+      kind: "redirect",
+      to: "/login?next=%2Fbots",
+    });
+  });
+
+  it("тихая проверка не нашла входа и модуль вернул на главную — экран «Войти» ведёт туда, куда человек шёл", () => {
+    expect(decideAccess({ ...base, silentCheckDone: true, silentNext: "/lead-magnets/7?tab=1", pathname: "/", user: null })).toEqual({
+      kind: "redirect",
+      to: "/login?next=%2Flead-magnets%2F7%3Ftab%3D1",
+    });
+    expect(decideAccess({ ...base, silentCheckDone: true, silentNext: "//evil.example.com", pathname: "/", user: null })).toEqual({
+      kind: "redirect",
+      to: "/login?next=%2F",
+    });
+    expect(decideAccess({ ...base, silentCheckDone: true, silentNext: "/lead-magnets/7", pathname: "/bots", user: null })).toEqual({
       kind: "redirect",
       to: "/login?next=%2Fbots",
     });

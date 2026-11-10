@@ -63,6 +63,7 @@ test("эксперт публикует лидмагнит, человек пр�
   await page.getByRole("combobox", { name: "Бот Telegram" }).selectOption(bot!.id);
   await page.getByRole("button", { name: "Опубликовать" }).click();
   await expect(page.getByText("Опубликовано", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("combobox", { name: "Бот Telegram" }), "после публикации выбранный бот остаётся на экране").toHaveValue(bot!.id);
   const link = await page.getByTestId("entry-link-telegram").textContent();
   const code = /start=([A-Za-z0-9]{8})$/.exec(link ?? "")?.[1];
   expect(code, `ссылка: ${link}`).toBeDefined();

@@ -23,6 +23,22 @@ describe("проверка настроек лидмагнита", () => {
     expect(validateLeadMagnetSettings(saved).imageIds).toEqual([]);
   });
 
+  it("«Голосовой ввод» по умолчанию выключен; настройки, записанные до поля, читаются с выключенным", () => {
+    const settings = newLeadMagnetSettings("Разбор");
+    expect(settings.voiceInput).toBe(false);
+    expect(validateLeadMagnetSettings({ ...settings, voiceInput: true }).voiceInput).toBe(true);
+    const { voiceInput: _skipped, ...saved } = settings;
+    expect(validateLeadMagnetSettings(saved).voiceInput).toBe(false);
+  });
+
+  it("«Описание клиентов» сохраняется; настройки, записанные до поля, читаются с пустым описанием", () => {
+    const settings = newLeadMagnetSettings("Разбор");
+    expect(settings.clientPortrait).toBe("");
+    expect(validateLeadMagnetSettings({ ...settings, clientPortrait: "Владельцы маленьких студий" }).clientPortrait).toBe("Владельцы маленьких студий");
+    const { clientPortrait: _skipped, ...saved } = settings;
+    expect(validateLeadMagnetSettings(saved).clientPortrait).toBe("");
+  });
+
   it("подстановка в фигурных скобках в прощании или первом сообщении — понятная ошибка", () => {
     const base = newLeadMagnetSettings("Разбор");
     expect(() => validateLeadMagnetSettings({ ...base, farewellMessage: "Спасибо, {имя}!" })).toThrow(
@@ -35,6 +51,18 @@ describe("проверка настроек лидмагнита", () => {
     expect(validateLeadMagnetSettings({ ...base, firstMessage: "Привет! Как дела?", farewellMessage: "Спасибо!" }).farewellMessage).toBe(
       "Спасибо!",
     );
+  });
+});
+
+describe("ссылки продуктов", () => {
+  it("одна страница с двумя разными метками кампании — понятная ошибка", () => {
+    const base = newLeadMagnetSettings("Разбор");
+    const productLinks = [
+      { url: "https://school.ru/course", title: "Курс", campaign: "basic" },
+      { url: "https://www.School.ru/course/", title: "Курс Про", campaign: "pro" },
+    ];
+    expect(() => validateLeadMagnetSettings({ ...base, productLinks })).toThrow(/school\.ru\/course.*одна страница/);
+    expect(validateLeadMagnetSettings({ ...base, productLinks: [productLinks[0], { ...productLinks[1], url: "https://school.ru/course/pro" }] }).productLinks).toHaveLength(2);
   });
 });
 

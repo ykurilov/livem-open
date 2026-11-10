@@ -11,6 +11,14 @@ export interface ConnectBotState {
   conflict?: string;
   /** Что подключили, для сообщения об успехе. Токен сюда не попадает никогда. */
   connected?: string;
+  /** Подключённый бот — чтобы форма публикации сразу выбрала его. */
+  bot?: ConnectedBot;
+}
+
+export interface ConnectedBot {
+  id: string;
+  channel: ChannelKind;
+  label: string;
 }
 
 const CHANNELS: ChannelKind[] = ["telegram", "vk", "max"];
@@ -27,7 +35,8 @@ export async function connectBotAction(_previous: ConnectBotState, formData: For
   if (!result.ok) return result.needsConfirmation ? { conflict: result.error } : { error: result.error };
 
   revalidatePath("/bots");
-  return { connected: `${result.bot.title} (@${result.bot.username})` };
+  const label = `${result.bot.title} (@${result.bot.username})`;
+  return { connected: label, bot: { id: result.bot.id, channel: result.bot.channel, label } };
 }
 
 export interface BotSettingsState {

@@ -117,6 +117,21 @@ describe("дни и таймеры сценария", () => {
     expect(promptOf(kit.consultantCalls().at(-1)!)).toContain("Помоги собрать приложение.");
   });
 
+  it("написал на второй день в той же ноде — в отчёте дошёл до дня 2; молчание ночью день не прибавляет", async () => {
+    await start();
+    await say("Хочу приложение для кофейни");
+    kit.clock.set(MSK("2026-10-13T07:00:00"));
+    await say("Не сплю, думаю");
+    expect((await passage()).furthestDay).toBe(1);
+
+    kit.clock.set(MSK("2026-10-13T10:00:00"));
+    await kit.dialog.flow.tick();
+    await say("Доброе утро, продолжим");
+    const row = await passage();
+    expect(row.currentStageId).toBeNull();
+    expect(row.furthestDay).toBe(2);
+  });
+
   /** Часы идут по часу до `until`, как обход таймеров работника. */
   async function walkHours(until: Date) {
     while (kit.clock.now() < until) {
@@ -229,6 +244,22 @@ describe("дни и таймеры сценария", () => {
     expect(day2).toEqual(["09:00", "12:00"]);
   });
 
+  // Жалоба Дмитрия 31.10: пришёл вечером — первый день завтра, а частые касания кончались вместе с коротким вечером входа
+  it("пришёл поздно вечером: частые касания — в его первый день, утром через 15 мин после утреннего, а не через 3 ч", async () => {
+    kit = await createLiveDialogKit(database, { start: MSK("2026-10-12T19:00:00"), pricePerMillion: 0 });
+    await start();
+    await say("Хочу приложение для кофейни");
+    await walkHours(MSK("2026-10-13T08:30:00"));
+    while (kit.clock.now() < MSK("2026-10-13T10:00:00")) {
+      kit.clock.advance(5 * 60_000);
+      await kit.dialog.flow.tick();
+      await kit.dialog.flow.settled();
+    }
+    const mskClock = (at: Date) => new Date(at.getTime() + 3 * 60 * 60_000).toISOString().slice(11, 16);
+    const day1 = (await kit.firstMessages()).filter(({ at }) => at >= MSK("2026-10-13T09:00:00")).map(({ at }) => mskClock(at));
+    expect(day1).toEqual(["09:00", "09:15"]);
+  });
+
   it("молчун без программы: в день входа — 15 мин, 1 ч и вечер, дальше — не больше двух в день", async () => {
     kit = await createLiveDialogKit(database, { start: START, pricePerMillion: 0 });
     await start({});
@@ -261,11 +292,47 @@ describe("рамки дня и ночь", () => {
     expect((await kit.inboundOf(person)).slice(-2).every((row) => row.answeredAt !== null && row.route === "passage")).toBe(true);
   });
 
+  it("последний день: сообщения после жёсткой рамки не пропадают, когда утром программа заканчивается — ответ или «Входящие»", async () => {
+    await start(FRAMED);
+    kit.clock.set(MSK("2026-10-14T12:00:00"));
+    await kit.dialog.flow.tick();
+    await kit.dialog.flow.settled();
+    await say("Первое");
+    await say("Второе");
+    await say("Третье");
+    await say("Вечерний вопрос про оплату");
+    expect(kit.textsTo(person).at(-1)).toBe(HARD_DAY_FRAME_TEXT);
+
+    // Ночь и утро после последнего дня: срок программы выходит
+    for (let at = kit.clock.now().getTime(); at < MSK("2026-10-15T12:00:00").getTime(); at += 60 * 60_000) {
+      kit.clock.set(new Date(at));
+      await kit.dialog.flow.tick();
+      await kit.dialog.flow.settled();
+      await kit.runDue();
+    }
+
+    expect(await passage()).toMatchObject({ status: "term_ended" });
+    const [held] = (await kit.inboundOf(person)).filter((row) => row.text === "Вечерний вопрос про оплату");
+    const answered = kit.consultantCalls().some((call) => promptOf(call).includes("Вечерний вопрос про оплату"));
+    expect(answered || held!.route === "inbox").toBe(true);
+  });
+
   it("человек написал в 23:00 — консультант отвечает: ночь только для сообщений первым", async () => {
     await start();
     kit.clock.set(MSK("2026-10-12T23:00:00"));
     await say("Не сплю, придумал идею");
     expect(kit.textsTo(person).at(-1)).toBe(DEFAULT_CONSULTANT_REPLY);
+  });
+
+  it("«Сегодня» в запросе обычного хода — по поясу человека, а не по Москве", async () => {
+    await start();
+    await database.db.update(people).set({ timeZone: "America/New_York" }).where(eq(people.id, (await kit.personOf(person))!.id));
+    // В Москве уже 13 октября (01:00), в Нью-Йорке ещё 12-е (18:00)
+    kit.clock.set(MSK("2026-10-13T01:00:00"));
+    await say("Какое сегодня число?");
+    const prompt = promptOf(kit.consultantCalls().at(-1)!);
+    expect(prompt).toContain("Сегодня: понедельник, 12 октября 2026");
+    expect(prompt).not.toContain("13 октября 2026");
   });
 });
 

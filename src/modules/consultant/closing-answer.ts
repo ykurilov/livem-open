@@ -5,7 +5,8 @@ const REPEAT_SHARE = 0.5;
  * Общие слова вразброс — не пересказ: «Дату первой встречи… уточнит Дмитрий» при прощании «До встречи на первой встрече!».
  */
 const MIN_SHARED_RUN = 3;
-const THANKS = /^(спасибо|благодарю)/i;
+/** Вводная благодарность в начале фразы: «Спасибо», «Спасибо за вопрос», «Спасибо, что спросили» — вместе со знаками после неё. */
+const THANKS = /^(спасибо|благодарю)(?![а-яё])(\s+(большое|огромное))?(\s+(вам|тебе|вас|тебя))?(\s+за\s[^,.!?…—–:;]*|,\s*что\s[^,.!?…—–:;]*)?[\s,.!?…—–:;]*/i;
 
 /** Слово до четырёх букв: «коуч» и «коучу», «напишет» и «напишу» совпадают. */
 function stemsOf(text: string): string[] {
@@ -14,7 +15,8 @@ function stemsOf(text: string): string[] {
 
 /**
  * Ответ на вопрос перед прощанием приложения — без того, что прощание и так скажет.
- * Выкидывает благодарности и куски фраз (между тире), которые пересказывают прощание: кто, как и когда свяжется.
+ * Выкидывает благодарности (прощание и так благодарит) и куски фраз (между тире), которые пересказывают прощание: кто, как
+ * и когда свяжется. Ответ в одной фразе с благодарностью остаётся: «Спасибо, курс стоит…» → «Курс стоит…».
  */
 export function answerWithoutFarewellRepeats(answer: string, farewell: string): string {
   const farewellOrder = stemsOf(farewell);
@@ -27,8 +29,9 @@ export function answerWithoutFarewellRepeats(answer: string, farewell: string): 
   };
   const sentences = answer.trim().split(/(?<=[.!?…])\s+/).filter(Boolean);
   return sentences
-    .map((sentence) => {
-      if (THANKS.test(sentence)) return "";
+    .map((thanked) => {
+      const sentence = withoutThanks(thanked);
+      if (!sentence) return "";
       const ending = sentence.match(/[.!?…]+$/)?.[0] ?? ".";
       const pieces = sentence.replace(/[.!?…]+$/, "").split(/\s+[—–-]\s+/);
       const kept = pieces.filter((piece) => !repeatsFarewell(piece));
@@ -38,6 +41,13 @@ export function answerWithoutFarewellRepeats(answer: string, farewell: string): 
     })
     .filter(Boolean)
     .join(" ");
+}
+
+/** Фраза без вводной благодарности, с заглавной буквы; ничего, кроме благодарности, — пусто. */
+function withoutThanks(sentence: string): string {
+  const rest = sentence.replace(THANKS, "");
+  if (rest === sentence) return sentence;
+  return /[\p{L}\p{N}]/u.test(rest) ? rest.charAt(0).toUpperCase() + rest.slice(1) : "";
 }
 
 /** Сколько слов куска подряд идут так же подряд в прощании. */

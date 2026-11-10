@@ -33,11 +33,13 @@ export interface HistoryTabProps {
   currentVersionId: string;
   /** Черновик правит конструктор — откат закрыт. */
   locked: boolean;
+  /** Почему откат сейчас закрыт (несохранённая правка в «Настройках» или на доске); `null` — открыт. */
+  blockedBecause: string | null;
   /** Откат прошёл; `true` — черновик успел измениться, и откат лёг поверх. */
   onRolledBack(overwroteNewerDraft: boolean): void;
 }
 
-export function HistoryTab({ leadMagnetId, versions, currentVersionId, locked, onRolledBack }: HistoryTabProps) {
+export function HistoryTab({ leadMagnetId, versions, currentVersionId, locked, blockedBecause, onRolledBack }: HistoryTabProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -46,9 +48,13 @@ export function HistoryTab({ leadMagnetId, versions, currentVersionId, locked, o
 
   const rollback = (versionId: string) =>
     startTransition(async () => {
-      const result = await rollbackAction(leadMagnetId, versionId, currentVersionId);
-      setError(result.ok ? null : result.error);
-      if (result.ok) onRolledBack(result.overwroteNewerDraft);
+      try {
+        const result = await rollbackAction(leadMagnetId, versionId, currentVersionId);
+        setError(result.ok ? null : result.error);
+        if (result.ok) onRolledBack(result.overwroteNewerDraft);
+      } catch {
+        setError("Не получилось откатить: нет связи с сервером. Попробуйте ещё раз.");
+      }
       setConfirming(null);
       router.refresh();
     });
@@ -58,7 +64,11 @@ export function HistoryTab({ leadMagnetId, versions, currentVersionId, locked, o
     {locked ? (
       <Alert title="Конструктор правит черновик…" className="mb-3" />
     ) : null}
+    {blockedBecause ? <p role="status" className="mb-3 text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">{blockedBecause}</p> : null}
     {error ? <p role="alert" className="mb-3 text-[length:var(--yk-text-small-size)] text-[var(--yk-danger)]">{error}</p> : null}
+    <p className="mb-2 text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">
+      Каждое сохранение — отдельная версия. Вернуть можно любую: нынешний черновик тоже останется здесь, и к нему можно вернуться так же.
+    </p>
     <ol className="flex flex-col divide-y divide-[var(--yk-border)]" aria-label="Версии">
       {versions.map((version) => (
         <li key={version.id} className="flex items-center justify-between gap-3 py-2 text-[length:var(--yk-text-small-size)]">
@@ -68,10 +78,10 @@ export function HistoryTab({ leadMagnetId, versions, currentVersionId, locked, o
             <span className="truncate">{version.name}</span>
           </div>
           {version.id === currentVersionId ? (
-            <span className="text-[var(--yk-muted)]">Текущая</span>
+            <span className="text-[var(--yk-muted)]">Сейчас в черновике</span>
           ) : (
-            <Button variant="ghost" size="sm" disabled={pending || locked} onClick={() => setConfirming(version)}>
-              Откатить
+            <Button variant="ghost" size="sm" disabled={pending || locked || blockedBecause !== null} onClick={() => setConfirming(version)}>
+              Вернуть эту
             </Button>
           )}
         </li>
@@ -79,7 +89,7 @@ export function HistoryTab({ leadMagnetId, versions, currentVersionId, locked, o
     </ol>
     <Dialog open={confirming !== null} onClose={() => setConfirming(null)} title={`Вернуть черновик к версии от ${confirming ? timeFormat.format(new Date(confirming.createdAt)) : ""}?`}>
 
-          <p className="app-muted mb-4">Текущий черновик останется в Истории.</p>
+          <p className="app-muted mb-4">Нынешний черновик останется в Истории — передумаете, вернёте его тем же способом.</p>
 
         <div className="app-dialog-actions">
 
@@ -87,7 +97,7 @@ export function HistoryTab({ leadMagnetId, versions, currentVersionId, locked, o
               Отмена
             </Button>
 
-          <Button type="button" loading={pending} disabled={locked} onClick={() => confirming && rollback(confirming.id)}>
+          <Button type="button" loading={pending} disabled={locked || blockedBecause !== null} onClick={() => confirming && rollback(confirming.id)}>
             Вернуть
           </Button>
         </div>

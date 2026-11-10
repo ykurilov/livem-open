@@ -131,6 +131,53 @@ describe("карточка клиента сценария в «Базе»", () 
   });
 });
 
+describe("дата обновления поля карточки", () => {
+  const at = (iso: string) => new Date(iso);
+  const datesOf = async (ownerId: string) =>
+    Object.fromEntries((await leadMagnetClientCard(database.db).read(ownerId)).map(({ fieldId, updatedAt }) => [fieldId, updatedAt]));
+
+  it("у каждого поля своя дата — та, что передал сценарий, а не дата появления человека в «Базе»", async () => {
+    const card = leadMagnetClientCard(database.db);
+    const person = await newPerson({ createdAt: at("2026-01-10T09:00:00Z") });
+    await card.write({ ownerId: person.id, fieldId: city.id, value: "Тбилиси", chatId: "c", flowId: "f", at: at("2026-10-14T10:00:00Z") });
+    await card.write({ ownerId: person.id, fieldId: blogs.id, value: true, chatId: "c", flowId: "f", at: at("2026-11-01T08:30:00Z") });
+    expect(await datesOf(person.id)).toEqual({ [city.id]: "2026-10-14T10:00:00.000Z", [blogs.id]: "2026-11-01T08:30:00.000Z" });
+
+    await card.write({ ownerId: person.id, fieldId: city.id, value: "Батуми", chatId: "c", flowId: "f", at: at("2026-11-05T12:00:00Z") });
+    expect(await datesOf(person.id)).toEqual({ [city.id]: "2026-11-05T12:00:00.000Z", [blogs.id]: "2026-11-01T08:30:00.000Z" });
+  });
+
+  it("стёртое поле теряет и дату; удалённое из словаря поле — тоже", async () => {
+    const card = leadMagnetClientCard(database.db);
+    const person = await newPerson();
+    const temporary = await createField(database.db, { name: `Временное ${randomUUID().slice(0, 6)}`, type: "text", description: "" });
+    await card.write({ ownerId: person.id, fieldId: city.id, value: "Сочи", chatId: "c", flowId: "f", at: at("2026-10-14T10:00:00Z") });
+    await card.write({ ownerId: person.id, fieldId: temporary.id, value: "x", chatId: "c", flowId: "f", at: at("2026-10-14T10:00:00Z") });
+    await card.forget(person.id, city.id);
+    await deleteField(database.db, temporary.id, new Date());
+    expect((await personRow(person.id)).fieldUpdatedAt).toEqual({});
+  });
+
+  it("значение, записанное до дат у полей, датируется сохранённой датой человека, а не меняется с каждым чтением", async () => {
+    const person = await newPerson({ createdAt: at("2026-02-01T00:00:00Z"), fieldValues: { [city.id]: "Пермь" } });
+    expect(await datesOf(person.id)).toEqual({ [city.id]: "2026-02-01T00:00:00.000Z" });
+  });
+
+  it("в «Проверке» дата поля — та, что передал сценарий (часы тестового чата), а не дата тестового разговора", async () => {
+    const lead = await createLeadMagnet(database.db, { name: "Превью дат" });
+    const chatId = randomUUID();
+    await database.db.insert(previewConversations).values({ chatId, leadMagnetId: lead.id, createdAt: at("2026-03-01T00:00:00Z") });
+    await setPreviewChat(database.db, lead.id, chatId);
+    const card = leadMagnetClientCard(database.db);
+    await card.write({ ownerId: previewOwnerId(chatId), fieldId: city.id, value: "Сочи", chatId, flowId: lead.id, at: at("2026-11-20T10:00:00Z") });
+    expect(await datesOf(previewOwnerId(chatId))).toEqual({ [city.id]: "2026-11-20T10:00:00.000Z" });
+
+    await card.forget(previewOwnerId(chatId), "all");
+    const [cleared] = await database.db.select().from(previewConversations).where(eq(previewConversations.chatId, chatId));
+    expect(cleared!.fieldUpdatedAt).toEqual({});
+  });
+});
+
 describe("пояс человека сценария", () => {
   it("читается и пишется в карточку человека", async () => {
     const zones = leadMagnetPeople(database.db);

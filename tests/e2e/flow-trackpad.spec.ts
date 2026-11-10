@@ -12,7 +12,7 @@ async function camera(viewport: Locator) {
   });
 }
 
-for (const fullscreen of [false, true]) test(`тачпад: scroll перемещает, pinch масштабирует, fullscreen=${fullscreen}`, async ({ page, context }) => {
+test("тачпад: scroll перемещает, pinch масштабирует — в обычном виде и на весь экран", async ({ page, context }) => {
   test.setTimeout(120_000);
   const connection = connectDatabase(e2eDatabaseUrl(), { poolSize: 1 });
   try {
@@ -33,33 +33,35 @@ for (const fullscreen of [false, true]) test(`тачпад: scroll переме�
     }).toPass({ timeout: 60_000 });
     const board = page.getByRole("tabpanel", { name: "Сценарий", exact: true });
     await expect(board.getByRole("application")).toBeVisible();
-    if (fullscreen) await board.locator("[data-flow-fullscreen-toggle]").click();
-    const canvas = board.locator(".react-flow");
-    const viewport = board.locator(".react-flow__viewport");
-    // Wait for automatic fitView to finish before measuring gestures.
-    let last = "", stableSince = Date.now();
-    await expect.poll(async () => {
-      const current = JSON.stringify(await camera(viewport));
-      if (current !== last) { last = current; stableSince = Date.now(); }
-      return Date.now() - stableSince >= 400;
-    }).toBe(true);
-    const bounds = (await canvas.boundingBox())!;
-    const cursor = { x: Math.round(bounds.x + bounds.width * 0.7), y: Math.round(bounds.y + bounds.height * 0.15) };
-    await page.mouse.move(cursor.x, cursor.y);
-    const before = await camera(viewport);
-    await page.mouse.wheel(100, 140);
-    await expect.poll(async () => Math.abs((await camera(viewport)).x - before.x)).toBeGreaterThan(10);
-    await expect.poll(async () => Math.abs((await camera(viewport)).y - before.y)).toBeGreaterThan(10);
-    expect((await camera(viewport)).zoom).toBeCloseTo(before.zoom, 5);
+    for (const fullscreen of [false, true]) {
+      if (fullscreen) await board.locator("[data-flow-fullscreen-toggle]").click();
+      const canvas = board.locator(".react-flow");
+      const viewport = board.locator(".react-flow__viewport");
+      // Wait for automatic fitView to finish before measuring gestures.
+      let last = "", stableSince = Date.now();
+      await expect.poll(async () => {
+        const current = JSON.stringify(await camera(viewport));
+        if (current !== last) { last = current; stableSince = Date.now(); }
+        return Date.now() - stableSince >= 400;
+      }).toBe(true);
+      const bounds = (await canvas.boundingBox())!;
+      const cursor = { x: Math.round(bounds.x + bounds.width * 0.7), y: Math.round(bounds.y + bounds.height * 0.15) };
+      await page.mouse.move(cursor.x, cursor.y);
+      const before = await camera(viewport);
+      await page.mouse.wheel(100, 140);
+      await expect.poll(async () => Math.abs((await camera(viewport)).x - before.x)).toBeGreaterThan(10);
+      await expect.poll(async () => Math.abs((await camera(viewport)).y - before.y)).toBeGreaterThan(10);
+      expect((await camera(viewport)).zoom).toBeCloseTo(before.zoom, 5);
 
-    const panned = await camera(viewport);
-    const anchor = { x: (cursor.x - bounds.x - panned.x) / panned.zoom, y: (cursor.y - bounds.y - panned.y) / panned.zoom };
-    await page.keyboard.down("Control");
-    try { await page.mouse.wheel(0, 80); } finally { await page.keyboard.up("Control"); }
-    await expect.poll(async () => (await camera(viewport)).zoom).toBeLessThan(panned.zoom);
-    const zoomed = await camera(viewport);
-    expect((cursor.x - bounds.x - zoomed.x) / zoomed.zoom).toBeCloseTo(anchor.x, 1);
-    expect((cursor.y - bounds.y - zoomed.y) / zoomed.zoom).toBeCloseTo(anchor.y, 1);
+      const panned = await camera(viewport);
+      const anchor = { x: (cursor.x - bounds.x - panned.x) / panned.zoom, y: (cursor.y - bounds.y - panned.y) / panned.zoom };
+      await page.keyboard.down("Control");
+      try { await page.mouse.wheel(0, 80); } finally { await page.keyboard.up("Control"); }
+      await expect.poll(async () => (await camera(viewport)).zoom).toBeLessThan(panned.zoom);
+      const zoomed = await camera(viewport);
+      expect((cursor.x - bounds.x - zoomed.x) / zoomed.zoom).toBeCloseTo(anchor.x, 1);
+      expect((cursor.y - bounds.y - zoomed.y) / zoomed.zoom).toBeCloseTo(anchor.y, 1);
+    }
     // Camera gestures must not become edits to the saved scenario.
     const after = (await getLeadMagnet(connection.db, lead.id))!;
     expect(after.draft.flow).toEqual(flow);

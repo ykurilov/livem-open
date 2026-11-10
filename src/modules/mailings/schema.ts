@@ -33,8 +33,9 @@ export const mailings = appSchema.table("mailings", {
 });
 
 /**
- * Получатели, зафиксированные при старте. Пока `outbound_message_id` и `error` пусты — человек ждёт своей порции.
- * `error` — не дошло до очереди отправки (бот отключён).
+ * Получатели, зафиксированные при старте. Пока `outbound_message_id`, `error` и `skip_reason` пусты — человек ждёт своей порции.
+ * `error` — не дошло до очереди отправки (бот отключён). `skip_reason` — к своей порции человек был посреди лидмагнита,
+ * рассылку ему не отправили, чтобы не мешать разговору.
  */
 export const mailingRecipients = appSchema.table(
   "mailing_recipients",
@@ -48,6 +49,7 @@ export const mailingRecipients = appSchema.table(
     error: text("error"),
     /** С какого момента бот этого получателя не в порядке. Через 15 минут без восстановления — «не доставлено». */
     botDownSince: timestamp("bot_down_since", { withTimezone: true }),
+    skipReason: text("skip_reason"),
   },
   (table) => [
     primaryKey({ columns: [table.mailingId, table.personId] }),

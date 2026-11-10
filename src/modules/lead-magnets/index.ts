@@ -32,11 +32,12 @@ export {
   lockLeadMagnet,
   listLeadMagnetCards,
   listVersions,
+  listVersionSummaries,
   rollbackToVersion,
   saveDraft,
   setPreviewChat,
 } from "./lead-magnets";
-export type { LeadMagnet, LeadMagnetCard, LeadMagnetVersion } from "./lead-magnets";
+export type { LeadMagnet, LeadMagnetCard, LeadMagnetVersion, LeadMagnetVersionSummary } from "./lead-magnets";
 export { entryLinks } from "./schema";
 export {
   archiveEntryLink,
@@ -49,7 +50,7 @@ export {
   listLabeledLinks,
 } from "./links";
 export type { EntryLink, LabeledLink } from "./links";
-export { leadMagnetReport, programReport } from "./stats";
+export { averagePassageCosts, leadMagnetReport, programReport } from "./stats";
 export type { LeadMagnetReport, LinkReportRow, ProgramReport, StageStopRow } from "./stats";
 export {
   PublishError,
@@ -57,6 +58,8 @@ export {
   describePublication,
   detachBot,
   listAttachedBots,
+  listAttachedBotsByLeadMagnet,
+  listWebLinksByLeadMagnet,
   listBotLeadMagnets,
   publishLeadMagnet,
   publishWithBots,

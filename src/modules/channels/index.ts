@@ -14,7 +14,7 @@ export type {
   SendResult,
   WebhookRequest,
 } from "./channel";
-export { CHANNEL_LABELS, CONTACT_SOURCE_LABELS } from "./channel";
+export { CHANNEL_LABELS, CONTACT_SOURCE_LABELS, MESSENGER_KINDS } from "./channel";
 export { createChannelAdapters } from "./adapters";
 export { BOT_HEALTH_CRON, checkAllBots, reportSendFailure } from "./bot-health";
 export type { BotHealthDependencies } from "./bot-health";
@@ -34,6 +34,8 @@ export type { BotStatus, NoCodeMode } from "./schema";
 export { createMaxAdapter } from "./max/adapter";
 export { createTelegramAdapter } from "./telegram/adapter";
 export { createVkAdapter } from "./vk/adapter";
+export { createWebChatAdapter } from "./web/adapter";
+export type { WebChatNotifier } from "./web/adapter";
 export { attemptSend, enqueueOutbound, outboundPartsOf, recordOutbound, requeueAfterBotRepair, requeueStuckOutbound, scheduleOutboundSend, sendOutbound } from "./outbound";
 export type { OutboundDependencies, OutboundDraft, OutboundMessageRecord, SendFailureCause, SendTarget } from "./outbound";
 export { createRateLimiter } from "./rate-limiter";

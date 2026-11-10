@@ -47,13 +47,14 @@ function textOf(value: unknown, max = SHORT_MAX): string | null {
 
 const firstText = (max: number, ...values: unknown[]) => values.map((value) => textOf(value, max)).find((text) => text !== null) ?? null;
 
+/** Порядок важен: «бел. руб.» — раньше общего «руб». */
 const CURRENCY_SIGNS: Array<[RegExp, string]> = [
+  [/\bbyn\b|бел\.?\s*руб/i, "BYN"],
   [/₽|руб|\brub\b|\br\.?$/i, "RUB"],
   [/\$|\busd\b|долл/i, "USD"],
   [/€|\beur\b|евро/i, "EUR"],
   [/₸|\bkzt\b|тенге/i, "KZT"],
   [/₴|\buah\b|грн/i, "UAH"],
-  [/\bbyn\b|бел\.?\s*руб/i, "BYN"],
 ];
 
 /** Код валюты по знаку или слову; трёхбуквенный код — как есть. */

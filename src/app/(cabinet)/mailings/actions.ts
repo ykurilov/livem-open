@@ -7,6 +7,7 @@ import {
   MailingError,
   MailingImageError,
   cancelMailing,
+  getMailing,
   launchMailing,
   listTestRecipients,
   parseMskDateTime,
@@ -76,6 +77,7 @@ export async function saveMailingAction(_previous: MailingFormState, formData: F
     const { db } = getDatabase();
     const saved = await saveMailingDraft(db, {
       id: id || null,
+      requestId,
       text,
       filter,
       testPersonId: person,
@@ -84,6 +86,11 @@ export async function saveMailingAction(_previous: MailingFormState, formData: F
     });
     created = !id;
     id = saved.id;
+    // Повтор отправки, ответ на которую потерялся: рассылка уже запущена, второй раз её не запускаем — страница покажет, как она идёт
+    if (saved.status !== "draft") {
+      revalidatePath("/mailings");
+      redirect(`/mailings/${id}`);
+    }
 
     const deps = { db, queue: await getWebQueue(), clock: systemClock };
     if (intent === "test") await sendMailingTest(deps, id, person!, requestId);
@@ -91,6 +98,12 @@ export async function saveMailingAction(_previous: MailingFormState, formData: F
     if (intent === "schedule") await launchMailing(deps, id, { at });
   } catch (error) {
     if (!(error instanceof MailingError || error instanceof MailingImageError)) throw error;
+    // Одновременный повтор «Отправить сейчас» или «Запланировать»: рассылку уже запустила первая отправка — страница покажет, как она идёт
+    const launched = created && (intent === "now" || intent === "schedule") ? await getMailing(getDatabase().db, id) : null;
+    if (launched && launched.status !== "draft") {
+      revalidatePath("/mailings");
+      redirect(`/mailings/${id}`);
+    }
     // Новый черновик уже сохранён: ошибку показывает его страница, иначе следующая попытка создаст второй
     if (!created) return { error: error.message };
     redirect(`/mailings/${id}?error=${encodeURIComponent(error.message)}`);
@@ -101,10 +114,9 @@ export async function saveMailingAction(_previous: MailingFormState, formData: F
 }
 
 /** Отмена запланированной рассылки до старта. */
-export async function cancelMailingAction(formData: FormData): Promise<void> {
+export async function cancelMailingAction(id: string, _previous: MailingFormState): Promise<MailingFormState> {
   await requireUser();
-  const id = formData.get("mailingId");
-  if (typeof id !== "string" || !isUuid(id)) redirect("/mailings");
+  if (!isUuid(id)) redirect("/mailings");
   try {
     await cancelMailing({ db: getDatabase().db }, id);
   } catch (error) {

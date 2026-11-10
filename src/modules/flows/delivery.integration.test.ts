@@ -197,6 +197,70 @@ describe("доставка сообщений первым через наш б�
     expect(kit.channel.messagesTo(person).at(-1)!.message.imagePath).toBeUndefined();
   });
 
+  it("мессенджер не принял картинку касания — уходит текстом, повтор тоже без картинки; тревоги нет", async () => {
+    const fileName = "image-00000000-0000-4000-8000-0000000000c2.png";
+    const shownImage = {
+      type: "tool-show_image",
+      toolCallId: "call-c2",
+      state: "output-available",
+      input: { id: "c2" },
+      output: { картинка: { id: "c2", название: "Схема", подпись: "Схема шага", адрес: `/api/images/${fileName}`, ширина: 10, высота: 10 } },
+    } as unknown as FlowOutgoing["parts"][number];
+    const text = "Вот схема следующего шага";
+    const outgoing = message({ text, parts: [{ type: "text", text }, shownImage] });
+    const before = kit.channel.messagesTo(person).length;
+    kit.channel.failNext({ ok: false, reason: "permanent", error: "Bad Request: IMAGE_PROCESS_FAILED" });
+
+    expect(await delivery()(outgoing)).toEqual({ status: "delivered" });
+    const sent = kit.channel.messagesTo(person).slice(before);
+    expect(sent.map((entry) => entry.message)).toEqual([expect.objectContaining({ text, imagePath: undefined })]);
+    expect(failures).toEqual([]);
+    expect(await outreachRows()).toEqual([expect.objectContaining({ status: "sent", imagePath: null })]);
+  });
+
+  it("картинку не приняли, а текст не ушёл из-за сети — картинка остаётся: беда могла быть не в ней, повтор пробует снова", async () => {
+    const fileName = "image-00000000-0000-4000-8000-0000000000c3.png";
+    const shownImage = {
+      type: "tool-show_image",
+      toolCallId: "call-c3",
+      state: "output-available",
+      input: { id: "c3" },
+      output: { картинка: { id: "c3", название: "Схема", подпись: "Схема", адрес: `/api/images/${fileName}`, ширина: 10, высота: 10 } },
+    } as unknown as FlowOutgoing["parts"][number];
+    const text = "Схема к утру";
+    const outgoing = message({ text, parts: [{ type: "text", text }, shownImage] });
+    const before = kit.channel.messagesTo(person).length;
+    kit.channel.failNext({ ok: false, reason: "permanent", error: "Bad Request: wrong file" });
+    kit.channel.failNext({ ok: false, reason: "temporary", error: "ECONNRESET" });
+
+    expect(await delivery()(outgoing)).toEqual({ status: "retry" });
+    expect(await outreachRows()).toEqual([expect.objectContaining({ imagePath: expect.stringContaining(fileName) })]);
+    kit.channel.failNext({ ok: false, reason: "permanent", error: "Bad Request: wrong file" });
+    expect(await delivery()({ ...outgoing, attempt: 2 })).toEqual({ status: "delivered" });
+    const sent = kit.channel.messagesTo(person).slice(before);
+    expect(sent.map((entry) => entry.message)).toEqual([expect.objectContaining({ text, imagePath: undefined })]);
+    expect(await outreachRows()).toEqual([expect.objectContaining({ status: "sent", imagePath: null })]);
+  });
+
+  it("картинка с текстом ушла, не прошёл ролик следом — повтор не задваивает и картинку не теряет: только остаток", async () => {
+    const fileName = "image-00000000-0000-4000-8000-0000000000c4.png";
+    const shownImage = {
+      type: "tool-show_image",
+      toolCallId: "call-c4",
+      state: "output-available",
+      input: { id: "c4" },
+      output: { картинка: { id: "c4", название: "Схема", подпись: "Схема", адрес: `/api/images/${fileName}`, ширина: 10, высота: 10 } },
+    } as unknown as FlowOutgoing["parts"][number];
+    const text = "Схема и ролик";
+    const outgoing = message({ text, parts: [{ type: "text", text }, shownImage, shownVideo("v8")] });
+    const sentBefore = kit.textsTo(person).length;
+    kit.channel.failNext({ ok: false, reason: "permanent", error: "Bad Request: message is too long", sentParts: 1 });
+
+    expect(await delivery()(outgoing)).toEqual({ status: "failed" });
+    expect(kit.textsTo(person).slice(sentBefore)).toEqual([]);
+    expect(await outreachRows()).toEqual([expect.objectContaining({ status: "failed", sentParts: 1, imagePath: expect.stringMatching(new RegExp(`/${fileName}$`)) })]);
+  });
+
   it("тот же messageId второй раз не отправляется: доставлено", async () => {
     const outgoing = message();
     await delivery()(outgoing);

@@ -8,6 +8,7 @@ import { FIRST_MESSAGES_PER_DAY, FIRST_MESSAGES_QUIET_HOURS, SALE_TAG } from "@/
 import type { LeadMagnetSettings } from "@/modules/lead-magnets";
 import { findSalesCliches } from "@/modules/program";
 import { SILENCE_TILL_END, type CheckResult, type CheckStatus, type ClientRun, type ConsultantTurn, type FlowTransitionRecord, type ScenarioRun, type TimedBotMessage, type ToolCallRecord } from "./types";
+import { correctionsChecks } from "./corrections-checks";
 import { personaChecks } from "./persona-checks";
 import { standCheck } from "./verdict";
 
@@ -511,6 +512,7 @@ export function checkScenario(run: ScenarioRun): CheckResult[] {
     standCheck(run),
     ...settingsChecks(run),
     noErrorsCheck(errors, run.agentLogRecovered ?? []),
+    ...correctionsChecks(run),
     ...run.clients.flatMap((client) => clientChecks(run, client)),
     ...personaChecks(run),
   ];

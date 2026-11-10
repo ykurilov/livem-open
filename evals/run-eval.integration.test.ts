@@ -13,7 +13,7 @@ import { CLIENT_LEAVE_TOOL, CLIENT_WAIT_TOMORROW_TOOL, EXPERT_FINISH_TOOL } from
 import { runEval } from "./run-eval";
 import { runScenario } from "./run-scenario";
 import { stubPersonaRoute } from "./test-fixtures";
-import type { Scenario } from "./scenario";
+import { loadScenarioSet, type Scenario } from "./scenario";
 import { SILENCE_TILL_END } from "./types";
 
 const AGREEING = "РЕЖИМ: соглашается";
@@ -63,12 +63,15 @@ function clientReply(call: ScriptedCall): ScriptedReply {
   return { text: call.system.includes(STUBBORN) ? "Не знаю" : "Болит спина" };
 }
 
-function stubModels(): AppModels {
+function stubModels(expertPrompts: string[] = []): AppModels {
   const scripted = createScriptedModel((call) => {
     // Запасной судья сценария — та же подставная модель: условия словами не выполнены, переходы — по срокам нод
     if (isJudgeCall(call)) return { text: JSON.stringify({ met: [] }) };
     if (call.toolNames.includes("edit_lead_magnet")) return constructorReply(call);
-    if (call.toolNames.includes(EXPERT_FINISH_TOOL)) return expertReply(call);
+    if (call.toolNames.includes(EXPERT_FINISH_TOOL)) {
+      expertPrompts.push(call.system);
+      return expertReply(call);
+    }
     if (call.toolNames.includes("finish_dialog")) return consultantReply(call);
     if (call.toolNames.includes(CLIENT_LEAVE_TOOL)) return clientReply(call);
     throw new Error(`Непонятный запрос: инструменты ${call.toolNames.join(", ")}`);
@@ -101,6 +104,24 @@ const stubRun = (item: Scenario, extra: Partial<Parameters<typeof runScenario>[1
   runScenario(item, { models, openPersonaRoute: () => stubPersonaRoute(models), privacyPolicyUrl: POLICY, createDatabase: () => createTestDatabase(), judgeFallback: STUB_MODEL_CHOICE, ...extra });
 
 describe("runScenario на подставной модели", () => {
+  it("разбор правок: лидмагнит из файла, правки в базе до разговора, эксперт знает свои правки, итоги правок в прогоне", async () => {
+    const [item] = await loadScenarioSet(path.join(process.cwd(), "evals"), "growth", "corrections-length");
+    const expertPrompts: string[] = [];
+    const models = stubModels(expertPrompts);
+    const run = await stubRun({ ...item!, clients: item!.clients.slice(0, 1), clientReplies: 2 }, {}, models);
+
+    expect(run.runnerErrors).toEqual([]);
+    expect(run.building.endedBy).toBe("expert_finished");
+    expect(run.corrections?.before.name).toBe("Тревога без паники");
+    expect(run.corrections?.final).toHaveLength(item!.corrections!.length);
+    expect(run.corrections?.final.every((correction) => correction.status === "pending")).toBe(true);
+    expect(run.settings?.firstMessage).toBe("Привет! Что беспокоит?");
+    expect(expertPrompts[0]).toContain(item!.corrections![0]!.correctedText);
+    expect(expertPrompts[0]).toContain(item!.corrections![0]!.reason);
+    const ids = checkScenario(run).map((check) => check.id);
+    expect(ids).toEqual(expect.arrayContaining(["corrections_no_expert_words", "corrections_after_consent", "corrections_resolved"]));
+  });
+
   it("эксперт собирает лидмагнит, один клиент доходит до finish_dialog, другой упирается в лимит реплик", async () => {
     const run = await stubRun(scenario("yoga"));
 

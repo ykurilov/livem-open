@@ -1,0 +1,1 @@
+ALTER TABLE "app"."role_swap_conversations" ADD COLUMN "client_stages" jsonb DEFAULT '{}'::jsonb NOT NULL;

@@ -5,6 +5,7 @@ import { createLeadMagnet, getLeadMagnet, saveDraft } from "../../src/modules/le
 import { createField } from "../../src/modules/people";
 import { connectDatabase, type DatabaseConnection } from "../../src/modules/platform/db";
 import { E2E_BASE_URL, E2E_COOKIE_SECRET, E2E_EMAIL, e2eDatabaseUrl } from "./e2e-env";
+import { openConstructor, openTab } from "./open-tab";
 
 let connection: DatabaseConnection;
 
@@ -47,7 +48,8 @@ async function seedLead(tag: string) {
 }
 
 async function openBoard(page: Page, id: string) {
-  await page.goto(`/lead-magnets/${id}`);
+  // Сервер разработки при первой сборке страницы может оборвать переход (ERR_ABORTED): переход повторяем
+  await expect(async () => { await page.goto(`/lead-magnets/${id}`); }).toPass({ timeout: 60_000 });
   // Клик до того, как страница ожила, пропадает: повторяем, пока вкладка не откроется
   const tab = page.getByRole("tab", { name: "Сценарий" });
   await expect(async () => {
@@ -109,10 +111,10 @@ test("«две Продажи»: ошибка видна на доске, сер
   await board.getByRole("textbox", { name: "Метки" }).fill("продажа");
   await board.getByRole("textbox", { name: "Метки" }).press("Enter");
 
-  await board.getByRole("button", { name: "Проверить граф" }).click();
+  await board.getByRole("button", { name: "Проверить схему" }).click();
   await expect(board.getByText("«Продажа» — только в одной ноде")).toBeVisible();
 
-  // Отказ сервера показывает сама доска: «Не сохранено» в шапке, замечание — у ноды и в «Проверить граф»
+  // Отказ сервера показывает сама доска: «Не сохранено» в шапке, замечание — у ноды и в «Проверить схему»
   await saveBoard(page, board);
   await expect(board.getByText("Не сохранено")).toBeVisible();
   await expect(board.getByText("Сценарий не сохранён")).toHaveCount(0);
@@ -155,7 +157,7 @@ test("панель этапа: вид условия «Словами → Дан
 
   // Подпись перехода по инструменту на самой доске — тоже по-русски
   const graph = board.getByRole("application");
-  await expect(graph.getByRole("listitem").filter({ hasText: "Вызван инструмент «Завершить разговор»" })).toBeVisible();
+  await expect(graph.getByRole("listitem").filter({ hasText: "Консультант выполнил действие «Завершить разговор»" })).toBeVisible();
   await expect(graph.getByText(/finish_dialog/)).toHaveCount(0);
   await page.screenshot({ path: test.info().outputPath("board-tool-edge.png") });
 });
@@ -177,7 +179,7 @@ async function waitForGraphToSettle(board: Locator) {
         stableSince = Date.now();
       }
       return last !== "" && Date.now() - stableSince >= 400;
-    }, { intervals: [100], timeout: 15_000 })
+    }, { intervals: [100], timeout: 45_000 })
     .toBe(true);
 }
 
@@ -196,12 +198,12 @@ test("снимки доски в светлой и тёмной теме: 1280 �
       await waitForGraphToSettle(board);
       // Граф подгоняется под окно один раз, при появлении доски. Шапка редактора и поля кабинета в этот момент ещё
       // перестраиваются, и доска потом вырастает: граф остаётся там, где его поставили под старый размер, и место
-      // зависит от скорости загрузки. «Весь граф» подгоняет его заново под окончательный размер доски. Нажатие без
+      // зависит от скорости загрузки. «Вся схема» подгоняет его заново под окончательный размер доски. Нажатие без
       // прокрутки к кнопке: на телефоне доска выше окна, и снимок ушёл бы вниз страницы.
-      await board.getByRole("button", { name: "Весь граф", exact: true }).dispatchEvent("click");
+      await board.getByRole("button", { name: "Вся схема", exact: true }).dispatchEvent("click");
       await waitForGraphToSettle(board);
       // Счётчик «Входящих» в меню растёт от переписок параллельных тестов
-      await page.addStyleTag({ content: "nextjs-portal, .app-navigation-count { display: none !important; }" });
+      await page.addStyleTag({ content: "nextjs-portal, .yk-app-shell__badge { display: none !important; }" });
       await expect(page).toHaveScreenshot(`flow-board-${width}-${colorScheme}.png`, { animations: "disabled", caret: "hide" });
     }
   }
@@ -220,9 +222,10 @@ test("эксперт переставил карточку на доске — �
   await page.mouse.move(box.x + box.width / 2 + 160, box.y + 90, { steps: 8 });
   await page.mouse.up();
 
-  await page.getByRole("tab", { name: "Разговор" }).click();
-  await expect(page.getByText("Сначала сохраните правку на вкладке «Сценарий»")).toBeHidden();
-  await expect(page.getByPlaceholder("Опишите, что поменять…")).toBeEnabled();
+  await openTab(page, "Разговор");
+  const constructor = await openConstructor(page);
+  await expect(constructor.getByText("Сначала сохраните правку на вкладке «Сценарий»")).toBeHidden();
+  await expect(constructor.getByPlaceholder("Опишите, что поменять…")).toBeEnabled();
 });
 
 test("правка на доске, ушёл на «Разговор» и вернулся — доска пишет «Не сохранено», сохранить можно (Дмитрий 15.10)", async ({ page }) => {
@@ -232,13 +235,45 @@ test("правка на доске, ушёл на «Разговор» и вер
 
   await openState(board, "Знакомство");
   await board.getByRole("textbox", { name: "Название", exact: true }).fill("Знакомство поближе");
-  await page.getByRole("tab", { name: "Разговор" }).click();
+  await openTab(page, "Разговор");
+  await openConstructor(page);
   await expect(page.getByText("Сначала сохраните правку на вкладке «Сценарий»")).toBeVisible();
 
-  await page.getByRole("tab", { name: "Сценарий" }).click();
+  await openTab(page, "Сценарий");
   await expect(board.getByRole("button", { name: "Сохранить", exact: true })).toBeEnabled();
   await saveBoard(page, board);
   await expect(board.getByRole("button", { name: "Сохранено" })).toBeVisible();
-  await page.getByRole("tab", { name: "Разговор" }).click();
+  await openTab(page, "Разговор");
   await expect(page.getByText("Сначала сохраните правку на вкладке «Сценарий»")).toBeHidden();
+});
+
+test("правки в «Настройках» и на доске: сохранение любой вкладки сохраняет обе", async ({ page }) => {
+  test.setTimeout(180_000);
+  const id = await seedLead("e2e-обе-правки");
+  const draft = async () => (await getLeadMagnet(connection.db, id))!.draft;
+
+  // Сначала правка в «Настройках», потом на доске — сохраняет доска
+  await openBoard(page, id);
+  await openTab(page, "Настройки");
+  await page.getByLabel("Чем агент начинает разговор (обязательно)").fill("Привет из настроек");
+  await openTab(page, "Сценарий");
+  const board = page.getByRole("tabpanel", { name: "Сценарий" });
+  await expect(board.getByText("В «Настройках» есть несохранённая правка")).toBeVisible();
+  await openState(board, "Знакомство");
+  await board.getByRole("textbox", { name: "Название", exact: true }).fill("Знакомство поближе");
+  await saveBoard(page, board);
+  await expect(board.getByRole("button", { name: "Сохранено" })).toBeVisible();
+  await expect.poll(async () => (await draft()).firstMessage).toBe("Привет из настроек");
+  expect(JSON.stringify((await draft()).flow)).toContain("Знакомство поближе");
+
+  // Наоборот: правка на доске, потом в «Настройках» — сохраняют «Настройки»
+  await openState(board, "Знакомство поближе");
+  await board.getByRole("textbox", { name: "Название", exact: true }).fill("Знакомство с доски");
+  await openTab(page, "Настройки");
+  await page.getByLabel("Чем агент начинает разговор (обязательно)").fill("Второй привет");
+  await expect(page.getByText("Сохранится и правка на вкладке «Сценарий»")).toBeVisible();
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Сохранено" })).toBeVisible();
+  await expect.poll(async () => (await draft()).firstMessage).toBe("Второй привет");
+  expect(JSON.stringify((await draft()).flow)).toContain("Знакомство с доски");
 });

@@ -39,9 +39,20 @@ export const webhookInfo = (url: string): TelegramReply => ok({ url, has_custom_
 export const getUpdatesConflict = (): TelegramReply =>
   telegramError(409, "Conflict: terminated by other getUpdates request; make sure that only one bot instance is running");
 
+/** Ответ `getFile`: путь файла для скачивания по адресу `/file/bot<токен>/<путь>`. */
+export const fileInfo = (fileId: string, filePath: string): TelegramReply => ok({ file_id: fileId, file_unique_id: `u-${fileId}`, file_path: filePath });
+
 export class FakeTelegramApi {
   readonly requests: TelegramRequest[] = [];
+  /** Скачивания файлов: путь файла и заголовки запроса. */
+  readonly fileDownloads: Array<{ token: string; path: string; headers: Record<string, string> }> = [];
   private readonly scripted = new Map<string, Array<TelegramReply | Error>>();
+  private readonly files = new Map<string, { bytes: Uint8Array; contentType: string }>();
+
+  /** Файл, который Telegram отдаст по `/file/bot<токен>/<путь>`; остальные пути — 404. */
+  serveFile(path: string, bytes: Uint8Array, contentType = "image/jpeg"): void {
+    this.files.set(path, { bytes, contentType });
+  }
 
   /** Следующий вызов метода получит этот ответ (или упадёт этой ошибкой сети). Ответы выдаются по очереди. */
   replyOnce(method: string, reply: TelegramReply | Error): void {
@@ -54,6 +65,13 @@ export class FakeTelegramApi {
 
   readonly fetch: typeof fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input.toString());
+    const download = /\/file\/bot([^/]+)\/(.+)$/.exec(url.pathname);
+    if (download?.[1] && download[2]) {
+      this.fileDownloads.push({ token: download[1], path: download[2], headers: Object.fromEntries(new Headers(init?.headers).entries()) });
+      const file = this.files.get(download[2]);
+      if (!file) return new Response(JSON.stringify({ ok: false, error_code: 404, description: "Not Found" }), { status: 404 });
+      return new Response(new Uint8Array(file.bytes), { status: 200, headers: { "content-type": file.contentType } });
+    }
     const match = /\/bot([^/]+)\/([A-Za-z]+)$/.exec(url.pathname);
     if (!match?.[1] || !match[2]) throw new Error(`Подделка Telegram не знает адрес ${url.pathname}`);
     const [, token, method] = match;

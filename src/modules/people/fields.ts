@@ -138,6 +138,7 @@ export async function deleteField(db: DatabaseExecutor, id: string, at: Date): P
         .set({
           facts: sql`${people.facts} || ${JSON.stringify([fact])}::jsonb`,
           fieldValues: sql`${people.fieldValues} - ${id}`,
+          fieldUpdatedAt: sql`${people.fieldUpdatedAt} - ${id}`,
         })
         .where(eq(people.id, holder.id));
     }

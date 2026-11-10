@@ -43,7 +43,17 @@ const ERROR_TOO_MANY_PER_SECOND = 6;
 const ERROR_BAD_PARAMETER = 100;
 const ERROR_METHOD_LIMIT = 29;
 const ERROR_ACCESS_DENIED = 15;
-const TEMPORARY_CODES = new Set([1, 9, 10, ERROR_METHOD_LIMIT]);
+/** «Flood control»: человеку ушло больше 100 сообщений за час. */
+const ERROR_FLOOD_CONTROL = 9;
+const TEMPORARY_CODES = new Set([1, 10]);
+/**
+ * Лимиты ВК, которые за минуты не сбрасываются: флуд-контроль — часовой, лимит метода — суточный. Пауза долгая и попыткой
+ * не считается: иначе попытки кончились бы раньше лимита, а человек остался без сообщения.
+ */
+const LONG_LIMIT_PAUSE_MS = new Map([
+  [ERROR_FLOOD_CONTROL, 60 * 60_000],
+  [ERROR_METHOD_LIMIT, 3 * 60 * 60_000],
+]);
 const TOKEN_REJECTED_CODES = new Set([ERROR_INVALID_TOKEN, 27, 28]);
 /**
  * Сообщество не может писать этому человеку: в чёрном списке сообщества (900), не разрешил сообщения (901)
@@ -55,6 +65,8 @@ const BLOCKED_CODES = new Set([900, 901, 902]);
 const REPLY_WINDOW_CLOSED_CODE = 950;
 
 const MANAGE_RIGHT = "Управление сообществом";
+const CALLBACK_SERVER_REMOVED = "в сообществе удалили наш сервер в «Работа с API» → «Callback API», сообщения людей сюда не приходят";
+const MESSAGES_EVENT_OFF = "в сообществе выключили событие «Входящее сообщение» в «Callback API», сообщения людей сюда не приходят";
 /** Права ключа сообщества, без которых бот не работает (биты маски ВК): сервер событий, сообщения, картинки. */
 const REQUIRED_RIGHTS = [
   { bit: 262144, name: MANAGE_RIGHT },
@@ -192,11 +204,14 @@ export function createVkAdapter(config: VkAdapterConfig = {}): VkAdapter {
       return (await serversAt(bot, webhookUrl)).map((server) => server.id);
     },
 
-    async checkConnection(bot): Promise<ConnectionCheck> {
+    async checkConnection(bot, webhookUrl): Promise<ConnectionCheck> {
       const outcome = await call(bot.token, "groups.getById");
-      if (outcome.ok) return { ok: true };
-      const kind = outcome.code !== undefined && TOKEN_REJECTED_CODES.has(outcome.code) ? "invalid_token" : "temporary";
-      return { ok: false, kind, error: outcome.description };
+      if (!outcome.ok) {
+        const kind = outcome.code !== undefined && TOKEN_REJECTED_CODES.has(outcome.code) ? "invalid_token" : "temporary";
+        return { ok: false, kind, error: outcome.description };
+      }
+      if (!webhookUrl) return { ok: true };
+      return checkCallbackServer(bot, webhookUrl);
     },
 
     async parseWebhook(webhook, bot): Promise<ParsedWebhook> {
@@ -225,6 +240,8 @@ export function createVkAdapter(config: VkAdapterConfig = {}): VkAdapter {
       return { kind: "events", events: eventsFromCallback(event, bot.id), responseBody: "ok" };
     },
 
+    downloadImage: (_bot, url) => loadImage(url, request, timeoutMs),
+
     async send(bot, to, message): Promise<SendResult> {
       const tooLong = message.buttons?.find((button) => button.label.length > BUTTON_LABEL_LIMIT);
       if (tooLong) {
@@ -249,6 +266,10 @@ export function createVkAdapter(config: VkAdapterConfig = {}): VkAdapter {
       // Сообщение — цепочка частей: текст кусками с картинкой в первом, затем дополнительные сообщения. Прогресс (`sentParts`) хранит вызывающий,
       // чтобы повтор после сбоя продолжил с места остановки, а не слал сначала.
       const chunks = text ? splitText(text, MESSAGE_LIMIT) : message.imagePath ? [""] : [];
+      // Готовые ответы — обычной клавиатурой под последней частью; кнопки сообщения важнее: клавиатура у части одна
+      const replyKeyboard = quickRepliesKeyboard(message.quickReplies);
+      const lastIndex = chunks.length + followUps.length - 1;
+      const keyboardOf = (index: number) => (index === chunks.length - 1 && keyboard) || (index === lastIndex ? replyKeyboard : undefined);
       const parts = [...chunks, ...followUps].map((chunk, index) => async (): Promise<SendResult> => {
         let attachment: string | undefined;
         if (index === 0 && message.imagePath) {
@@ -261,7 +282,7 @@ export function createVkAdapter(config: VkAdapterConfig = {}): VkAdapter {
           random_id: randomIdFor(message.idempotencyKey, index),
           ...(chunk && { message: chunk }),
           ...(attachment && { attachment }),
-          ...(index === chunks.length - 1 && keyboard && { keyboard }),
+          ...(keyboardOf(index) && { keyboard: keyboardOf(index) }),
         });
         if (!outcome.ok) return toFailure(outcome);
         return { ok: true, externalMessageId: String(outcome.response) };
@@ -292,6 +313,24 @@ export function createVkAdapter(config: VkAdapterConfig = {}): VkAdapter {
       return `https://vk.me/${bot.username || `club${bot.externalId}`}?ref=${code}&ref_source=${code}`;
     },
   };
+
+  /** Наш сервер событий на месте и принимает сообщения. Без него сообщения людей к нам не приходят, а ключ при этом жив. */
+  async function checkCallbackServer(bot: BotCredentials, webhookUrl: string): Promise<ConnectionCheck> {
+    const servers = await call(bot.token, "groups.getCallbackServers", { group_id: bot.externalId });
+    if (!servers.ok) {
+      // Ключу сняли «Управление сообществом»: отправлять он может, а за приёмом мы больше не видим — чинить эксперту
+      if (servers.code === ERROR_ACCESS_DENIED) return { ok: false, kind: "taken_over", error: missingRightsError([MANAGE_RIGHT]).message };
+      return { ok: false, kind: "temporary", error: servers.description };
+    }
+    const ours = ((servers.response as { items?: Array<{ id: number; url: string }> }).items ?? []).filter((server) => server.url === webhookUrl);
+    if (ours.length === 0) return { ok: false, kind: "taken_over", error: CALLBACK_SERVER_REMOVED };
+    for (const server of ours) {
+      const settings = await call(bot.token, "groups.getCallbackSettings", { group_id: bot.externalId, server_id: server.id });
+      if (!settings.ok) return { ok: false, kind: "temporary", error: settings.description };
+      if ((settings.response as { events?: Record<string, unknown> }).events?.message_new === 1) return { ok: true };
+    }
+    return { ok: false, kind: "taken_over", error: MESSAGES_EVENT_OFF };
+  }
 
   /** ВК не берёт картинку по ссылке: файл скачивается (или читается), загружается на сервер ВК и сохраняется. */
   async function uploadPhoto(
@@ -344,8 +383,8 @@ function toFailure(outcome: Extract<ApiOutcome, { ok: false }>): SendResult {
   if (outcome.code === ERROR_TOO_MANY_PER_SECOND) {
     return { ok: false, reason: "rate_limited", retryAfterMs: DEFAULT_RETRY_AFTER_MS };
   }
-  // Ошибки 9 (однотипные сообщения) и 29 (исчерпан лимит метода, сбрасывается за часы) — не rate_limited: пауза
-  // не засчитывается как попытка, и повтор мог бы не кончиться. Как temporary они считаются попытками, пауза растёт.
+  const longPause = LONG_LIMIT_PAUSE_MS.get(outcome.code ?? 0);
+  if (longPause) return { ok: false, reason: "rate_limited", retryAfterMs: longPause };
   const temporaryCode = TEMPORARY_CODES.has(outcome.code ?? 0);
   // 0 — сеть не ответила; 5xx — сбой ВК или нашего прокси: повторим позже
   if (temporaryCode || (outcome.code === undefined && (outcome.status === 0 || outcome.status >= 500))) {
@@ -407,7 +446,7 @@ interface VkMessage {
   ref_source?: string;
   payload?: string;
   geo?: unknown;
-  attachments?: Array<{ type: string }>;
+  attachments?: Array<{ type: string; photo?: { sizes?: Array<{ width?: number; height?: number; url?: string }> } }>;
 }
 
 function eventsFromCallback(event: VkCallbackEvent, botId: string): ChannelEvent[] {
@@ -421,6 +460,7 @@ function eventsFromCallback(event: VkCallbackEvent, botId: string): ChannelEvent
     if (message.out === 1 || message.from_id <= 0 || message.peer_id !== message.from_id) return [];
     const startCode = message.ref || message.ref_source || undefined;
     const attachment = attachmentOf(message);
+    const imageRef = photoUrlOf(message);
     let text = message.text ?? "";
     // Кнопка «Начать» без ссылки с кодом — то же, что голый /start в Telegram
     if (!startCode && isStartButton(message.payload)) text = "/start";
@@ -432,6 +472,7 @@ function eventsFromCallback(event: VkCallbackEvent, botId: string): ChannelEvent
         userId: String(message.from_id),
         text,
         ...(attachment && { attachment }),
+        ...(imageRef && { imageRef }),
         ...(startCode && { startCode }),
       },
     ];
@@ -493,6 +534,13 @@ function buttonPayloadOf(payload: unknown): string {
   return ourButtonData(parsed.value) ?? JSON.stringify(parsed.value);
 }
 
+/** Адрес фото: самый большой из размеров, что прислал ВК. */
+function photoUrlOf(message: VkMessage): string | undefined {
+  const sizes = message.attachments?.find((attachment) => attachment.type === "photo")?.photo?.sizes ?? [];
+  const area = (size: { width?: number; height?: number }) => (size.width ?? 0) * (size.height ?? 0);
+  return sizes.filter((size) => size.url).sort((a, b) => area(b) - area(a))[0]?.url;
+}
+
 function attachmentOf(message: VkMessage): AttachmentKind | undefined {
   // `link` — сниппет, который ВК сам добавляет к ссылке в тексте: это не вложение человека
   const type = message.attachments?.find((attachment) => attachment.type !== "link")?.type;
@@ -501,4 +549,13 @@ function attachmentOf(message: VkMessage): AttachmentKind | undefined {
   if (type === "sticker") return "sticker";
   if (type === "doc") return "file";
   return type || message.geo ? "other" : undefined;
+}
+
+/**
+ * Клавиатура готовых ответов: текстовые кнопки по одной в ряду, прячется после нажатия. Пустой список убирает прежнюю.
+ * Надпись длиннее предела ВК не примет, а обрезанная ушла бы другим текстом: тогда сообщение уходит без клавиатуры.
+ */
+function quickRepliesKeyboard(replies: readonly string[] | undefined): string | undefined {
+  if (!replies || replies.some((reply) => reply.length > BUTTON_LABEL_LIMIT)) return undefined;
+  return JSON.stringify({ one_time: true, buttons: replies.map((label) => [{ action: { type: "text", label } }]) });
 }

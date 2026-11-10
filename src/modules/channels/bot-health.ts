@@ -47,8 +47,9 @@ export async function checkAllBots(deps: BotHealthDependencies): Promise<void> {
 
 /**
  * Сообщение не ушло совсем. Если бот при этом не отвечает (токен отозван, бот удалён) —
- * это беда бота: статус «ошибка» и тревога, а сообщение дождётся починки (`bot`). Если бот жив —
- * беда только этого сообщения (например, человек удалил аккаунт), бота не трогаем.
+ * это беда бота: статус «ошибка» и тревога, а сообщение дождётся починки (`bot`). Бот не отвечает по временной
+ * причине (сеть, прокси) — `connection`: сбой идёт в общий счёт проверок, а ждать ли связи, решает отправка.
+ * Если бот жив — беда только этого сообщения (например, человек удалил аккаунт), бота не трогаем.
  */
 export async function reportSendFailure(deps: BotHealthDependencies, botId: string, _sendError: string): Promise<SendFailureCause> {
   const [bot] = await deps.db.select().from(bots).where(eq(bots.id, botId));
@@ -56,7 +57,8 @@ export async function reportSendFailure(deps: BotHealthDependencies, botId: stri
   const check = await runConnectionCheck(deps, bot);
   if (!check || check.ok) return "message";
   await handleFailure(deps, bot, check);
-  return check.kind === "invalid_token" ? "bot" : "message";
+  if (check.kind === "invalid_token") return "bot";
+  return check.kind === "temporary" ? "connection" : "message";
 }
 
 async function checkBot(deps: BotHealthDependencies, bot: BotRow): Promise<void> {
@@ -67,7 +69,7 @@ async function checkBot(deps: BotHealthDependencies, bot: BotRow): Promise<void>
     return;
   }
   if (bot.status === "error" || bot.checkFailures > 0) {
-    await deps.db.update(bots).set({ status: "ok", statusError: null, checkFailures: 0 }).where(eq(bots.id, bot.id));
+    await deps.db.update(bots).set({ status: "ok", statusError: null, failureKind: null, checkFailures: 0 }).where(eq(bots.id, bot.id));
   }
   if (bot.status === "error") await deps.alerts.resolve("bot_error", bot.id);
   // Бот в порядке — сообщения, не ушедшие из-за него, уходят заново. Проверяется каждый раз, а не только
@@ -101,20 +103,20 @@ async function handleFailure(
 ): Promise<void> {
   // Токен отозван или приём сообщений занят другим сервисом: подождав, не починится
   if (failure.kind === "invalid_token" || failure.kind === "taken_over") {
-    await markBroken(deps, bot, failure.error);
+    await markBroken(deps, bot, failure);
     return;
   }
   const failures = bot.checkFailures + 1;
   await deps.db.update(bots).set({ checkFailures: failures }).where(eq(bots.id, bot.id));
   // Бот, уже признанный сломанным, не затираем временным сбоем: причина и тревога остаются прежними
   if (bot.status !== "error" && failures >= TEMPORARY_FAILURES_BEFORE_ERROR) {
-    await markBroken(deps, bot, failure.error);
+    await markBroken(deps, bot, failure);
   }
 }
 
-async function markBroken(deps: BotHealthDependencies, bot: BotRow, failure: string): Promise<void> {
-  if (bot.status !== "error" || bot.statusError !== failure) {
-    await deps.db.update(bots).set({ status: "error", statusError: failure }).where(eq(bots.id, bot.id));
+async function markBroken(deps: BotHealthDependencies, bot: BotRow, { kind, error: failure }: Extract<ConnectionCheck, { ok: false }>): Promise<void> {
+  if (bot.status !== "error" || bot.statusError !== failure || bot.failureKind !== kind) {
+    await deps.db.update(bots).set({ status: "error", statusError: failure, failureKind: kind }).where(eq(bots.id, bot.id));
   }
   // Тревога уходит один раз; если не ушла (Telegram тревог недоступен), следующая проверка попробует снова
   await deps.alerts.raise(

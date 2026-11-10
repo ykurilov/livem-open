@@ -3,7 +3,7 @@ import { boolean, index, integer, jsonb, text, timestamp, uniqueIndex, uuid } fr
 import { leadMagnets } from "../lead-magnets/schema";
 import type { ShownVideoLink } from "../videos/shown-video";
 import { appSchema } from "../platform/app-schema";
-import type { ChannelKind } from "./channel";
+import type { ChannelKind, ConnectionFailureKind } from "./channel";
 
 export const BOT_STATUSES = ["ok", "error"] as const;
 export type BotStatus = (typeof BOT_STATUSES)[number];
@@ -25,6 +25,8 @@ export const bots = appSchema.table(
     webhookSecret: text("webhook_secret").notNull(),
     status: text("status").$type<BotStatus>().notNull().default("ok"),
     statusError: text("status_error"),
+    /** Вид последнего сбоя проверки (`ConnectionCheck`): при `taken_over` токен жив и отправлять можно. Пуст, пока бот работает. */
+    failureKind: text("failure_kind").$type<ConnectionFailureKind>(),
     /** Подряд неудачных проверок по временной причине (сеть, прокси). Сбрасывается при успешной проверке. */
     checkFailures: integer("check_failures").notNull().default(0),
     noCodeMode: text("no_code_mode").$type<NoCodeMode>().notNull().default("nothing"),
@@ -84,6 +86,8 @@ export const outboundMessages = appSchema.table(
     text: text("text").notNull(),
     imagePath: text("image_path"),
     buttons: jsonb("buttons").$type<Array<{ label: string; payload: string }>>(),
+    /** Готовые ответы человека под ответом консультанта; пустой список убирает прежние там, где мессенджер держит их сам. */
+    quickReplies: jsonb("quick_replies").$type<string[]>(),
     /** Ролик, который показал консультант: уходит отдельным сообщением после текста, «Входящие» показывают его ссылкой. */
     video: jsonb("video").$type<ShownVideoLink>(),
     /** Отдельные сообщения после текста и ролика, по порядку (прощание). */
@@ -98,8 +102,13 @@ export const outboundMessages = appSchema.table(
     /** Сколько частей сообщения (картинка, куски текста, ролик, прощание) уже ушло: повтор продолжает с остатка. */
     sentParts: integer("sent_parts").notNull().default(0),
     idempotencyKey: text("idempotency_key").notNull(),
-    /** Не ушло, потому что не работал бот (токен отозван). Когда бот снова в порядке, сообщение ставится заново. */
+    /** Не ушло, потому что не работал бот (токен отозван) или не было связи. Когда бот снова в порядке, сообщение ставится заново. */
     awaitsBotRepair: boolean("awaits_bot_repair").notNull().default(false),
+    /**
+     * Итог записан (`blocked` или `failed` с тревогой), а его последствия — пометка человека, тревога, ожидание починки
+     * бота — ещё нет. Повтор задачи или подмётчик доводят их; срок — `next_attempt_at`.
+     */
+    outcomePending: boolean("outcome_pending").notNull().default(false),
     externalMessageId: text("external_message_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     sentAt: timestamp("sent_at", { withTimezone: true }),
@@ -110,5 +119,6 @@ export const outboundMessages = appSchema.table(
     index("outbound_messages_mailing").on(table.mailingId),
     index("outbound_messages_waiting").on(table.nextAttemptAt).where(sql`${table.status} = 'queued'`),
     index("outbound_messages_awaiting_bot").on(table.botId).where(sql`${table.awaitsBotRepair}`),
+    index("outbound_messages_outcome_pending").on(table.nextAttemptAt).where(sql`${table.outcomePending}`),
   ],
 );

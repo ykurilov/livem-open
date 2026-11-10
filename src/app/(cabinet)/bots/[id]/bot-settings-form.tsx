@@ -1,10 +1,12 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
+import { Dialog } from "@ykurilov/ds-react";
 import { Alert, Button } from "@/ui/primitives";
 import type { NoCodeMode } from "@/modules/channels";
 import { Select, type SelectOption } from "@/ui";
 import { deleteBotAction, saveNoCodeAction, type BotSettingsState } from "../actions";
+import { ACTION_SEND_FAILED, keepingFormOnSendFailure } from "@/ui/form-upload";
 
 const MODES: Array<SelectOption & { value: NoCodeMode; hint: string }> = [
   { value: "nothing", label: "Ничего", hint: "Бот молчит, сообщение попадает во «Входящие»." },
@@ -19,20 +21,38 @@ export function BotSettingsForm(props: {
   leadMagnets: SelectOption[];
 }) {
   const [state, formAction, pending] = useActionState<BotSettingsState, FormData>(
-    saveNoCodeAction.bind(null, props.botId),
+    keepingFormOnSendFailure(saveNoCodeAction.bind(null, props.botId)),
     {},
   );
   const [mode, setMode] = useState<string>(props.mode);
   const [defaultLeadMagnetId, setDefaultLeadMagnetId] = useState(props.defaultLeadMagnetId ?? "");
+  // «Сохранено» относится к выбору на момент нажатия: новый выбор его снимает
+  const [edited, setEdited] = useState<BotSettingsState | null>(null);
   const hint = MODES.find((entry) => entry.value === mode)?.hint;
 
   return (
-    <form action={formAction} className="flex max-w-xl flex-col gap-[var(--yk-space-4)]">
+    <form
+      className="flex max-w-xl flex-col gap-[var(--yk-space-4)]"
+      onSubmit={(event) => {
+        // Через action React после отправки сбрасывает форму, и список показывал бы «Ничего»
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        startTransition(() => formAction(data));
+      }}
+    >
       <input type="hidden" name="mode" value={mode} />
       <input type="hidden" name="defaultLeadMagnetId" value={mode === "default" ? defaultLeadMagnetId : ""} />
       <div className="flex flex-col gap-1">
         <span className="text-[length:var(--yk-text-small-size)] font-semibold">Что делает бот</span>
-        <Select aria-label="Что делает бот без кода" options={MODES} value={mode} onValueChange={setMode} />
+        <Select
+          aria-label="Что делает бот без кода"
+          options={MODES}
+          value={mode}
+          onValueChange={(value) => {
+            setMode(value);
+            setEdited(state);
+          }}
+        />
         {hint ? <span className="text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">{hint}</span> : null}
       </div>
       {mode === "default" ? (
@@ -46,7 +66,10 @@ export function BotSettingsForm(props: {
               placeholder="Выберите лидмагнит"
               options={props.leadMagnets}
               value={defaultLeadMagnetId}
-              onValueChange={setDefaultLeadMagnetId}
+              onValueChange={(value) => {
+                setDefaultLeadMagnetId(value);
+                setEdited(state);
+              }}
             />
           )}
         </div>
@@ -56,7 +79,7 @@ export function BotSettingsForm(props: {
           {state.error}
         </Alert>
       ) : null}
-      {state.saved ? <Alert variant="success" title="Сохранено" /> : null}
+      {state.saved && state !== edited ? <Alert variant="success" title="Сохранено" /> : null}
       <div>
         <Button type="submit" loading={pending}>
           Сохранить
@@ -75,31 +98,52 @@ function conversationsWord(count: number): string {
   return "разговоров";
 }
 
+/** «Удалить бота» — через подтверждение: удаление закрывает идущие разговоры, отменить его нельзя. */
 export function DeleteBotForm(props: { botId: string; publishedCount: number; activeConversations: number }) {
-  const [state, formAction, pending] = useActionState<BotSettingsState, FormData>(deleteBotAction.bind(null, props.botId), {});
+  const [state, formAction, pending] = useActionState<BotSettingsState, FormData>(
+    keepingFormOnSendFailure(deleteBotAction.bind(null, props.botId), ACTION_SEND_FAILED),
+    {},
+  );
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const activeWarning =
+    props.activeConversations > 0 ? (
+      <Alert variant="warm" title={`Сейчас идёт ${props.activeConversations} ${conversationsWord(props.activeConversations)}`}>
+        При удалении бота они закроются со статусом «не завершил», напоминания этим людям больше не придут.
+      </Alert>
+    ) : null;
 
   return (
-    <form action={formAction} className="flex max-w-xl flex-col gap-[var(--yk-space-4)]">
+    <div className="flex max-w-xl flex-col gap-[var(--yk-space-4)]">
       <span className="text-[length:var(--yk-text-small-size)]">
         {props.publishedCount > 0
           ? "На этом боте есть опубликованные лидмагниты. Чтобы удалить бота, сначала снимите их с публикации."
           : "Бот перестанет принимать сообщения. Люди и переписка в базе останутся."}
       </span>
-      {props.activeConversations > 0 ? (
-        <Alert variant="warm" title={`Сейчас идёт ${props.activeConversations} ${conversationsWord(props.activeConversations)}`}>
-          При удалении бота они закроются со статусом «не завершил», напоминания этим людям больше не придут.
-        </Alert>
-      ) : null}
-      {state.error ? (
-        <Alert variant="danger" title="Бот не удалён">
-          {state.error}
-        </Alert>
-      ) : null}
+      {activeWarning}
       <div>
-        <Button type="submit" variant="destructive" loading={pending}>
+        <Button type="button" variant="destructive" onClick={() => setConfirmOpen(true)}>
           Удалить бота
         </Button>
       </div>
-    </form>
+      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Удалить бота?">
+        <p className="app-muted mb-4">Бот перестанет принимать сообщения. Вернуть его можно, только подключив заново.</p>
+        {activeWarning}
+        {state.error ? (
+          <Alert variant="danger" title="Бот не удалён" className="mt-[var(--yk-space-4)]">
+            {state.error}
+          </Alert>
+        ) : null}
+        <div className="app-dialog-actions">
+          <Button type="button" variant="secondary" onClick={() => setConfirmOpen(false)}>
+            Отмена
+          </Button>
+          <form action={formAction}>
+            <Button type="submit" variant="destructive" loading={pending}>
+              Удалить
+            </Button>
+          </form>
+        </div>
+      </Dialog>
+    </div>
   );
 }

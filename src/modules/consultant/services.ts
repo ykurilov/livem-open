@@ -7,11 +7,13 @@ import type { LeadMagnetSettings } from "../lead-magnets";
 import type { DatabaseExecutor } from "../platform/db";
 import { getImages } from "../images";
 import { getVideos } from "../videos";
+import { getKnowledgeBases, type KnowledgeBaseWithText } from "../knowledge";
 import { AGENT_TIME_ZONE, PROVIDER_FALLBACK } from "../platform/models-catalog";
 import { buildConsultantInstruction } from "./instruction";
 import type { ConversationStore } from "./preview-store";
 import { oneImagePerReply, oneVideoPerReply } from "./one-per-reply";
 import { createConsultantTools } from "./tools";
+import { QUICK_REPLIES_TOOL } from "./quick-replies";
 import { appDomainsIn } from "./app-address";
 import { leadMagnetKnownTexts } from "./known-texts";
 import { viewsLinks } from "./instruction";
@@ -37,13 +39,15 @@ export function consultantAgentSettings(input: {
   stepContext?: StepContext;
   /** День программы чата: в него записывается ответ на продажу. Нет — день 1. */
   dayOf?(chat: { ownerId: string; chatId: string }): Promise<number>;
+  /** Тексты живых баз знаний версии (`liveConsultantVersion`): последний раздел неизменной инструкции. */
+  knowledge?: readonly KnowledgeBaseWithText[];
 }): AgentSettings {
   const personLink = viewsLinks(input.settings) ? (input.personLink ?? null) : null;
   const appDomains = appDomainsIn(leadMagnetKnownTexts(input.settings));
   const videoLibrary = input.settings.videoIds.length > 0 ? createVideoLibrary({ source: input.videos }) : null;
   const imageLibrary = input.settings.imageIds.length > 0 ? createImageLibrary({ source: input.images }) : null;
   return {
-    instructions: buildConsultantInstruction(input.settings),
+    instructions: buildConsultantInstruction(input.settings, input.knowledge),
     tools: (model) =>
       logToolCalls(
         {
@@ -59,6 +63,8 @@ export function consultantAgentSettings(input: {
         },
         model.chatId,
       ),
+    // Готовые ответы человека кнопками: инструмент SDK с неизменным описанием, начало запроса из кэша не выпадает
+    widgets: { basic: [QUICK_REPLIES_TOOL] },
     // Итог и ответ на продажу — по очереди, в порядке вызовов
     sequentialTools: true,
     ...(input.stepContext && { stepContext: input.stepContext }),
@@ -67,22 +73,41 @@ export function consultantAgentSettings(input: {
   };
 }
 
-/**
- * Настройки только с живыми роликами и картинками: удалённые из архива выпадают, а без живых у консультанта нет ни
- * инструментов, ни правила о них. Опубликованная версия хранит лишь id, поэтому сверка с архивом — при каждом ходе.
- */
-export async function withLiveMedia(db: DatabaseExecutor, settings: LeadMagnetSettings): Promise<LeadMagnetSettings> {
-  const [liveVideos, liveImages] = await Promise.all([
-    settings.videoIds.length === 0 ? [] : getVideos(db, settings.videoIds).then((videos) => videos.map((video) => video.id)),
-    settings.imageIds.length === 0 ? [] : getImages(db, settings.imageIds).then((images) => images.map((image) => image.id)),
-  ]);
-  if (liveVideos.length === settings.videoIds.length && liveImages.length === settings.imageIds.length) return settings;
-  return { ...settings, videoIds: liveVideos, imageIds: liveImages };
+/** Версия лидмагнита на этот ход: только живые ролики, картинки и базы знаний, тексты баз и ключ службы. */
+export interface LiveConsultantVersion {
+  settings: LeadMagnetSettings;
+  knowledge: KnowledgeBaseWithText[];
+  /**
+   * Ключ кэша служб: набор живых роликов и картинок меняет инструкцию и инструменты, набор баз и их правки (`updatedAt`) —
+   * инструкцию. Иначе ключ прежний, и начало запроса берётся из кэша модели.
+   */
+  key: string;
+  /** Неизменная инструкция этой версии — та, что уйдёт модели. */
+  readonly instruction: string;
 }
 
-/** Ключ кэша версии: набор живых роликов и картинок меняет инструкцию и инструменты. */
-export const liveVersionKey = (versionId: string, settings: LeadMagnetSettings) =>
-  `${versionId}:${settings.videoIds.join(",")}:${settings.imageIds.join(",")}`;
+/**
+ * Удалённые из архива ролики, картинки и базы выпадают: без живых у консультанта нет ни инструментов, ни правила о них,
+ * ни раздела материалов. Опубликованная версия хранит лишь id, поэтому сверка с архивом — при каждом ходе.
+ */
+export async function liveConsultantVersion(db: DatabaseExecutor, versionId: string, settings: LeadMagnetSettings): Promise<LiveConsultantVersion> {
+  const [liveVideos, liveImages, knowledge] = await Promise.all([
+    settings.videoIds.length === 0 ? [] : getVideos(db, settings.videoIds).then((videos) => videos.map((video) => video.id)),
+    settings.imageIds.length === 0 ? [] : getImages(db, settings.imageIds).then((images) => images.map((image) => image.id)),
+    // Версии, сохранённые до баз знаний, поля не имеют
+    getKnowledgeBases(db, settings.knowledgeIds ?? []),
+  ]);
+  const live = { ...settings, videoIds: liveVideos, imageIds: liveImages, knowledgeIds: knowledge.map((base) => base.id) };
+  const knowledgeKey = knowledge.map((base) => `${base.id}@${base.updatedAt.getTime()}`).join(",");
+  return {
+    settings: live,
+    knowledge,
+    key: `${versionId}:${live.videoIds.join(",")}:${live.imageIds.join(",")}:${knowledgeKey}`,
+    get instruction() {
+      return buildConsultantInstruction(live, knowledge);
+    },
+  };
+}
 
 /** Кэш по id версии (или снимка): у каждой версии своя неизменная инструкция и свой сервис. */
 export class VersionCache<T> {

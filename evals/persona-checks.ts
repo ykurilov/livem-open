@@ -9,15 +9,35 @@ const SPEAKS_FOR_OTHER = /^\s*(?:бот|консультант|конструк�
 /** Ремарка вместо реплики: «*уходит*», «(молчит)», «[закрывает чат]». */
 const STAGE_DIRECTION = /^\s*(?:\*[^*\n]+\*|\([^()\n]*(?:уход|молч|закрыва|выход|пишет|думает)[^()\n]*\)|\[[^\]\n]+\])\s*$/im;
 const OUT_OF_ROLE = /языков(?:ая|ой) модел|как ИИ(?![А-Яа-яЁё])|(?<![А-Яа-яЁё])я\s*[—-]?\s*ИИ(?![А-Яа-яЁё])|искусственный интеллект,? (?:и|я)|мо(?:я|ей) рол[ьи]|по карточке|(?:мой|моего|моему|твой|мне как) персонаж|\(\s*персонаж|персонаж(?:у|а)? (?:бы|должен|должна|по сценари)|ролев(?:ая|ой) игр|это (?:тест|проверка) (?:бота|eval)/i;
-/** Эксперт пишет, что проверил бота во вкладке «Проверка», а он её в прогоне не открывает. */
+/** Эксперт пишет, что проверил бота во вкладке «Проверка», а он её в прогоне не открывает. В разборе правок — открывал. */
 const EXPERT_TESTED = /(?:проверил|проверила|протестировал|протестировала|написал|написала)\w*\s+(?:бот[ауе]?|ему|в тест|в «?проверк)|в тесте (?:бот|он) /i;
 const GOODBYE = /(?:^|[.!?,]\s*)пока[\s.!)]*$|(?<![А-Яа-яЁё])(?:пока-пока|до свидания|всего (?:доброго|хорошего)|прощайте|удачи|не надо|не нужно|не интересно|не буду)(?![А-Яа-яЁё])/im;
 const REPEATS_IN_A_ROW = 3;
+/** Карточка велит писать конструктору на «вы». */
+const CARD_FORMAL = /на «вы»|на «ты» не переход/i;
+/**
+ * Обращение на «ты»: местоимения второго лица единственного числа, глагол второго лица («можешь», «сделаешь») и
+ * повелительное наклонение из закрытого списка — формы, у которых на «вы» есть окончание «-те».
+ */
+const INFORMAL_ADDRESS = new RegExp(
+  "(?<![А-Яа-яЁё])(?:" +
+    [
+      "ты|тебя|тебе|тобой|твой|твоя|твоё|твое|твои|твоего|твоей|твоему|твоим|твоих|твою",
+      "[А-Яа-яЁё]{3,}(?:ешь|ёшь|ишь)",
+      "(?:по)?смотри|глянь|взгляни|гляди|слушай|послушай|давай|дай|подожди|жди|учти|представь|подумай",
+      "(?:на|за|до|пере)?пиши|записывай|(?:с|пере)?делай|поправь|исправь|убери|оставь|добавь|верни|замени|поменяй",
+      "скажи|покажи|предложи|объясни|проверь|прочитай|почитай",
+    ].join("|") +
+    ")(?![А-Яа-яЁё])",
+  "i",
+);
+/** Цитаты в «ёлочках» — чужие слова, например ответ бота, а не обращение к собеседнику. */
+const withoutQuotes = (text: string) => text.replace(/«[^«»]*»/g, "");
 
 const quote = (text: string, max = 100) => `«${text.length > max ? `${text.slice(0, max)}…` : text}»`;
 
 /** Что не так с репликами персонажа: по номеру реплики, с цитатой. */
-function replyProblems(replies: string[], { expert }: { expert: boolean }): string[] {
+function replyProblems(replies: string[], { expert, tested = false, formal = false }: { expert: boolean; tested?: boolean; formal?: boolean }): string[] {
   const problems: string[] = [];
   replies.forEach((text, index) => {
     const at = `реплика ${index + 1}`;
@@ -28,7 +48,8 @@ function replyProblems(replies: string[], { expert }: { expert: boolean }): stri
     if (OUT_OF_ROLE.test(text)) problems.push(`${at}: вышел из роли ${quote(text)}`);
     const tool = PERSONA_TOOLS.find((name) => text.includes(name));
     if (tool) problems.push(`${at}: называет инструмент ${tool} ${quote(text)}`);
-    if (expert && EXPERT_TESTED.test(text)) problems.push(`${at}: пишет, что проверил бота в тесте, а вкладку «Проверка» не открывает ${quote(text)}`);
+    if (formal && INFORMAL_ADDRESS.test(withoutQuotes(text))) problems.push(`${at}: по карточке пишет на «вы», а перешёл на «ты» ${quote(text)}`);
+    if (expert && !tested && EXPERT_TESTED.test(text)) problems.push(`${at}: пишет, что проверил бота в тесте, а вкладку «Проверка» не открывает ${quote(text)}`);
   });
   const normalized = replies.map((text) => text.trim().toLowerCase().replace(/\s+/g, " "));
   for (let index = REPEATS_IN_A_ROW - 1; index < normalized.length; index++) {
@@ -53,7 +74,11 @@ function clientRoleCheck(client: ClientRun): CheckResult {
 function expertRoleCheck(run: ScenarioRun): CheckResult {
   const check = (status: CheckResult["status"], details: string): CheckResult => ({ id: "persona_expert_role", title: "Эксперт держал роль", subject: "сценарий", status, details });
   if (run.building.endedBy === "from_file") return check("skip", "лидмагнит из файла, эксперта нет");
-  const problems = [...replyProblems(run.building.turns.map((turn) => turn.expert), { expert: true }), ...(run.building.personaSlips ?? [])];
+  const problems = [...replyProblems(run.building.turns.map((turn) => turn.expert), {
+      expert: true,
+      tested: run.scenario.kind === "corrections",
+      formal: CARD_FORMAL.test(run.scenario.expert.card),
+    }), ...(run.building.personaSlips ?? [])];
   return check(problems.length ? "persona_broke" : "pass", problems.join("\n"));
 }
 

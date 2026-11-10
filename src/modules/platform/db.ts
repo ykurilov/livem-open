@@ -14,8 +14,14 @@ export interface DatabaseConnection {
   close(): Promise<void>;
 }
 
-export function connectDatabase(connectionString: string, options: { poolSize?: number } = {}): DatabaseConnection {
-  const pool = new Pool({ connectionString, max: options.poolSize ?? 10 });
+/**
+ * Сколько ждать свободного соединения пула, мс. Дольше — ошибка: задача очереди уходит в повтор, страница — в ошибку,
+ * а не висят без конца, пока соединения держат медленные мессенджеры.
+ */
+const CONNECTION_WAIT_MS = 15_000;
+
+export function connectDatabase(connectionString: string, options: { poolSize?: number; connectionWaitMs?: number } = {}): DatabaseConnection {
+  const pool = new Pool({ connectionString, max: options.poolSize ?? 10, connectionTimeoutMillis: options.connectionWaitMs ?? CONNECTION_WAIT_MS });
   return { db: drizzle(pool), pool, close: () => pool.end() };
 }
 

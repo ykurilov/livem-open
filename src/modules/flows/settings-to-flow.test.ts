@@ -225,9 +225,9 @@ describe("leadMagnetToFlow: программа → «Дни и время»", ()
     expect(flow.nudges).toBeUndefined();
   });
 
-  it("ноды первого дня — частые касания в минутах только в день входа; потом и в нодах дальше — общие касания «Дней и времени»", () => {
-    // Частый ряд — только в день входа и только в день 1 программы: вошёл в ноду первого дня позже — сразу общий ряд
-    const firstDay = { afterSilence: [15, 60, 240].map((amount) => ({ amount, unit: "min" })), days: 1, untilProgramDay: 1 };
+  it("ноды первого дня — частые касания в минутах до конца дня 1 программы; потом и в нодах дальше — общие касания «Дней и времени»", () => {
+    // Частый ряд — до конца дня 1 программы, без «только в день входа»: пришедший вечером получает его и в свой первый день
+    const firstDay = { afterSilence: [15, 60, 240].map((amount) => ({ amount, unit: "min" })), untilProgramDay: 1 };
     for (const id of ["stage-1", "stage-2", "stage-3", "stage-4"]) expect(state(flow, id).nudges).toEqual(firstDay);
     expect(state(flow, "stage-5").nudges).toBeUndefined();
     expect(state(flow, "stage-6").nudges).toBeUndefined();

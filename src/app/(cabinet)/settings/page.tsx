@@ -6,9 +6,10 @@ import { getDatabase } from "@/modules/platform/db";
 import { requireEnv } from "@/modules/platform/env";
 import { readSettings } from "@/modules/platform/settings";
 import { formatUsd, readSpendingOverview, type SpendingOverview } from "@/modules/spending";
-import { PageHeader } from "@/ui";
+import { PageHeader, SectionTabs, SETTINGS_TABS } from "@/ui";
 import { acknowledgeOverrunAction } from "./actions";
 import { SettingsForm } from "./settings-form";
+import { ThemeSetting } from "./theme-setting";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export default async function Page() {
 
   return (
     <>
-      <PageHeader title="Настройки" />
+      <PageHeader title="Настройки" tabs={<SectionTabs label="Разделы настроек" tabs={SETTINGS_TABS} />} />
       <div className="flex flex-col gap-[var(--yk-space-6)]">
         <Card>
           <CardHeader>
@@ -48,6 +49,15 @@ export default async function Page() {
                 alertChatId: settings.alertChatId ?? "",
               }}
             />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Тема</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-[var(--yk-space-3)]">
+            <ThemeSetting />
+            <p className="app-muted">«Автоматически» — светлая или тёмная, как в настройках устройства.</p>
           </CardContent>
         </Card>
       </div>

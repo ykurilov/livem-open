@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../../../tests/integration/db-helper";
 import { createLeadMagnet, getLeadMagnet, listVersions, saveDraft, setPreviewChat, type LeadMagnet } from "../lead-magnets";
 import { FINAL_STATE_ID, LEAD_MAGNET_TOOLS, PROGRAM_NUDGES, SALE_TAG } from "../flows";
+import { buildConsultantInstruction } from "../consultant/instruction";
 import { createField, listFields } from "../people";
 import {
   CONSTRUCTOR_TOOL_NAMES,
@@ -55,8 +56,15 @@ async function currentDraft() {
 }
 
 describe("набор инструментов конструктора", () => {
-  it("ровно три инструмента", () => {
-    expect([...CONSTRUCTOR_TOOL_NAMES].sort()).toEqual(["edit_lead_magnet", "read_test_conversation", "view_lead_magnet"]);
+  it("ровно шесть инструментов", () => {
+    expect([...CONSTRUCTOR_TOOL_NAMES].sort()).toEqual([
+      "edit_lead_magnet",
+      "read_answer_corrections",
+      "read_test_conversation",
+      "reopen_test_conversation",
+      "resolve_answer_corrections",
+      "view_lead_magnet",
+    ]);
     expect(Object.keys(createConstructorTools(deps, lead.id)).sort()).toEqual([...CONSTRUCTOR_TOOL_NAMES].sort());
   });
 });
@@ -131,6 +139,15 @@ describe("edit_lead_magnet", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/ровно 1 раз/);
     expect((await currentDraft()).farewellMessage).toBe("aaa");
+  });
+
+  it("«Описание клиентов»: set записывает поле, обзор черновика его показывает", async () => {
+    const portrait = "Владельцы маленьких студий, пишут коротко, сомневаются в цене";
+    const result = await editLeadMagnet(deps, lead.id, { changes: [{ op: "set", field: "clientPortrait", value: portrait }] });
+    expect(result.ok).toBe(true);
+    expect((await currentDraft()).clientPortrait).toBe(portrait);
+    const view = (await viewLeadMagnet(deps, lead.id, { sections: ["overview"] })) as { overview: Record<string, unknown> };
+    expect(view.overview.clientPortrait).toBe(portrait);
   });
 
   it("replace_fragment — только для инструкции, первого сообщения, условия завершения и прощания", () => {
@@ -238,6 +255,32 @@ describe("прощание — текст для человека, а не ук�
   });
 });
 
+describe("другие тексты, которые уходят человеку дословно", () => {
+  const yogaDirection = "Коротко попрощайся и напомни про ссылку на запись.";
+
+  it("указание консультанту в прощании «срок вышел» и во фразе жёсткой рамки дня — отказ с названием текста", async () => {
+    await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_flow", flow: twoStates() }] });
+    const farewell = await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_schedule", schedule: { ...schedule, farewellOnDeadline: true, farewellText: yogaDirection } }] });
+    expect(farewell).toMatchObject({ ok: false });
+    if (!farewell.ok) expect(farewell.error).toMatch(/прощании при «срок вышел».*«Коротко попрощайся»/s);
+    const hard = await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_schedule", schedule: { ...schedule, dayFrame: { ...schedule.dayFrame, hardText: "Всё передал эксперту, утром ответим." } } }] });
+    expect(hard).toMatchObject({ ok: false });
+    if (!hard.ok) expect(hard.error).toMatch(/фразе жёсткой рамки дня.*«Передал»/s);
+  });
+
+  it("первое сообщение и первое сообщение ноды: «Поздоровайся…» и «если человек» — отказ; вопрос к человеку на «ты» сохраняется", async () => {
+    const greeting = await editLeadMagnet(deps, lead.id, { changes: [{ op: "set", field: "firstMessage", value: "Поздоровайся и спроси, как зовут." }] });
+    expect(greeting).toMatchObject({ ok: false });
+    if (!greeting.ok) expect(greeting.error).toMatch(/первом сообщении.*«Поздоровайся»/s);
+    const flow = twoStates() as { states: Record<string, unknown>[] };
+    flow.states[1] = { ...flow.states[1], firstMessage: "Если человек назвал цель, спроси про сроки." };
+    const state = await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_flow", flow }] });
+    expect(state).toMatchObject({ ok: false });
+    if (!state.ok) expect(state.error).toMatch(/первом сообщении ноды «Цель».*«Если человек»/s);
+    expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "set", field: "firstMessage", value: "Привет! Скажи, чем ты занимаешься?" }] })).toMatchObject({ ok: true });
+  });
+});
+
 describe("ссылка с подставленным текстом", () => {
   const textLink = { template: "https://appstudio.example.com/?idea={text}&type={type}", types: ["game", "app"], maxTextLength: 450 };
 
@@ -304,6 +347,14 @@ describe("сценарий", () => {
     expect(flow.common).toBe("Ты консультант. Спроси про цель. Не продавай в лоб.");
     expect(flow.afterEnd).toBe("silent");
     expect((await listVersions(database.db, lead.id))[0]!.source).toBe("constructor");
+  });
+
+  it("put_flow без chatNotes не стирает заметки чата", async () => {
+    const notes = [{ id: "note", name: "Заметка", about: "Что человек уже пробовал", type: "text" as const, options: [] }];
+    const current = await currentDraft();
+    await saveDraft(database.db, lead.id, { ...current, flow: { ...current.flow, chatNotes: notes } }, "manual");
+    expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_flow", flow: twoStates() }] })).toMatchObject({ ok: true });
+    expect((await currentDraft()).flow.chatNotes).toEqual(notes);
   });
 
   it("put_flow не подменяет служебное: id, имя, «Общее» и раскладка доски — из текущего сценария", async () => {
@@ -430,6 +481,48 @@ describe("сценарий", () => {
     expect((await currentDraft()).flow.states).toHaveLength(3);
   });
 
+  it("remove_state: соседняя нода осталась без выходов, хотя «Итог» достижим иначе — ошибка с её названием, ничего не изменено", async () => {
+    const finish = (id: string) => ({ id, when: { type: "event", event: "tool", name: "finish_dialog" }, to: FINAL_STATE_ID });
+    const flow = {
+      ...twoStates(),
+      states: [
+        { id: "intro", title: "Знакомство", instructions: "Узнать имя", exits: [{ id: "intro_done", when: { type: "judge", text: "Имя известно" }, to: "goal" }, finish("intro_finish")] },
+        { id: "goal", title: "Цель", instructions: "Узнать цель", exits: [{ id: "goal_done", when: { type: "judge", text: "Цель ясна" }, to: "offer" }] },
+        { id: "offer", title: "Предложение", instructions: "Позвать на встречу", exits: [finish("offer_finish")] },
+        { id: FINAL_STATE_ID, title: "Итог", instructions: "Разговор закончен", noSideQuestions: true },
+      ],
+    };
+    await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_flow", flow }] });
+
+    const result = await editLeadMagnet(deps, lead.id, { changes: [{ op: "remove_state", stateId: "offer" }] });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/«Цель».*без выходов/);
+    expect((await currentDraft()).flow.states.map((state) => state.id)).toEqual(["intro", "goal", "offer", FINAL_STATE_ID]);
+
+    // В той же правке ноде дан выход — сохраняется
+    const relinked = await editLeadMagnet(deps, lead.id, {
+      changes: [{ op: "remove_state", stateId: "offer" }, { op: "put_state", state: { ...flow.states[1], exits: [finish("goal_finish")] } }],
+    });
+    expect(relinked).toMatchObject({ ok: true });
+  });
+
+  it("remove_state: стартовая нода осталась без выходов, а «Итог» достижим по сроку — ошибка с её названием, ничего не изменено", async () => {
+    const flow = {
+      ...twoStates(),
+      states: [
+        { id: "intro", title: "Знакомство", instructions: "Узнать имя", exits: [{ id: "intro_done", when: { type: "judge", text: "Имя известно" }, to: "goal" }] },
+        { id: "goal", title: "Цель", instructions: "Узнать цель", exits: [{ id: "goal_finish", when: { type: "event", event: "tool", name: "finish_dialog" }, to: FINAL_STATE_ID }] },
+        { id: FINAL_STATE_ID, title: "Итог", instructions: "Разговор закончен", noSideQuestions: true },
+      ],
+    };
+    expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_flow", flow }, { op: "put_schedule", schedule }] })).toMatchObject({ ok: true });
+
+    const result = await editLeadMagnet(deps, lead.id, { changes: [{ op: "remove_state", stateId: "goal" }] });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/«Знакомство».*без выходов/);
+    expect((await currentDraft()).flow.states).toHaveLength(3);
+  });
+
   it("set_start меняет стартовую ноду; неизвестная — ошибка", async () => {
     await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_flow", flow: twoStates() }] });
     expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_start", stateId: "nowhere" }] })).toMatchObject({ ok: false });
@@ -553,6 +646,12 @@ describe("view_lead_magnet", () => {
     expect(view.ending).toMatchObject({ endCondition: "Человек выбрал шаг" });
   });
 
+  it("правила приложения — неизменная часть инструкции консультанта, без «Общего» эксперта", async () => {
+    const view = await viewLeadMagnet(deps, lead.id, { sections: ["appRules"] });
+    expect(view.appRules).toBe(buildConsultantInstruction(lead.draft));
+    expect(view.appRules).not.toContain(lead.draft.flow.common);
+  });
+
   it("поля лидмагнита и весь словарь полей", async () => {
     const attached = await createField(database.db, { name: `Опыт ${Math.random()}`, type: "number", description: "Лет в профессии" });
     const other = await createField(database.db, { name: `Другое ${Math.random()}`, type: "boolean", description: "y" });
@@ -562,6 +661,21 @@ describe("view_lead_magnet", () => {
     expect(view.fields).toEqual([expect.objectContaining({ id: attached.id, name: attached.name, type: "number" })]);
     const dictionaryIds = (view.fieldDictionary as Array<{ id: string }>).map((field) => field.id);
     expect(dictionaryIds).toEqual(expect.arrayContaining([attached.id, other.id]));
+  });
+});
+
+describe("reopen_test_conversation", () => {
+  it("продолжает завершённый тестовый разговор этого лидмагнита", async () => {
+    const reopened: string[] = [];
+    const tools = createConstructorTools({ ...deps, reopenTestConversation: async (id) => void reopened.push(id) }, lead.id);
+    const result = await tools.reopen_test_conversation!.execute!({} as never, { toolCallId: "t1", messages: [], context: {} } as never);
+    expect(result).toEqual({ ok: true });
+    expect(reopened).toEqual([lead.id]);
+  });
+
+  it("без доступа к тестовому разговору — понятный отказ", async () => {
+    const result = await createConstructorTools(deps, lead.id).reopen_test_conversation!.execute!({} as never, { toolCallId: "t1", messages: [], context: {} } as never);
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/тестов/i) });
   });
 });
 

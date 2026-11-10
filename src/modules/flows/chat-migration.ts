@@ -6,6 +6,7 @@ import type { AgentFlowHandle } from "@ykurilov/agent-chat-flows";
 import type { AgentFlow } from "@ykurilov/agent-chat-flows/format";
 import { inArray, sql } from "drizzle-orm";
 import { recordChatMigration, type ChatMigrationMove } from "../agent-log";
+import type { StageHistoryEntry } from "../consultant/schema";
 import { passages } from "../conversations/schema";
 import { getLeadMagnet, LeadMagnetNotFoundError, lockLeadMagnet } from "../lead-magnets";
 import { leadMagnetVersions } from "../lead-magnets/schema";
@@ -13,6 +14,7 @@ import type { Database, DatabaseExecutor } from "../platform/db";
 import type { JobEnqueuer } from "../platform/queue";
 import { isUuid } from "../platform/uuid";
 import { agentFlowOf, currentRulesOf } from "./runtime";
+import { saleReachedIn } from "./sale-reached";
 
 export class ChatMigrationError extends Error {
   constructor(message: string) {
@@ -57,6 +59,7 @@ interface LiveChat {
   /** Снимок и нода прохождения в наших данных: после нашей записи — уже новые. */
   snapshotId: string;
   currentStageId: string | null;
+  stageHistory: StageHistoryEntry[];
 }
 
 interface VersionFlow {
@@ -87,8 +90,9 @@ async function liveChatsOffVersion(
     state_id: string;
     snapshot_id: string;
     current_stage_id: string | null;
+    stage_history: StageHistoryEntry[];
   }>(sql`
-    select p.id as passage_id, p.chat_id, fc.version_id, fc.state_id, p.snapshot_id, p.current_stage_id
+    select p.id as passage_id, p.chat_id, fc.version_id, fc.state_id, p.snapshot_id, p.current_stage_id, p.stage_history
     from ${passages} p
     join ${FLOW_CHATS} fc on fc.chat_id = p.chat_id
     where p.lead_magnet_id = ${input.leadMagnetId}
@@ -107,6 +111,7 @@ async function liveChatsOffVersion(
     stateId: row.state_id,
     snapshotId: row.snapshot_id,
     currentStageId: row.current_stage_id,
+    stageHistory: row.stage_history,
   }));
 }
 
@@ -231,7 +236,7 @@ export async function migrateLiveChats(db: Database, input: MigrateLiveChatsInpu
     const chats = all.filter((chat) => chat.snapshotId !== toVersionId);
     const pending = all.length - chats.length;
     if (chats.length === 0) return { chats: 0, toVersionId, pending };
-    const flows = await versionFlows(tx, chats.map((chat) => chat.versionId));
+    const flows = await versionFlows(tx, chats.flatMap((chat) => [chat.versionId, chat.snapshotId]));
 
     const moves = new Map<string, ChatMigrationMove>();
     const byTarget = new Map<string, string[]>();
@@ -252,6 +257,13 @@ export async function migrateLiveChats(db: Database, input: MigrateLiveChatsInpu
         });
     }
 
+    // Продажу на прежнем снимке отчёт ищет по его нодам: в новом той ноды может не быть
+    const reachedSale = chats.filter((chat) => {
+      const old = flows.get(chat.snapshotId)?.flow;
+      return old && saleReachedIn(old, chat);
+    });
+    if (reachedSale.length > 0)
+      await tx.update(passages).set({ saleReachedEarlier: true }).where(inArray(passages.id, reachedSale.map((chat) => chat.passageId)));
     await tx.update(passages).set({ snapshotId: toVersionId }).where(inArray(passages.id, chats.map((chat) => chat.passageId)));
     for (const [to, ids] of byTarget) await tx.update(passages).set({ currentStageId: to }).where(inArray(passages.id, ids));
     const name = input.by.name?.trim();
@@ -325,4 +337,24 @@ export async function requeuePendingChatMigrations(deps: { db: DatabaseExecutor;
     order by p.lead_magnet_id, p.snapshot_id`);
   for (const row of rows) await deps.queue.enqueue("chats-migrate", { leadMagnetId: row.lead_magnet_id, toVersionId: row.snapshot_id });
   return rows.length;
+}
+
+/**
+ * Тестовый чат «Проверки» — на текущую версию черновика. SDK закрепляет чат за версией сценария, с которой он начался,
+ * и без перевода консультант после правки инструкций так и шёл бы по старым правилам нод. Перевод применяется в начале
+ * следующего хода, нода та же; удалённая нода — ближайшая из новой версии. Уже на версии — ничего.
+ */
+export async function moveTestChatToDraft(
+  flow: Pick<AgentFlowHandle, "chatsByState" | "migrateChats">,
+  input: { leadMagnetId: string; chatId: string; draftVersionId: string; draftFlow: unknown },
+): Promise<boolean> {
+  const next = agentFlowOf(currentRulesOf(input.draftFlow));
+  if (!next) return false;
+  const selection = { chatIds: [input.chatId], includeEnded: true, includeTestChats: true };
+  const rows = await flow.chatsByState(input.leadMagnetId, { exceptVersionId: input.draftVersionId, ...selection });
+  if (rows.length === 0) return false;
+  const map: StateMap = {};
+  for (const row of rows) if (!next.states.some((state) => state.id === row.stateId)) map[row.stateId] = suggestedTarget(row.stateId, null, next);
+  await flow.migrateChats({ flowId: input.leadMagnetId, toVersionId: input.draftVersionId, map, flow: next, ...selection });
+  return true;
 }

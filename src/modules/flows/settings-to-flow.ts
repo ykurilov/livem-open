@@ -123,11 +123,11 @@ const CONVERSATION_NODE: WorkingNode = {
 };
 
 /**
- * Частые касания нод первого дня — только в день входа и только в день 1 программы: со следующего дня и у пришедшего в
- * ноду позже — общий ряд «Дней и времени» от утреннего.
+ * Частые касания нод первого дня — до конца дня 1 программы: пришёл поздно вечером — и в этот вечер, и в его настоящий
+ * первый день завтра. Со дня 2 и у пришедшего в ноду позже — общий ряд «Дней и времени» от утреннего.
  */
 function firstDayNudges(program: ProgramSettings): FlowStateNudges {
-  return { afterSilence: program.outreach.firstDayAfterSilenceMinutes.map((amount) => ({ amount, unit: "min" })), days: 1, untilProgramDay: 1 };
+  return { afterSilence: program.outreach.firstDayAfterSilenceMinutes.map((amount) => ({ amount, unit: "min" })), untilProgramDay: 1 };
 }
 
 function workingState(node: WorkingNode, isLast: boolean, input: { program: ProgramSettings | null; viewsLinks: boolean }): FlowState {

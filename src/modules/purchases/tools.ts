@@ -57,7 +57,7 @@ export function createPurchaseTools(input: { port: PurchasePort | undefined; cha
       execute: async ({ email }) => {
         if (!port) return { ok: false as const, next: "Проверить оплату здесь нельзя. Скажи, что проверишь позже." };
         const found = await port.check(chatId, email?.trim().toLowerCase() || null);
-        return { ok: true as const, paid: found.kind === "paid", next: CHECK_ANSWERS[found.kind] };
+        return { ok: true as const, paid: found.kind === "paid" || found.kind === "already_congratulated", next: CHECK_ANSWERS[found.kind] };
       },
     }),
   };

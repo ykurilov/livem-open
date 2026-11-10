@@ -1,6 +1,9 @@
 // Без серверного кода: адрес фильтра собирает и форма в браузере
 import type { PeopleFilter } from "@/modules/people";
 
+/** Пустой фильтр, выбранный явно, — `?all=1`: иначе черновик рассылки принял бы его за первое открытие и взял сохранённый. */
+export const ALL_PEOPLE_PARAM = "all";
+
 /** Адрес страницы для фильтра; обратное к `filterFromSearchParams`. */
 export function searchParamsFromFilter(filter: PeopleFilter, page = 1): URLSearchParams {
   const params = new URLSearchParams();

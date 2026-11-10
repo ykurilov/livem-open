@@ -4,6 +4,7 @@ import { findLeadMagnetByPreviewChat, getLeadMagnet, type LeadMagnet } from "../
 import type { Database } from "../platform/db";
 import { isUuid } from "../platform/uuid";
 import { isValidTimeZone } from "../program/calendar";
+import { moveTestChatToDraft } from "../flows/chat-migration";
 import type { LeadMagnetFlow } from "../flows/runtime";
 import { readPreviewConversation } from "./preview-store";
 import { MAX_REWIND_MS, MIN_REWIND_MS } from "./rewind-duration";
@@ -80,6 +81,18 @@ async function readBody(request: Request): Promise<Record<string, unknown>> {
 export function createFlowTestRoutes(options: FlowTestRoutesOptions): FlowTestRoutes {
   const { db, flow } = options;
 
+  /**
+   * Перемотки — по одной. SDK после сдвига часов обходит таймеры всего сценария, а обход, уже начатый соседней
+   * перемоткой, этот чат не видит: касание или утро не приходят, а таймер потом снимает работник (тестовым чатам он не
+   * пишет).
+   */
+  let rewinds: Promise<unknown> = Promise.resolve();
+  function oneRewindAtATime<T>(rewind: () => Promise<T>): Promise<T> {
+    const result = rewinds.then(rewind);
+    rewinds = result.catch(() => undefined);
+    return result;
+  }
+
   /** Тестовый разговор, у которого можно двигать часы: начат, не завершён, за сценарием (не писал — закрепляется сейчас). */
   async function movableTestChat(lead: LeadMagnet, timeZone?: string) {
     const state = lead.previewChatId ? await readPreviewConversation(db, lead.previewChatId) : null;
@@ -87,6 +100,9 @@ export function createFlowTestRoutes(options: FlowTestRoutesOptions): FlowTestRo
     const ownerId = await options.ownerOf(state.chatId);
     // Эксперт ещё не писал: чат — за сценарий сейчас, дни — по поясу его браузера
     if (!(await flow.readRun(ownerId, state.chatId))) await options.pinToFlow(state.chatId, timeZone && isValidTimeZone(timeZone) ? timeZone : undefined);
+    // Сценарий правили — перемотка, как и сообщение, идёт по текущему черновику
+    await moveTestChatToDraft(flow, { leadMagnetId: lead.id, chatId: state.chatId, draftVersionId: lead.draftVersionId, draftFlow: lead.draft.flow })
+      .catch((error: unknown) => console.error(`Тестовый чат ${state.chatId} не переведён на черновик:`, error instanceof Error ? error.message : error));
     const run = await flow.readRun(ownerId, state.chatId);
     if (state.finishedAt || run?.endedAt !== undefined) throw new PreviewRefusal("Тестовый разговор завершён: начните проверку заново");
     return { ownerId, chatId: state.chatId, run };
@@ -96,19 +112,19 @@ export function createFlowTestRoutes(options: FlowTestRoutesOptions): FlowTestRo
     if (!lead.draft.flow.schedule) throw new PreviewRefusal("У этого лидмагнита нет воронки на несколько дней");
     const { ownerId, chatId, run } = await movableTestChat(lead, timeZone);
     if (run?.day?.isLastDay) throw new PreviewRefusal("Это последний день воронки");
-    return (await flow.advanceTestClock({ ownerId, chatId, to: "next_day_start" })).timeOffset;
+    return (await oneRewindAtATime(() => flow.advanceTestClock({ ownerId, chatId, to: "next_day_start" }))).timeOffset;
   }
 
   async function advanceBy(lead: LeadMagnet, ms: number, timeZone?: string): Promise<number> {
     if (!isRewindMs(ms)) throw new PreviewRefusal(BAD_REWIND);
     const { ownerId, chatId } = await movableTestChat(lead, timeZone);
-    return (await flow.advanceTestClock({ ownerId, chatId, ms })).timeOffset;
+    return (await oneRewindAtATime(() => flow.advanceTestClock({ ownerId, chatId, ms }))).timeOffset;
   }
 
   async function advanceToNextFirstMessage(lead: LeadMagnet, timeZone?: string) {
     const { ownerId, chatId } = await movableTestChat(lead, timeZone);
     try {
-      return await flow.advanceTestClock({ ownerId, chatId, to: "next_first_message" });
+      return await oneRewindAtATime(() => flow.advanceTestClock({ ownerId, chatId, to: "next_first_message" }));
     } catch (error) {
       if (error instanceof FlowTestClockError && error.code === "nothing_scheduled") throw new NothingScheduledRefusal();
       throw error;

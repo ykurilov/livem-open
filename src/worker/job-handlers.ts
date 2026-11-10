@@ -5,13 +5,16 @@ import { createLiveDialog, STUCK_SWEEP_CRON } from "@/modules/conversations";
 import { createMailingJobs } from "@/modules/mailings";
 import { resumeOutreachAwaitingRepair } from "@/modules/flows/delivery-repair";
 import { loadAppModels } from "@/modules/platform/app-models";
+import { getChatImages } from "@/modules/platform/chat-attachments";
 import { getChatStorage, getRunningAnswerRegistry } from "@/modules/platform/chat-storage";
 import { systemClock } from "@/modules/platform/clock";
 import { createTokenCipher } from "@/modules/platform/crypto";
 import type { DatabaseConnection } from "@/modules/platform/db";
 import { optionalEnv, requireEnv } from "@/modules/platform/env";
 import type { AppQueue } from "@/modules/platform/queue";
+import { senlerApiFromEnv, subscribeToSenler } from "@/modules/senler";
 import { BUDGET_CHECK_CRON } from "@/modules/spending";
+import { createWebPushSenderFromEnv, queuedWebChatNotifier } from "@/modules/web-chat";
 
 /** Чистка журнала агентов: раз в сутки ночью (UTC). */
 const AGENT_LOG_CLEANUP_CRON = "17 0 * * *";
@@ -40,7 +43,9 @@ export interface JobHandlers {
 /** Здесь каждый этап подключает обработчики своих очередей (`queue.work("inbound-turn", …)` и так далее). */
 export async function registerJobHandlers({ queue, connection }: JobHandlerContext): Promise<JobHandlers> {
   const { db } = connection;
-  const adapters = createChannelAdapters();
+  // Работник отправляет сообщения — он же шлёт уведомления закрытой странице веб-чата, отдельной задачей с повторами
+  const webPush = createWebPushSenderFromEnv(db, systemClock);
+  const adapters = createChannelAdapters(process.env, { webChatNotifier: webPush && queuedWebChatNotifier(queue) });
   const cipher = createTokenCipher(requireEnv("BOT_TOKEN_KEY"));
   const alerts = createAlertsFromEnv(db);
 
@@ -51,8 +56,10 @@ export async function registerJobHandlers({ queue, connection }: JobHandlerConte
   const chatStorage = await getChatStorage(requireEnv("DATABASE_URL"));
   const registry = getRunningAnswerRegistry();
 
+  const senler = senlerApiFromEnv();
   const dialog = createLiveDialog({
     db,
+    senler,
     pool: connection.pool,
     queue,
     clock: systemClock,
@@ -60,6 +67,7 @@ export async function registerJobHandlers({ queue, connection }: JobHandlerConte
     cipher,
     alerts,
     chatStorage,
+    chatImages: getChatImages("worker"),
     catalog,
     env: models.env,
     registry,
@@ -83,6 +91,9 @@ export async function registerJobHandlers({ queue, connection }: JobHandlerConte
   // Оплата продукта (GetCourse): поздравление и одно напоминание — ходом консультанта, через наш бот
   await queue.work("purchase-congratulate", ({ passageId }) => dialog.congratulatePurchase(passageId), concurrency);
   await queue.work("payment-reminder", ({ passageId }) => dialog.remindPayment(passageId), concurrency);
+  // Пришедшие по ссылке в бот ВК с Senler — в группу Senler; сбой Senler повторяет очередь, разговор его не ждёт
+  await queue.work("senler-subscribe", ({ passageId }) => subscribeToSenler({ db, cipher, api: senler }, passageId), concurrency);
+  if (webPush) await queue.work("web-chat-push", ({ visitorId, body }) => webPush.push(visitorId, body), concurrency);
   // Таймеры сценариев: переходы по дням, «срок вышел», «не завершил», касания через наши боты
   dialog.flow.start();
   const mailing = createMailingJobs({ db, queue, clock: systemClock, adapters, alerts });

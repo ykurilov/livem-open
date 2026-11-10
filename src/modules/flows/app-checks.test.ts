@@ -95,7 +95,11 @@ describe("leadMagnetFlowChecks", () => {
 
   it("у стартовой ноды нет своего первого сообщения: оно в «Настройках»", () => {
     const flow = firstAppFlow((draft) => (draft.states[0]!.firstMessage = "Привет!"));
-    expect(leadMagnetFlowChecks(flow)).toEqual([{ path: "states[0].firstMessage", message: expect.stringMatching(/«Настройк/) }]);
+    expect(leadMagnetFlowChecks(flow)).toEqual([
+      { path: "states[0].firstMessage", message: expect.stringMatching(/своё первое сообщение.*Очистите поле «Первое сообщение».*«Настройк/) },
+    ]);
+    // Пустой текст сценарий не произносит: его нет
+    expect(leadMagnetFlowChecks(firstAppFlow((draft) => (draft.states[0]!.firstMessage = "")))).toEqual([]);
     // У других нод своё первое сообщение можно
     expect(leadMagnetFlowChecks(firstAppFlow((draft) => (draft.states[1]!.firstMessage = "Дальше!")))).toEqual([]);
   });
@@ -153,7 +157,7 @@ describe("leadMagnetFlowChecks", () => {
   it("частые касания ноды в программе без «до дня программы» — предупреждение: повторятся в любой день входа", () => {
     const flow = firstAppFlow((draft) => {
       const nudges = draft.states[0]!.nudges;
-      if (nudges && nudges !== "off") delete nudges.untilProgramDay;
+      if (nudges && nudges !== "off") Object.assign(nudges, { days: 1, untilProgramDay: undefined });
     });
     expect(leadMagnetFlowChecks(flow)).toEqual([
       { level: "warning", path: "states[0].nudges", message: expect.stringMatching(/до дня воронки/) },

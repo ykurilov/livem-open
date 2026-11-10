@@ -1,10 +1,11 @@
-import { ChartBarIcon as BarChart3, RobotIcon as Bot } from "@phosphor-icons/react/dist/ssr";
+import { ChartBarIcon as BarChart3 } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@/ui/primitives";
+import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/ui/primitives";
 import { requireUser } from "@/modules/access";
-import { CHANNEL_LABELS, createBotServiceFromEnv, createChannelAdapters, type ChannelKind } from "@/modules/channels";
+import { CHANNEL_LABELS, createBotServiceFromEnv, createChannelAdapters } from "@/modules/channels";
 import {
+  averagePassageCosts,
   describePublication,
   getLeadMagnet,
   leadMagnetReport,
@@ -19,7 +20,7 @@ import { getDatabase } from "@/modules/platform/db";
 import { requireEnv } from "@/modules/platform/env";
 import { isUuid } from "@/modules/platform/uuid";
 import { formatUsd } from "@/modules/spending";
-import { DataTable, EmptyState, PageHeader, type DataTableColumn } from "@/ui";
+import { CopyableLink, DataTable, PageHeader, type DataTableColumn } from "@/ui";
 import { ChatMigrationCard } from "./chat-migration";
 import { ENTRY_LABEL_SEPARATOR } from "@/modules/lead-magnets/start-payload";
 import { AdvertisingLinks } from "./advertising-links";
@@ -27,13 +28,11 @@ import { LabeledLinks } from "./labeled-links";
 import { ProgramReportCard } from "./program-report";
 import { PurchaseReportCard } from "./purchase-report";
 import { purchaseReport } from "@/modules/purchases/report";
-import { PublishForm, type ChannelChoice } from "./publish-form";
+import { channelChoices } from "./channel-choices";
+import { PublishForm } from "./publish-form";
 import { UnpublishForm } from "./unpublish-form";
 
 export const dynamic = "force-dynamic";
-
-// Мессенджеры, в которых можно опубликовать лидмагнит
-const AVAILABLE_CHANNELS: ChannelKind[] = ["telegram", "vk", "max"];
 
 export default async function PublishPage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser();
@@ -43,7 +42,7 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
   if (!lead) notFound();
 
   const adapters = createChannelAdapters();
-  const [publication, bots, labeledLinks, report, program, migration, purchases] = await Promise.all([
+  const [publication, bots, labeledLinks, report, program, migration, purchases, averageCosts] = await Promise.all([
     describePublication(db, adapters, id),
     createBotServiceFromEnv().listBots(),
     listLabeledLinks(db, adapters, id),
@@ -51,18 +50,13 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
     programReport(db, await getChatStorage(requireEnv("DATABASE_URL")), id),
     planChatMigration(db, id),
     purchaseReport(db, id),
+    averagePassageCosts(db),
   ]);
+  const averageCost = averageCosts.get(id);
   const published = publication.snapshotId !== null;
   const draftChanged = published && publication.snapshotId !== lead.draftVersionId;
 
-  const channels: ChannelChoice[] = AVAILABLE_CHANNELS.map((channel) => ({
-    channel,
-    label: CHANNEL_LABELS[channel],
-    bots: bots
-      .filter((bot) => bot.channel === channel)
-      .map((bot) => ({ value: bot.id, label: `${bot.title} (@${bot.username})` })),
-    selected: publication.bots.find((bot) => bot.channel === channel)?.botId ?? null,
-  }));
+  const channels = channelChoices(bots, publication.bots);
 
   return (
     <>
@@ -80,20 +74,7 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {bots.length === 0 ? (
-              <EmptyState
-                icon={Bot}
-                title="Ботов пока нет"
-                hint="Подключите бота, затем вернитесь сюда."
-                action={
-                  <Button asChild variant="secondary" size="sm">
-                    <Link href="/bots">Подключить бота</Link>
-                  </Button>
-                }
-              />
-            ) : (
-              <PublishForm leadMagnetId={id} draftVersionId={lead.draftVersionId} channels={channels} published={published} />
-            )}
+            <PublishForm leadMagnetId={id} draftVersionId={lead.draftVersionId} channels={channels} published={published} />
             {published ? <UnpublishForm leadMagnetId={id} /> : null}
           </CardContent>
         </Card>
@@ -121,14 +102,18 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
                       {CHANNEL_LABELS[bot.channel]} · @{bot.username}
                     </span>
                     {bot.link ? (
-                      <code className="select-all break-all" data-testid={`entry-link-${bot.channel}`}>
-                        {bot.link}
-                      </code>
+                      <CopyableLink url={bot.link} channel={CHANNEL_LABELS[bot.channel]} testId={`entry-link-${bot.channel}`} />
                     ) : (
                       <span>Ссылка появится после подключения мессенджера</span>
                     )}
                   </li>
                 ))}
+                {publication.webLink ? (
+                  <li className="flex flex-col">
+                    <span className="font-semibold">{CHANNEL_LABELS.web} · без входа и мессенджера</span>
+                    <CopyableLink url={publication.webLink} channel={CHANNEL_LABELS.web} testId="entry-link-web" />
+                  </li>
+                ) : null}
               </ul>
             </CardContent>
           </Card>
@@ -139,19 +124,7 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
               <CardTitle>Ссылки с метками</CardTitle>
             </CardHeader>
             <CardContent>
-              {publication.code ? (
-                <AdvertisingLinks
-                  examples={publication.bots.flatMap((bot) => {
-                    const adapter = adapters[bot.channel];
-                    return adapter ? [{
-                      channel: CHANNEL_LABELS[bot.channel],
-                      url: adapter.entryLink(bot, `${publication.code}${ENTRY_LABEL_SEPARATOR}video_01`),
-                    }] : [];
-                  })}
-                />
-              ) : null}
-              <div className="mt-6">
-                <LabeledLinks
+              <LabeledLinks
                   leadMagnetId={id}
                   links={labeledLinks.map((link) => ({
                     id: link.id,
@@ -160,7 +133,22 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
                     urls: link.urls.map((entry) => ({ ...entry, channelLabel: CHANNEL_LABELS[entry.channel] })),
                   }))}
                 />
-              </div>
+              {publication.code ? (
+                <div className="mt-6">
+                <AdvertisingLinks
+                  examples={publication.bots.flatMap((bot) => {
+                    const adapter = adapters[bot.channel];
+                    return adapter ? [{
+                      channel: CHANNEL_LABELS[bot.channel],
+                      url: adapter.entryLink(bot, `${publication.code}${ENTRY_LABEL_SEPARATOR}video_01`),
+                    }] : [];
+                  }).concat(publication.webLink ? [{
+                    channel: CHANNEL_LABELS.web,
+                    url: `${publication.webLink}${ENTRY_LABEL_SEPARATOR}video_01`,
+                  }] : [])}
+                />
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         ) : null}
@@ -175,6 +163,12 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
               rowKey={(row) => row.linkId ?? "without-link"}
               empty={{ icon: BarChart3, title: "Отчёта пока нет", hint: "Он появится после публикации." }}
             />
+            {averageCost === undefined ? null : (
+              <p className="text-[length:var(--yk-text-small-size)]">
+                <span className="text-[var(--yk-muted)]">Расход на ИИ за одно прохождение, в среднем: </span>
+                <span className="font-semibold tabular-nums">{formatUsd(averageCost)}</span>
+              </p>
+            )}
             {report.stoppedByStage.length > 0 ? (
               <>
                 <span className="text-[length:var(--yk-text-small-size)] font-semibold">Где люди бросили разговор</span>

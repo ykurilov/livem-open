@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { checkScenario } from "./checks";
-import { clientRun, consultantTurn, flowStart, plainSilent, programClient, programRun, said, scenarioRun, silent, transition } from "./test-fixtures";
+import { clientRun, consultantTurn, correctionsRun, flowStart, programSettings, plainSilent, programClient, programRun, said, scenarioRun, silent, transition, withCommonInstruction } from "./test-fixtures";
 import { SILENCE_TILL_END, type CheckResult, type ClientRun, type ConsultantTurn, type FlowTransitionRecord, type ScenarioRun } from "./types";
 
 const find = (checks: CheckResult[], id: string, subject = "сценарий") => {
@@ -639,5 +639,88 @@ describe("checkScenario: касания и «не завершил» без «Д
     expect(perDay.details).toContain("2026-10-12: 4");
     expect(find(checkScenario(left(touches())), "nudges_per_day", CLIENT).status).toBe("pass");
     expect(find(checkScenario(left(touches())), "nudges_no_night", CLIENT).status).toBe("pass");
+  });
+});
+
+describe("checkScenario: разбор правок (corrections)", () => {
+  const withInstruction = (instruction: string) => {
+    const run = correctionsRun();
+    return { ...run, settings: withCommonInstruction(run.settings!, instruction) };
+  };
+  const turns = correctionsRun().building.turns;
+  const withTurns = (building: ScenarioRun["building"]["turns"], overrides: Partial<ScenarioRun> = {}) => {
+    const run = correctionsRun(overrides);
+    return { ...run, building: { ...run.building, turns: building } };
+  };
+  const saved = { name: "edit_lead_magnet", input: {}, output: { ok: true } };
+  const refuse = (run: ScenarioRun): ScenarioRun => ({ ...run, scenario: { ...run.scenario, consent: "refuse" } });
+
+  it("удачный разбор проходит все проверки", () => {
+    const checks = checkScenario(correctionsRun());
+    expect(checks.filter((check) => check.status === "fail")).toEqual([]);
+    for (const id of ["corrections_no_expert_words", "corrections_after_consent", "corrections_resolved"]) expect(find(checks, id).status).toBe("pass");
+  });
+
+  it("в записанном 4 слова подряд из «стало», которых не было в «было» и в прежних настройках, — провал с цитатой", () => {
+    const check = find(checkScenario(withInstruction("Отвечай коротко. Например: попробуйте ложиться в одно время.")), "corrections_no_expert_words");
+    expect(check.status).toBe("fail");
+    expect(check.details).toContain("попробуйте ложиться в одно");
+  });
+
+  it("слова из «было» и из прежних настроек — не текст эксперта; 3 слова подряд — не отрезок", () => {
+    expect(find(checkScenario(withInstruction("Помни: сон после переезда часто сбивается.")), "corrections_no_expert_words").status).toBe("pass");
+    expect(find(checkScenario(withInstruction("Ты консультант психолога. Отвечай развёрнуто и давай три совета.")), "corrections_no_expert_words").status).toBe("pass");
+    expect(find(checkScenario(withInstruction("Скажи: попробуйте ложиться пораньше.")), "corrections_no_expert_words").status).toBe("pass");
+  });
+
+  it("регистр, ё и знаки препинания не прячут отрезок", () => {
+    expect(find(checkScenario(withInstruction("«Что МЕШАЕТ уснуть, сильнее всего?»")), "corrections_no_expert_words").status).toBe("fail");
+  });
+
+  it("первое сообщение и прощание — исключение; ноды сценария проверяются", () => {
+    const run = correctionsRun();
+    const inGreeting = { ...run, settings: { ...run.settings!, firstMessage: "Попробуйте ложиться в одно время!", farewellMessage: "Что мешает уснуть сильнее всего?" } };
+    expect(find(checkScenario(inGreeting), "corrections_no_expert_words").status).toBe("pass");
+    const flow = programSettings().flow;
+    const inNode = { ...run, settings: { ...run.settings!, flow: { ...flow, states: flow.states.map((state) => ({ ...state, instructions: "Попробуйте ложиться в одно время." })) } } };
+    expect(find(checkScenario(inNode), "corrections_no_expert_words").status).toBe("fail");
+  });
+
+  it("запись в том же ходе, где конструктор впервые прочитал правки, — провал: эксперт не видел предложения", () => {
+    const sameTurn = withTurns([{ ...turns[0]!, tools: [...turns[0]!.tools, saved] }, turns[1]!]);
+    const check = find(checkScenario(sameTurn), "corrections_after_consent");
+    expect(check.status).toBe("fail");
+    expect(check.details).toContain("ход 1");
+  });
+
+  it("запись без чтения правок — провал; неудачная запись не считается", () => {
+    const noRead = withTurns([{ ...turns[0]!, tools: [saved] }]);
+    expect(find(checkScenario(noRead), "corrections_after_consent").status).toBe("fail");
+    const failedWrite = withTurns([{ ...turns[0]!, tools: [...turns[0]!.tools, { name: "edit_lead_magnet", input: {}, output: { ok: false, error: "нет" } }] }, turns[1]!]);
+    expect(find(checkScenario(failedWrite), "corrections_after_consent").status).toBe("pass");
+  });
+
+  it("эксперт отказался от предложения — в ходе с отказом записи нет; новое предложение после согласия — можно", () => {
+    const check = find(checkScenario(refuse(correctionsRun())), "corrections_after_consent");
+    expect(check.status).toBe("fail");
+    expect(check.details).toContain("ход 2");
+    const proposeAgain = { ...turns[1]!, expert: "Нет, не так", reply: "Тогда предлагаю иначе. Подходит?", tools: [] };
+    const later = refuse(withTurns([turns[0]!, proposeAgain, { ...turns[1]!, expert: "Вот так да" }]));
+    expect(find(checkScenario(later), "corrections_after_consent").status).toBe("pass");
+    expect(find(checkScenario(later), "corrections_resolved").status).toBe("pass");
+  });
+
+  it("правки разобраны: при согласии хотя бы одна учтена; неразобранная — провал", () => {
+    const before = correctionsRun().corrections!.before;
+    const pending = correctionsRun({ corrections: { before, final: [{ id: "c1", status: "pending", outcome: null }] } });
+    expect(find(checkScenario(pending), "corrections_resolved").status).toBe("fail");
+    const rejected = correctionsRun({ corrections: { before, final: [{ id: "c1", status: "resolved", outcome: "rejected" }] } });
+    expect(find(checkScenario(rejected), "corrections_resolved").status).toBe("fail");
+    expect(find(checkScenario(refuse(rejected)), "corrections_resolved").status).toBe("pass");
+  });
+
+  it("у других сценариев проверок разбора правок нет", () => {
+    const ids = checkScenario(correctionsRun({ scenario: { ...correctionsRun().scenario, kind: "normal" }, corrections: undefined })).map((check) => check.id);
+    expect(ids.filter((id) => id.startsWith("corrections_"))).toEqual([]);
   });
 });

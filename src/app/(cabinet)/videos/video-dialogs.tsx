@@ -14,21 +14,37 @@ import { IconButton } from "@/ui/icon-button";
 import { timeLabel } from "@ykurilov/agent-chat-videos";
 import type { Video } from "@/modules/videos";
 import { deleteVideoAction, saveVideoAction, type VideoActionState } from "./actions";
+import { keepingFormOnSendFailure } from "@/ui/form-upload";
 
 /** Окно с формой ролика: новый (`video` нет) или правка. Сохранилось — окно закрывается. */
 function VideoFormDialog({ video, trigger, title }: { video?: Video; trigger: ReactElement<{ onClick?: () => void }>; title: string }) {
   const [open, setOpen] = useState(false);
-  const [state, save, saving] = useActionState<VideoActionState, FormData>(saveVideoAction.bind(null, video?.id ?? null), {});
+  // Каждое открытие — новая форма: прошлый файл, поля и прошлая ошибка не остаются
+  const [opening, setOpening] = useState(0);
+  return (
+    <>
+      {cloneElement(trigger, {
+        onClick: () => {
+          setOpening((count) => count + 1);
+          setOpen(true);
+        },
+      })}
+      <Dialog open={open} onClose={() => setOpen(false)} title={title}>
+        <VideoForm key={opening} video={video} onClose={() => setOpen(false)} />
+      </Dialog>
+    </>
+  );
+}
+
+function VideoForm({ video, onClose }: { video?: Video; onClose(): void }) {
+  const [state, save, saving] = useActionState<VideoActionState, FormData>(keepingFormOnSendFailure(saveVideoAction.bind(null, video?.id ?? null)), {});
   useEffect(() => {
-    if (state.done) setOpen(false);
-  }, [state]);
+    if (state.done) onClose();
+  }, [state, onClose]);
 
   return (
     <>
-      {cloneElement(trigger, { onClick: () => setOpen(true) })}
-    <Dialog open={open} onClose={() => setOpen(false)} title={title}>
-
-        {/* Не `action={save}`: после него React очищает поля, и при ошибке эксперт потерял бы всё набранное */}
+      {/* Не `action={save}`: после него React очищает поля, и при ошибке эксперт потерял бы всё набранное */}
         <form
           className="contents"
           onSubmit={(event) => {
@@ -64,7 +80,7 @@ function VideoFormDialog({ video, trigger, title }: { video?: Video; trigger: Re
           </div>
           <div className="app-dialog-actions">
 
-              <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+              <Button type="button" variant="secondary" onClick={onClose}>
                 Отмена
               </Button>
 
@@ -73,8 +89,6 @@ function VideoFormDialog({ video, trigger, title }: { video?: Video; trigger: Re
             </Button>
           </div>
         </form>
-
-    </Dialog>
     </>
   );
 }

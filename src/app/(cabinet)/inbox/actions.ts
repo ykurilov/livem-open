@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/modules/access";
-import { InboxReplyError, replyFromInbox } from "@/modules/inbox";
+import { EarlierReplySentError, InboxReplyError, replyFromInbox } from "@/modules/inbox";
 import { systemClock } from "@/modules/platform/clock";
 import { getDatabase } from "@/modules/platform/db";
 import { getWebQueue } from "@/modules/platform/queue";
@@ -11,6 +11,8 @@ import { isUuid } from "@/modules/platform/uuid";
 export interface InboxReplyState {
   error?: string;
   sent?: boolean;
+  /** Ушёл прежний вариант ответа: следующая отправка — уже новый ответ со своим ключом. */
+  earlierSent?: boolean;
 }
 
 /** Ответ эксперта уходит человеку от имени бота. */
@@ -26,6 +28,10 @@ export async function replyAction(_previous: InboxReplyState, formData: FormData
   try {
     await replyFromInbox({ db: getDatabase().db, queue: await getWebQueue(), clock: systemClock }, { personId, text, seenUpTo, requestId, ...(user.name && { staffName: user.name }) });
   } catch (error) {
+    if (error instanceof EarlierReplySentError) {
+      revalidatePath("/", "layout");
+      return { error: error.message, earlierSent: true };
+    }
     if (error instanceof InboxReplyError) return { error: error.message };
     throw error;
   }

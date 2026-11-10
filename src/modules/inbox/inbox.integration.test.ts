@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { loadCurrentBranch } from "@ykurilov/agent-chat-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createTestDatabase, type TestDatabase } from "../../../tests/integration/db-helper";
 import {
   DEFAULT_CONSULTANT_REPLY,
@@ -16,9 +16,12 @@ import { expertReplyText } from "../consultant/expert-reply";
 import { AUTOREPLY_TEXT } from "../conversations/router";
 import { inboundMessages } from "../conversations/schema";
 import { loadPersonCard } from "../people";
+import { people } from "../people/schema";
 import { STAFF_SILENCE_HOURS } from "../flows";
 import { updateSettings } from "../platform/settings";
 import {
+  EarlierReplySentError,
+  INBOX_REPLY_LIMIT,
   InboxReplyError,
   countUnansweredThreads,
   inboxThreads,
@@ -210,6 +213,32 @@ describe("входящие после завершения", () => {
     await kit.drain();
 
     expect(kit.textsTo(user).filter((text) => text === "Ответ")).toHaveLength(1);
+  });
+
+  it("повтор отправки с другим текстом не выдаётся за новый ответ: ошибка, человек получает только первый текст", async () => {
+    const user = newUser();
+    await finishedPassage(user);
+    await say(user, "Вопрос");
+    const person = await kit.personOf(user);
+    const thread = await loadInboxThread(kit.db, person!.id);
+    const reply = { personId: person!.id, text: "Ответ", seenUpTo: thread!.lastMessageAt!, requestId: randomUUID() };
+
+    await replyFromInbox(replyDeps(), reply);
+    await expect(replyFromInbox(replyDeps(), { ...reply, text: "Исправленный ответ" })).rejects.toBeInstanceOf(EarlierReplySentError);
+    await kit.drain();
+
+    expect(kit.textsTo(user).filter((text) => text.includes("Ответ"))).toEqual(["Ответ"]);
+  });
+
+  it("ответ длиннее предела — ошибка с понятным текстом, человеку ничего не уходит", async () => {
+    const user = newUser();
+    await finishedPassage(user);
+    const person = await kit.personOf(user);
+    await expect(
+      replyFromInbox(replyDeps(), { personId: person!.id, text: "а".repeat(INBOX_REPLY_LIMIT + 1), seenUpTo: kit.clock.now(), requestId: randomUUID() }),
+    ).rejects.toThrow(`Ответ длиннее ${INBOX_REPLY_LIMIT} знаков`);
+    expect(await kit.db.select().from(outboundMessages).where(and(eq(outboundMessages.personId, person!.id), eq(outboundMessages.kind, "manual_reply")))).toEqual([]);
+    await replyFromInbox(replyDeps(), { personId: person!.id, text: "а".repeat(INBOX_REPLY_LIMIT), seenUpTo: kit.clock.now(), requestId: randomUUID() });
   });
 
   it("пустой ответ и неизвестный человек — ошибка", async () => {
@@ -472,5 +501,181 @@ describe("откуда бы ни пришло сообщение с маршру
     // Эксперт ответил — причина больше не висит
     await replyFromInbox(replyDeps(), { personId: person!.id, text: "Отвечу сам", seenUpTo: thread!.lastMessageAt!, requestId: randomUUID() });
     expect((await loadInboxThread(kit.db, person!.id))!.handoverReason).toBeNull();
+  });
+});
+
+describe("ответ эксперта не дошёл", () => {
+  async function unansweredAfterFinish(user: string) {
+    await finishedPassage(user);
+    await say(user, "Есть вопрос");
+    const person = await kit.personOf(user);
+    return { person: person!, thread: (await loadInboxThread(kit.db, person!.id))! };
+  }
+
+  it("окно ответа закрыто: переписка снова ждёт ответа, эксперт видит, что ответ не ушёл и почему", async () => {
+    const user = newUser();
+    const { person, thread } = await unansweredAfterFinish(user);
+    kit.channel.failNext({ ok: false, reason: "reply_window_closed" });
+    await replyFromInbox(replyDeps(), { personId: person.id, text: "Отвечаю поздно", seenUpTo: thread.seenUpTo, requestId: randomUUID() });
+    await kit.drain();
+
+    expect(await threadOf(user)).toMatchObject({ unansweredCount: 1, lastReplyAt: null });
+    const listed = (await listUnansweredThreads(kit.db)).find((row) => row.personId === person.id);
+    expect(listed).toMatchObject({ unansweredCount: 1, replyUndelivered: true });
+    const after = await loadInboxThread(kit.db, person.id);
+    expect(after!.undeliveredReply).toMatch(/Окно ответа закрыто/);
+    expect(after!.messages.at(-1)).toMatchObject({ kind: "manual_reply", failed: true, failureReason: expect.stringMatching(/Окно ответа закрыто/) });
+  });
+
+  it("сбой отправки: переписка снова ждёт ответа с причиной; причина передачи эксперту снова видна", async () => {
+    const user = newUser();
+    const { person, thread } = await unansweredAfterFinish(user);
+    kit.channel.failNext({ ok: false, reason: "permanent", error: "Bad Request: chat not found" });
+    await replyFromInbox(replyDeps(), { personId: person.id, text: "Не дойдёт", seenUpTo: thread.seenUpTo, requestId: randomUUID() });
+    await kit.drain();
+
+    expect(await threadOf(user)).toMatchObject({ unansweredCount: 1 });
+    expect((await loadInboxThread(kit.db, person.id))!.undeliveredReply).toMatch(/chat not found/);
+  });
+
+  it("человек заблокировал бота: ответ не ушёл, счётчик вернулся; переписка видна, когда он снова напишет", async () => {
+    const user = newUser();
+    const { person, thread } = await unansweredAfterFinish(user);
+    kit.channel.blockUser(user);
+    await replyFromInbox(replyDeps(), { personId: person.id, text: "Ответ в пустоту", seenUpTo: thread.seenUpTo, requestId: randomUUID() });
+    await kit.drain();
+
+    expect(await threadOf(user)).toMatchObject({ unansweredCount: 1 });
+    const after = await loadInboxThread(kit.db, person.id);
+    expect(after!.messages.at(-1)).toMatchObject({ kind: "manual_reply", failed: true, failureReason: "Человек заблокировал бота" });
+    expect(after!.cannotReply).toMatch(/заблокировал бота/);
+  });
+
+  it("не дошёл, но следом эксперт ответил снова и этот дошёл — переписка отвечена", async () => {
+    const user = newUser();
+    const { person, thread } = await unansweredAfterFinish(user);
+    kit.channel.failNext({ ok: false, reason: "reply_window_closed" });
+    await replyFromInbox(replyDeps(), { personId: person.id, text: "Первый", seenUpTo: thread.seenUpTo, requestId: randomUUID() });
+    await replyFromInbox(replyDeps(), { personId: person.id, text: "Второй", seenUpTo: thread.seenUpTo, requestId: randomUUID() });
+    await kit.drain();
+
+    expect(await threadOf(user)).toMatchObject({ unansweredCount: 0 });
+    expect((await loadInboxThread(kit.db, person.id))!.undeliveredReply).toBeNull();
+  });
+
+  it("дошедший ответ переписку не возвращает", async () => {
+    const user = newUser();
+    const { person, thread } = await unansweredAfterFinish(user);
+    await replyFromInbox(replyDeps(), { personId: person.id, text: "Дошёл", seenUpTo: thread.seenUpTo, requestId: randomUUID() });
+    await kit.drain();
+
+    expect(await threadOf(user)).toMatchObject({ unansweredCount: 0 });
+    const after = await loadInboxThread(kit.db, person.id);
+    expect(after!.undeliveredReply).toBeNull();
+    expect(after!.messages.at(-1)).toMatchObject({ kind: "manual_reply", failed: false, failureReason: null });
+  });
+});
+
+describe("ответ консультанта не дошёл", () => {
+  /** Человек в разговоре, а следующий ответ консультанта упрётся в пять временных сбоев подряд. */
+  async function inConversationWithBrokenDelivery(user: string) {
+    const lead = await kit.publish();
+    await say(user, `/start ${lead.code}`, lead.code);
+    for (let attempt = 0; attempt < 5; attempt++) kit.channel.failNext({ ok: false, reason: "temporary", error: "Bad Gateway" });
+  }
+
+  it("бот жив, а ответ так и не ушёл: переписка во «Входящих» с причиной, после ответа эксперта — отвечена", async () => {
+    const user = newUser();
+    await inConversationWithBrokenDelivery(user);
+    await say(user, "Сколько стоит курс?");
+    const person = (await kit.personOf(user))!;
+
+    expect(await outboundOf(kit)).toContainEqual(expect.objectContaining({ kind: "consultant", status: "failed", awaitsBotRepair: false }));
+    expect(await threadOf(user)).toMatchObject({ unansweredCount: 1 });
+    const listed = (await listUnansweredThreads(kit.db)).find((row) => row.personId === person.id);
+    expect(listed).toMatchObject({ unansweredCount: 1, lastText: "Сколько стоит курс?", handoverReason: expect.stringMatching(/не дошёл/) });
+    const thread = (await loadInboxThread(kit.db, person.id))!;
+    expect(thread.handoverReason).toMatch(/Bad Gateway/);
+
+    await replyFromInbox(replyDeps(), { personId: person.id, text: "Курс стоит 10 000 ₽", seenUpTo: thread.seenUpTo, requestId: randomUUID() });
+    await kit.drain();
+    expect(await threadOf(user)).toMatchObject({ unansweredCount: 0 });
+    expect((await loadInboxThread(kit.db, person.id))!.handoverReason).toBeNull();
+  });
+
+  it("окно ответа закрыто (ВК 950): ответ во «Входящих» с причиной, тревоги нет — бот исправен", async () => {
+    const user = newUser();
+    const lead = await kit.publish();
+    await say(user, `/start ${lead.code}`, lead.code);
+    const alertsBefore = kit.alertTexts.length;
+    kit.channel.failNext({ ok: false, reason: "reply_window_closed" });
+    await say(user, "Сколько стоит курс?");
+    const person = (await kit.personOf(user))!;
+
+    expect(await outboundOf(kit)).toContainEqual(expect.objectContaining({ kind: "consultant", status: "failed", outcomePending: false, awaitsBotRepair: false }));
+    expect(await threadOf(user)).toMatchObject({ unansweredCount: 1 });
+    const listed = (await listUnansweredThreads(kit.db)).find((row) => row.personId === person.id);
+    expect(listed).toMatchObject({ lastText: "Сколько стоит курс?", handoverReason: expect.stringMatching(/Окно ответа закрыто/) });
+    expect(kit.alertTexts).toHaveLength(alertsBefore);
+  });
+
+  it("ответ дошёл частично: во «Входящих» видно, что дошёл не целиком", async () => {
+    const user = newUser();
+    const lead = await kit.publish();
+    await say(user, `/start ${lead.code}`, lead.code);
+    kit.channel.failNext({ ok: false, reason: "permanent", error: "Bad Request: file is too big", sentParts: 1 });
+    await say(user, "Сколько стоит курс?");
+    const person = (await kit.personOf(user))!;
+
+    const thread = (await loadInboxThread(kit.db, person.id))!;
+    expect(thread.handoverReason).toMatch(/не целиком/);
+    expect(thread.handoverReason).toMatch(/file is too big/);
+  });
+
+  it("бот сломан: ответ ждёт починки бота и уйдёт сам — во «Входящие» не попадает", async () => {
+    const user = newUser();
+    await inConversationWithBrokenDelivery(user);
+    kit.channel.breakConnection("Unauthorized");
+    await say(user, "Сколько стоит курс?");
+
+    expect(await outboundOf(kit)).toContainEqual(expect.objectContaining({ kind: "consultant", status: "failed", awaitsBotRepair: true }));
+    expect((await threadOf(user))?.unansweredCount ?? 0).toBe(0);
+  });
+});
+
+describe("ответить некуда", () => {
+  it("бот удалён: переписки его людей нет во «Входящих» и в счётчике, ответ не принимается", async () => {
+    const user = newUser();
+    await finishedPassage(user);
+    await say(user, "Вопрос боту, которого удалят");
+    const person = await kit.personOf(user);
+    const before = await countUnansweredThreads(kit.db);
+    await kit.db.update(bots).set({ deletedAt: kit.clock.now() }).where(eq(bots.id, kit.bot.id));
+
+    expect((await listUnansweredThreads(kit.db)).map((row) => row.personId)).not.toContain(person!.id);
+    expect(await countUnansweredThreads(kit.db)).toBe(before - 1);
+    const thread = await loadInboxThread(kit.db, person!.id);
+    expect(thread!.cannotReply).toMatch(/удалён/);
+    await expect(
+      replyFromInbox(replyDeps(), { personId: person!.id, text: "Ответ", seenUpTo: thread!.seenUpTo, requestId: randomUUID() }),
+    ).rejects.toThrow(/удалён/);
+    expect((await outboundOf(kit)).filter((row) => row.kind === "manual_reply")).toEqual([]);
+  });
+
+  it("человек заблокировал бота: переписки нет во «Входящих» и в счётчике, ответ не принимается", async () => {
+    const user = newUser();
+    await finishedPassage(user);
+    await say(user, "Вопрос перед блокировкой");
+    const person = await kit.personOf(user);
+    const before = await countUnansweredThreads(kit.db);
+    await kit.db.update(people).set({ blockedAt: kit.clock.now() }).where(eq(people.id, person!.id));
+
+    expect((await listUnansweredThreads(kit.db)).map((row) => row.personId)).not.toContain(person!.id);
+    expect(await countUnansweredThreads(kit.db)).toBe(before - 1);
+    const thread = await loadInboxThread(kit.db, person!.id);
+    expect(thread!.cannotReply).toMatch(/заблокировал бота/);
+    await expect(
+      replyFromInbox(replyDeps(), { personId: person!.id, text: "Ответ", seenUpTo: thread!.seenUpTo, requestId: randomUUID() }),
+    ).rejects.toThrow(InboxReplyError);
   });
 });

@@ -115,13 +115,16 @@ function touchLimitIssues(flow: AgentFlow): FlowAppIssue[] {
   return issues;
 }
 
+/** Свой текст ноды SDK произносит при переходе в неё (пустой — нет), а в начало разговора — первое сообщение «Настроек». */
 function startIssues(flow: AgentFlow): FlowAppIssue[] {
   const index = flow.states.findIndex((state) => state.id === flow.start);
-  if (index === -1 || flow.states[index]!.firstMessage === null) return [];
+  if (index === -1 || !flow.states[index]!.firstMessage) return [];
   return [
     {
       path: `states[${index}].firstMessage`,
-      message: `${stateName(flow, index)}: у стартовой ноды нет своего первого сообщения — первое сообщение лидмагнита задаётся в «Настройках»`,
+      message:
+        `${stateName(flow, index)}: у стартовой ноды своё первое сообщение, а первое сообщение лидмагнита задаётся в «Настройках». ` +
+        "Очистите поле «Первое сообщение» у ноды, нужный текст перенесите в «Настройки»",
     },
   ];
 }

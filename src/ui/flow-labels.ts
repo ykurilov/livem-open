@@ -1,21 +1,53 @@
 "use client";
 
-import { russianFlowLabels } from "@ykurilov/agent-chat-flows/react";
+import { russianFlowLabels } from "@ykurilov/agent-chat-flows/labels";
 
-const { editor, notices } = russianFlowLabels;
+const { editor, notices, migrate } = russianFlowLabels;
 
-/** Product wording through the SDK's supported localization contract. Дни сценария в кабинете — «дни воронки». */
+/**
+ * Product wording through the SDK's supported localization contract. Дни сценария в кабинете — «дни воронки».
+ * Слова эксперта, а не программиста: «этап», а не «состояние»; «схема», а не «граф»; «тестовый прогон».
+ */
 export const flowLabels = {
   ...russianFlowLabels,
   editor: {
     ...editor,
+    header: {
+      ...editor.header,
+      state: "Этап",
+      check: "Проверить схему",
+      run: "Тестовый прогон",
+      saveFailedHint: "Сохранение отклонено. Что не так — в «Проверить схему» и на карточках этапов.",
+    },
+    events: { ...editor.events, tool: "Консультант выполнил действие" },
+    timerSpans: { ...editor.timerSpans, in_state: "Время на этом этапе" },
+    anyStatePanel: {
+      ...editor.anyStatePanel,
+      // Название остаётся коротким «Общие переходы»: длинное выталкивает «Тестовый чат» за край панели на 1280
+      hint: "Работают на любом этапе. Переходы самого этапа проверяются раньше.",
+    },
+    runPanel: {
+      ...editor.runPanel,
+      title: "Тестовый прогон",
+      hint: "Тестовый прогон: выбирайте справа, что произошло",
+      finish: "Закончить тестовый прогон",
+      step: (step: number) => `Тестовый прогон · шаг ${step}`,
+      noStart: "Нет первого этапа: отметьте, с чего начинается сценарий",
+    },
+    jsonDialog: { ...editor.jsonDialog, title: "Схема в формате JSON" },
     board: {
       ...editor.board,
+      anyState: "С любого этапа",
+      newState: "Новый этап",
+      fit: "Вся схема",
       nudgesUntilProgramDay: (day: number) => `до дня ${day} воронки`,
       noSideQuestions: "Без попутных вопросов",
     },
     overview: {
       ...editor.overview,
+      common: "Общее для всех этапов",
+      commonHint: "Роль, тон, цены, условия, ссылки — то, что верно на любом этапе.",
+      states: "Этапов",
       afterEndHints: {
         ...editor.overview.afterEndHints,
         reply: "Агент отвечает по общей части: знает, что воронка закончилась, не ведёт по шагам и не продаёт повторно.",
@@ -27,6 +59,9 @@ export const flowLabels = {
     },
     statePanel: {
       ...editor.statePanel,
+      title: "Этап",
+      learn: "Узнать на этом этапе",
+      deleteState: "Удалить этап",
       noSideQuestions: "Не задавать здесь попутных вопросов о человеке",
       toolsHint: "Что агент может сделать на этом этапе, кроме ответа. Доступны только отмеченные.",
       tagsHint: "Пометки этапа. «продажа» — этап, где агент предлагает продукт и записывает отказы.",
@@ -45,6 +80,12 @@ export const flowLabels = {
       nudgesUntilProgramDayHint: "Дни воронки считаются от начала участия человека в лидмагните. На этом этапе напоминания работают только до указанного дня.",
       nudgesDaysHint: "Затем используются общие напоминания из раздела «Дни и время».",
     },
+  },
+  migrate: {
+    ...migrate,
+    hint: "Чаты продолжат с того же этапа. Закончившиеся разговоры и тестовые чаты остаются на своей версии. Для удалённых этапов выберите, куда перевести.",
+    state: "Этап",
+    chooseTarget: "Выберите этап",
   },
   notices: {
     ...notices,

@@ -1,9 +1,9 @@
-import { authMode } from './core/auth-mode.js';
-import { loadModuleConfig, requireCookieSecret, resolveEnv, type LoadConfigOptions } from './core/config.js';
-import { OidcClient } from './core/oidc-client.js';
-import { createPkce } from './core/pkce.js';
-import { seal, unseal } from './core/cookie-seal.js';
-import { buildSessionData, type SessionData } from './core/session-data.js';
+import { authMode } from './core/auth-mode';
+import { loadModuleConfig, requireCookieSecret, resolveEnv, type LoadConfigOptions } from './core/config';
+import { OidcClient } from './core/oidc-client';
+import { createPkce } from './core/pkce';
+import { seal, unseal } from './core/cookie-seal';
+import { buildSessionData, type SessionData } from './core/session-data';
 import {
   SESSION_COOKIE,
   FLOW_COOKIE,
@@ -13,9 +13,9 @@ import {
   clearCookie,
   parseCookies,
   isSecureRequest,
-} from './cookies.js';
-import { createPasswordHandlers } from './password/password-handlers.js';
-import type { AccountStore } from './password/password-session.js';
+} from './cookies';
+import { createPasswordHandlers } from './password/password-handlers';
+import type { AccountStore } from './password/password-session';
 
 interface FlowState {
   verifier: string;

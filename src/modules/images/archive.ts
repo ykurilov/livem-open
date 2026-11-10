@@ -4,6 +4,7 @@ import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { DatabaseExecutor } from "../platform/db";
 import { uploadsDir } from "../mailings/images";
 import { imageFileName, imageSizeProblem, readImageFile } from "./image-file";
+import { IMAGE_MAX_BYTES } from "./image-limits";
 import { images } from "./schema";
 
 export type ExpertImage = Pick<typeof images.$inferSelect, "id" | "title" | "description" | "fileName" | "width" | "height">;
@@ -22,8 +23,7 @@ export class InvalidImageError extends Error {
 
 /** Консультант всё равно видит не больше 300 знаков описания. */
 export const MAX_IMAGE_DESCRIPTION_LENGTH = 300;
-/** Telegram принимает фото до 10 МБ. */
-export const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+export { IMAGE_MAX_BYTES };
 
 const imageColumns = {
   id: images.id,

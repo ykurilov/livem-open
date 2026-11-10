@@ -9,6 +9,7 @@ import {
   clientCardFieldOf,
   completeFlowJson,
   CONVERSATION_NUDGES,
+  LEAD_MAGNET_TOOLS,
   leadMagnetFlowIssues,
   scheduleWithDefaults,
   withLeadMagnetFlow,
@@ -23,24 +24,34 @@ import {
   type LeadMagnetSettings,
 } from "../lead-magnets";
 import { createField, getFields, InvalidFieldError, listFields, FIELD_TYPES } from "../people";
+import { buildConsultantInstruction } from "../consultant/instruction";
 import { isOutreachRequest } from "../consultant/outreach-request";
-import { assistantHandoffIn, botDirectionIn } from "./bot-directed-text";
+import { assistantHandoffIn, botDirectionIn, greetingDirectionIn } from "./bot-directed-text";
 import { textLinkSchema } from "../text-links/text-link";
 import { describeEditInputIssues } from "./edit-input-hints";
 import { withoutDeletedFields } from "./manual-edits";
+import { ANSWER_CORRECTION_TOOL_NAMES, createAnswerCorrectionTools } from "./answer-corrections";
 import type { Database, DatabaseExecutor } from "../platform/db";
 
-export const CONSTRUCTOR_TOOL_NAMES = ["view_lead_magnet", "edit_lead_magnet", "read_test_conversation"] as const;
+export const CONSTRUCTOR_TOOL_NAMES = [
+  "view_lead_magnet",
+  "edit_lead_magnet",
+  "read_test_conversation",
+  "reopen_test_conversation",
+  ...ANSWER_CORRECTION_TOOL_NAMES,
+] as const;
 
 export interface ConstructorToolDependencies {
   db: Database;
   chatStorage: ChatStorage;
+  /** Продолжить завершённый тестовый разговор лидмагнита (служба «Проверки»). */
+  reopenTestConversation?: (leadMagnetId: string) => Promise<void>;
 }
 
 export type ToolResult<T extends object = object> = ({ ok: true } & T) | { ok: false; error: string };
 
 // Провайдер, модель и уровень рассуждения меняет только эксперт в настройках: их в схеме нет.
-const textFields = ["name", "cardDescription", "instruction", "firstMessage", "endCondition", "farewellMessage"] as const;
+const textFields = ["name", "cardDescription", "clientPortrait", "instruction", "firstMessage", "endCondition", "farewellMessage"] as const;
 // Кусочком правятся только длинные тексты (contracts/agent-tools.md)
 const fragmentFields = ["instruction", "firstMessage", "endCondition", "farewellMessage"] as const;
 
@@ -71,7 +82,7 @@ const change = z.union([
   z
     .strictObject({
       op: z.literal("put_flow"),
-      flow: flowJson("Сценарий agent-flow версии 2 целиком: start, anyState, states, schedule, nudges, sideTasks, clientCard. «Общее» — это основная инструкция, его можно не писать. Без clientCard карточка клиента остаётся как есть"),
+      flow: flowJson("Сценарий agent-flow версии 2 целиком: start, anyState, states, schedule, nudges, sideTasks, clientCard. «Общее» — это основная инструкция, его можно не писать. Без clientCard и chatNotes карточка клиента и заметки чата остаются как есть"),
     })
     .describe("Заменить весь сценарий: для первой сборки или большой переделки"),
   z
@@ -312,21 +323,57 @@ function keepCreatedFields(settings: LeadMagnetSettings, created: LeadMagnetSett
   return lost.length === 0 ? settings : { ...settings, flow: { ...settings.flow, clientCard: [...card, ...lost] } };
 }
 
-/** Прощание, которое правка меняет, — текст для человека, а не указание консультанту и не «передал эксперту». */
-function checkFarewellIsText(settings: LeadMagnetSettings, changes: readonly Change[]): void {
-  if (!changes.some((item) => "field" in item && item.field === "farewellMessage")) return;
-  const direction = botDirectionIn(settings.farewellMessage);
-  if (direction)
-    throw new ChangeRejected(
-      `В прощании указание консультанту («${direction}»), а прощание уходит человеку дословно. ` +
-        "Напиши готовый текст от лица помощника. Указания консультанту должны быть в инструкции",
-    );
-  const handoff = assistantHandoffIn(settings.farewellMessage);
-  if (handoff)
-    throw new ChangeRejected(
-      `В прощании помощник «${handoff.charAt(0).toUpperCase() + handoff.slice(1)}» что-то эксперту, а помощник ничего не передаёт: эксперт видит разговор сам. ` +
-        "Убери неподтверждённую передачу. Действия эксперта указывай только по подтверждённым условиям",
-    );
+type TextForPerson = { where: string; text: string; firstMessage: boolean };
+
+/** Тексты, которые уходят человеку дословно, с местом для подсказки. */
+function textsForPerson(settings: LeadMagnetSettings): TextForPerson[] {
+  const { flow } = settings;
+  return [
+    { where: "первом сообщении", text: settings.firstMessage, firstMessage: true },
+    ...flow.states.map((state) => ({ where: `первом сообщении ноды «${state.title}»`, text: state.firstMessage ?? "", firstMessage: true })),
+    { where: "прощании", text: settings.farewellMessage, firstMessage: false },
+    { where: "прощании при «срок вышел»", text: flow.schedule?.farewellText ?? "", firstMessage: false },
+    { where: "фразе жёсткой рамки дня", text: flow.schedule?.dayFrame?.hardText ?? "", firstMessage: false },
+  ];
+}
+
+/**
+ * Текст для человека, который правка меняет, — готовый текст, а не указание консультанту и не «передал эксперту».
+ * Старые тексты не проверяются: они не мешают другим правкам.
+ */
+function checkTextsForPerson(before: LeadMagnetSettings, after: LeadMagnetSettings): void {
+  const old = new Map(textsForPerson(before).map((item) => [item.where, item.text]));
+  for (const { where, text, firstMessage } of textsForPerson(after)) {
+    if (!text.trim() || old.get(where) === text) continue;
+    const direction = firstMessage ? greetingDirectionIn(text) : botDirectionIn(text);
+    if (direction)
+      throw new ChangeRejected(
+        `В ${where} указание консультанту («${direction}»), а этот текст уходит человеку дословно. ` +
+          "Напиши готовый текст от лица помощника. Указания консультанту должны быть в инструкции",
+      );
+    const handoff = assistantHandoffIn(text);
+    if (handoff)
+      throw new ChangeRejected(
+        `В ${where} помощник «${handoff.charAt(0).toUpperCase() + handoff.slice(1)}» что-то эксперту, а помощник ничего не передаёт: эксперт видит разговор сам. ` +
+          "Убери неподтверждённую передачу. Действия эксперта указывай только по подтверждённым условиям",
+      );
+  }
+}
+
+/** Ноды, у которых remove_state забрал последние выходы: такая нода становится концом разговора. */
+function strandedBy(before: AgentFlow, after: AgentFlow): string[] {
+  return after.states.filter((state) => state.exits.length === 0 && (before.states.find((one) => one.id === state.id)?.exits.length ?? 0) > 0).map((state) => state.id);
+}
+
+/** Нода, оставшаяся без выходов после удаления соседней, — ошибка, если правка не дала ей новых выходов. */
+function checkStrandedStates(flow: AgentFlow, stranded: readonly string[]): void {
+  const ends = flow.states.filter((state) => stranded.includes(state.id) && state.exits.length === 0);
+  if (ends.length === 0) return;
+  const names = ends.map((state) => `«${state.title.trim() || state.id}»`).join(", ");
+  throw new ChangeRejected(
+    `${names} — без выходов после удаления ноды: разговор закончится там, и клиент дальше не пойдёт. ` +
+      `Дай ей выход в той же правке (put_state): в следующую ноду или в «Итог» по ${LEAD_MAGNET_TOOLS.finishDialog}`,
+  );
 }
 
 /** Применяет все изменения разом: одна версия «constructor» или ничего, если хоть одно изменение не подошло. */
@@ -340,13 +387,17 @@ export async function editLeadMagnet(
       const lead = await lockLeadMagnet(tx, leadMagnetId);
       let settings = lead.draft;
       let created: LeadMagnetSettings["flow"]["clientCard"] = [];
+      let stranded: string[] = [];
       for (const item of input.changes) {
         const before = settings.flow.clientCard.length;
+        const flowBefore = settings.flow;
         settings = await applyChange(tx, settings, item);
+        if (item.op === "remove_state") stranded = [...stranded, ...strandedBy(flowBefore, settings.flow)];
         if (item.op === "create_field") created = [...created, ...settings.flow.clientCard.slice(before)];
         if (item.op === "detach_field") created = created.filter((field) => field.id !== item.fieldId);
       }
-      checkFarewellIsText(settings, input.changes);
+      checkStrandedStates(settings.flow, stranded);
+      checkTextsForPerson(lead.draft, settings);
       // Поле, удалённое из словаря после прошлой правки, уходит из черновика, а не запрещает следующие правки
       settings = await withCardFromDictionary(tx, await withoutDeletedFields(tx, keepCreatedFields(settings, created)));
       return saveDraft(tx, leadMagnetId, validateLeadMagnetSettings(settings), "constructor");
@@ -373,6 +424,7 @@ export const VIEW_SECTIONS = [
   "fields",
   "fieldDictionary",
   "modelInfo",
+  "appRules",
 ] as const;
 export type ViewSection = (typeof VIEW_SECTIONS)[number];
 
@@ -401,6 +453,8 @@ export async function viewLeadMagnet(
         view.overview = {
           name: draft.name,
           cardDescription: draft.cardDescription,
+          // «Описание клиентов»: консультант его не видит, по нему играется агент-клиент «Поменяемся ролями»
+          clientPortrait: draft.clientPortrait,
           maxPersonMessages: draft.maxPersonMessages,
           stateCount: draft.flow.states.length,
           days: draft.flow.schedule?.lengthDays ?? null,
@@ -429,6 +483,10 @@ export async function viewLeadMagnet(
         break;
       case "modelInfo":
         view.modelInfo = { providerId: draft.providerId, modelId: draft.modelId, reasoning: draft.reasoning };
+        break;
+      // Правила, которые приложение добавляет консультанту само: эксперт их не меняет, новое правило с ними сверяется
+      case "appRules":
+        view.appRules = buildConsultantInstruction(draft);
         break;
     }
   }
@@ -492,8 +550,8 @@ export async function readTestConversation(
 }
 
 /**
- * Три инструмента конструктора, привязанные к одному лидмагниту (id или функция, которая найдёт его по чату).
- * `onChange` — черновик изменён.
+ * Инструменты конструктора, привязанные к одному лидмагниту (id или функция, которая найдёт его по чату).
+ * `onChange` — черновик изменён или правки ответов разобраны.
  */
 export function createConstructorTools(
   deps: ConstructorToolDependencies,
@@ -503,7 +561,9 @@ export function createConstructorTools(
   const leadMagnetId = typeof leadMagnet === "string" ? async () => leadMagnet : leadMagnet;
   return {
     view_lead_magnet: tool({
-      description: "Посмотреть текущий черновик лидмагнита. Выбирай только нужные разделы.",
+      description:
+        "Посмотреть текущий черновик лидмагнита. Выбирай только нужные разделы. " +
+        "appRules — правила, которые приложение само добавляет консультанту поверх настроек эксперта; их не меняет никто.",
       inputSchema: z.strictObject({ sections: z.array(z.enum(VIEW_SECTIONS)).min(1) }),
       execute: async (input) => viewLeadMagnet(deps, await leadMagnetId(), input),
     }),
@@ -525,5 +585,16 @@ export function createConstructorTools(
       inputSchema: z.strictObject({ lastMessages: z.number().int().min(1).optional() }),
       execute: async (input) => readTestConversation(deps, await leadMagnetId(), input),
     }),
+    reopen_test_conversation: tool({
+      description:
+        "Снять блокировку с завершённого тестового разговора: эксперт сможет писать консультанту дальше с того места, где разговор кончился.",
+      inputSchema: z.strictObject({}),
+      execute: async (): Promise<ToolResult> => {
+        if (!deps.reopenTestConversation) return { ok: false, error: "Тестовый разговор отсюда недоступен" };
+        await deps.reopenTestConversation(await leadMagnetId());
+        return { ok: true };
+      },
+    }),
+    ...createAnswerCorrectionTools(deps.db, leadMagnetId, onChange),
   };
 }

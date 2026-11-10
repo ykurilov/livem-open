@@ -3,7 +3,8 @@
 import { startTransition, useActionState, useState } from "react";
 import { Alert, Button, Field, Input } from "@/ui/primitives";
 import { Select, type SelectOption } from "@/ui";
-import { connectBotAction, type ConnectBotState } from "./actions";
+import { connectBotAction, type ConnectBotState, type ConnectedBot } from "./actions";
+import { keepingFormOnSendFailure } from "@/ui/form-upload";
 
 // Откуда взять токен и как он выглядит: у каждого мессенджера по-своему
 const TOKEN_HELP: Record<string, { label: string; hint: string; placeholder: string; steps?: string[] }> = {
@@ -31,11 +32,13 @@ const TOKEN_HELP: Record<string, { label: string; hint: string; placeholder: str
   },
 };
 
-export function ConnectBotForm({ channels }: { channels: SelectOption[] }) {
+/** Один мессенджер в `channels` — выбора нет, бот подключается к нему. `onConnected` — бот подключён. */
+export function ConnectBotForm({ channels, onConnected }: { channels: SelectOption[]; onConnected?: (bot: ConnectedBot) => void }) {
   const [token, setToken] = useState("");
   const [state, formAction, pending] = useActionState<ConnectBotState, FormData>(async (previous, formData) => {
-    const next = await connectBotAction(previous, formData);
+    const next = await keepingFormOnSendFailure(connectBotAction)(previous, formData);
     if (next.connected) setToken("");
+    if (next.bot) onConnected?.(next.bot);
     return next;
   }, {});
   const [channel, setChannel] = useState(channels[0]?.value ?? "");
@@ -57,7 +60,7 @@ export function ConnectBotForm({ channels }: { channels: SelectOption[] }) {
       className="flex max-w-xl flex-col gap-[var(--yk-space-4)]"
     >
       <input type="hidden" name="channel" value={channel} />
-      <div className="flex flex-col gap-1">
+      {channels.length > 1 ? <div className="flex flex-col gap-1">
         <span className="text-[length:var(--yk-text-small-size)] font-semibold">Мессенджер</span>
         <Select
           options={channels}
@@ -68,7 +71,7 @@ export function ConnectBotForm({ channels }: { channels: SelectOption[] }) {
           }}
           aria-label="Мессенджер"
         />
-      </div>
+      </div> : null}
       {help.steps ? (
         <ol className="flex list-decimal flex-col gap-1 pl-5 text-[length:var(--yk-text-small-size)]" aria-label="Как подключить">
           {help.steps.map((step) => (

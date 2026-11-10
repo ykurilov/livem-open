@@ -21,6 +21,10 @@ export interface JobPayloads {
   "purchase-congratulate": { passageId: string };
   /** Обещал оплатить или оформил заказ: назавтра одно напоминание, если оплаты нет. */
   "payment-reminder": { passageId: string };
+  /** Пришёл по ссылке лидмагнита в бот ВК с Senler: добавить в группу подписчиков Senler. */
+  "senler-subscribe": { passageId: string };
+  /** Уведомление посетителю веб-чата о новом сообщении (Web Push); временный сбой службы — повтор. */
+  "web-chat-push": { visitorId: string; body: string };
 }
 
 export type JobName = keyof JobPayloads;
@@ -39,6 +43,8 @@ export const JOB_NAMES: JobName[] = [
   "agent-log-cleanup",
   "purchase-congratulate",
   "payment-reminder",
+  "senler-subscribe",
+  "web-chat-push",
 ];
 
 export interface EnqueueOptions {
@@ -82,6 +88,13 @@ export interface QueueConfig {
 // (так склеиваются сообщения одного человека в один ход консультанта)
 const QUEUE_POLICIES: Partial<Record<JobName, "short">> = { "inbound-turn": "short" };
 
+/**
+ * Цепочка ответа человеку: работник берёт задачу сразу по уведомлению базы, а не на следующем опросе (до 2 с на каждом
+ * из трёх шагов). Опрос остаётся с тем же шагом — для отложенных задач и на случай, если уведомления недоступны.
+ */
+const WAKE_ON_SEND: JobName[] = ["inbound-route", "inbound-turn", "outbound-send"];
+const POLLING_SECONDS = 2;
+
 const RETRY_LIMIT = 5;
 const RETRY_DELAY_SECONDS = 10;
 
@@ -91,6 +104,8 @@ export function createQueue(config: QueueConfig): AppQueue {
     schema: "pgboss",
     supervise: config.role === "worker",
     schedule: config.role === "worker",
+    // Слушает только работник; веб лишь ставит задачи, уведомление уходит вместе с записью задачи
+    useListenNotify: config.role === "worker",
     max: 5,
   });
   boss.on("error", (error) => console.error("Очередь:", error));
@@ -107,7 +122,10 @@ export function createQueue(config: QueueConfig): AppQueue {
             retryDelay: RETRY_DELAY_SECONDS,
             retryBackoff: true,
             ...(QUEUE_POLICIES[name] && { policy: QUEUE_POLICIES[name] }),
+            ...(WAKE_ON_SEND.includes(name) && { notify: true }),
           });
+          // Очереди, созданные до уведомлений: создание существующую не меняет
+          if (WAKE_ON_SEND.includes(name)) await boss.updateQueue(name, { notify: true });
         }
       } catch (error) {
         // Неудачный старт не оставляет открытых соединений и таймеров: следующая попытка начнёт с чистого листа
@@ -127,7 +145,11 @@ export function createQueue(config: QueueConfig): AppQueue {
     async work(name, handler, options = {}) {
       await boss.work<JobPayloads[typeof name]>(
         name,
-        { localConcurrency: options.concurrency ?? 1, pollingIntervalSeconds: config.pollingIntervalSeconds ?? 2 },
+        {
+          localConcurrency: options.concurrency ?? 1,
+          pollingIntervalSeconds: config.pollingIntervalSeconds ?? POLLING_SECONDS,
+          notifyPollingIntervalSeconds: config.pollingIntervalSeconds ?? POLLING_SECONDS,
+        },
         async (jobs) => {
           for (const job of jobs) await handler(job.data);
         },

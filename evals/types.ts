@@ -1,5 +1,6 @@
 // Что прогон узнал о сценарии: из этого строятся проверки кодом и файлы для судьи.
 import type { DialogSummary } from "@/modules/consultant/schema";
+import type { CorrectionOutcome, CorrectionStatus } from "@/modules/corrections";
 import type { LeadMagnetSettings } from "@/modules/lead-magnets";
 import type { PersonaRouteReport } from "./persona-model";
 import type { Scenario } from "./scenario";
@@ -175,6 +176,11 @@ export interface ScenarioRun {
   };
   /** Черновик лидмагнита после сборки; `null` — не сохранился. */
   settings: LeadMagnetSettings | null;
+  /** Разбор правок (вид `corrections`): настройки до разговора с конструктором и правки в конце, по порядку сценария. */
+  corrections?: {
+    before: LeadMagnetSettings;
+    final: Array<{ id: string; status: CorrectionStatus; outcome: CorrectionOutcome | null }>;
+  };
   publishError: string | null;
   /** Ссылка на политику ПДн из настроек приложения. */
   privacyPolicyUrl: string;

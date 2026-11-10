@@ -122,6 +122,20 @@ describe("перехват webhook", () => {
     expect(botAlerts()[0]?.text).toContain("бота подключили к другому сервису");
   });
 
+  it("вид сбоя запоминается: рассылке важно, жив ли токен; после починки он стирается", async () => {
+    const bot = await addBot();
+    channel.breakConnection("бота подключили к другому сервису", "taken_over");
+    await runCheck();
+    const kindOf = async () => (await database.db.select({ failureKind: bots.failureKind }).from(bots).where(eq(bots.id, bot.id)))[0]?.failureKind;
+    expect(await kindOf()).toBe("taken_over");
+    channel.breakConnection("Unauthorized", "invalid_token");
+    await runCheck();
+    expect(await kindOf()).toBe("invalid_token");
+    channel.breakConnection(null);
+    await runCheck();
+    expect(await kindOf()).toBeNull();
+  });
+
   it("webhook вернули — бот снова «работает», тревога снята", async () => {
     const bot = await addBot();
     channel.breakConnection("бота подключили к другому сервису", "taken_over");
@@ -519,6 +533,78 @@ describe("сообщения, упавшие из-за бота, после ег
     expect(await messageOf(locked)).toMatchObject({ status: "queued", awaitsBotRepair: false });
     expect(await messageOf(late)).toMatchObject({ status: "failed", awaitsBotRepair: true });
     expect(queuedSends).toEqual([locked]);
+  });
+
+  /** Рассылка упирается во временные сбои отправки, пока повторы не кончатся. */
+  async function sendExhaustingRetries(bot: typeof bots.$inferSelect, key = randomUUID()) {
+    const sender = { ...senderFor(bot), maxAttempts: 2 };
+    const { id } = await enqueueOutbound(
+      { db: database.db, queue: noJobs, clock },
+      { botId: bot.id, personId: randomUUID(), kind: "mailing", text: "Вебинар в четверг", idempotencyKey: key },
+    );
+    for (let attempt = 0; attempt < 2; attempt++) {
+      channel.failNext({ ok: false, reason: "temporary", error: "fetch failed" });
+      await sendOutbound(sender, id);
+      clock.advance(60_000);
+    }
+    return id;
+  }
+
+  it("сеть пропала, пока шли повторы: сообщение ждёт связи, а бот ещё «работает» и тревоги нет", async () => {
+    const bot = await addBot();
+    channel.breakConnection("fetch failed", "temporary");
+    const id = await sendExhaustingRetries(bot);
+    expect(await messageOf(id)).toMatchObject({ status: "failed", awaitsBotRepair: true });
+    expect(await statusOf(bot.id)).toEqual({ status: "ok", statusError: null });
+    expect(sentAlerts).toEqual([]);
+  });
+
+  it("связь вернулась: следующая проверка ставит сообщение заново, и оно уходит один раз", async () => {
+    const bot = await addBot();
+    channel.breakConnection("fetch failed", "temporary");
+    const key = randomUUID();
+    const id = await sendExhaustingRetries(bot, key);
+    await runCheck();
+    expect(queuedSends).toEqual([]);
+
+    channel.breakConnection(null);
+    await runCheck();
+    expect(await messageOf(id)).toMatchObject({ status: "queued", attempts: 0, error: null, awaitsBotRepair: false });
+    await sendOutbound(senderFor(bot), id);
+    await sendOutbound(senderFor(bot), id);
+    expect((await messageOf(id)).status).toBe("sent");
+    expect(channel.sent.filter((sent) => sent.message.idempotencyKey === key)).toHaveLength(1);
+  });
+
+  it("отказ самого сообщения при временном сбое проверки бота не повторяется", async () => {
+    const bot = await addBot();
+    channel.breakConnection("fetch failed", "temporary");
+    const id = await sendFailing(bot, "Bad Request: chat not found");
+    expect(await messageOf(id)).toMatchObject({ status: "failed", awaitsBotRepair: false });
+    channel.breakConnection(null);
+    await runCheck();
+    expect((await messageOf(id)).status).toBe("failed");
+    expect(queuedSends).toEqual([]);
+  });
+
+  it("повторы кончились, а бот отвечает — беда этого сообщения, не повторяется", async () => {
+    const bot = await addBot();
+    const id = await sendExhaustingRetries(bot);
+    expect(await messageOf(id)).toMatchObject({ status: "failed", awaitsBotRepair: false });
+  });
+
+  it("после возврата сообщения ставятся по порядку записи", async () => {
+    const bot = await addBot();
+    channel.breakConnection("Unauthorized");
+    const first = await sendFailing(bot, "Unauthorized");
+    clock.advance(1000);
+    const second = await sendFailing(bot, "Unauthorized");
+    // Порядок строк в базе не совпадает с порядком записи
+    await database.pool.query("update app.outbound_messages set created_at = now() - interval '1 hour' where id = $1", [first]);
+    await database.pool.query("update app.outbound_messages set created_at = now() - interval '2 hours' where id = $1", [second]);
+    channel.breakConnection(null);
+    await runCheck();
+    expect(queuedSends).toEqual([second, first]);
   });
 
   it("возвращаются только сообщения починенного бота", async () => {

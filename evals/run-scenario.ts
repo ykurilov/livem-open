@@ -9,7 +9,7 @@ import { createEvalDatabase } from "./eval-database";
 import { runExpertSession } from "./expert-session";
 import { createPersona, type Persona } from "./persona";
 import type { PersonaRoute } from "./persona-model";
-import { CLIENT_LEAVE_TOOL, clientInstructions, EXPERT_FINISH_TOOL, expertInstructions } from "./persona-prompts";
+import { CLIENT_LEAVE_TOOL, clientInstructions, correctionsExpertInstructions, EXPERT_FINISH_TOOL, expertInstructions } from "./persona-prompts";
 import { leadMagnetInput, type Scenario } from "./scenario";
 import type { ClientRun, ScenarioRun } from "./types";
 import { NO_USAGE, totalUsage } from "./usage";
@@ -70,7 +70,17 @@ export async function runScenario(scenario: Scenario, options: RunScenarioOption
       privacyPolicyUrl: options.privacyPolicyUrl,
       ...(options.judgeFallback && { judgeFallback: options.judgeFallback }),
     });
-    if (scenario.leadMagnet) {
+    if (scenario.kind === "corrections") {
+      // Лидмагнит из файла, правки «Проверки» заготовлены: эксперт разбирает их с конструктором, потом клиенты
+      const before = await app.useLeadMagnet(await leadMagnetInput(scenario, options.projectRoot ?? process.cwd()));
+      const seeded = await app.seedCorrections((scenario.corrections ?? []).map(({ title: _title, ...correction }) => correction));
+      run.corrections = { before, final: seeded.map(({ id, status, outcome }) => ({ id, status, outcome })) };
+      const expert = await persona(correctionsExpertInstructions(scenario), EXPERT_FINISH_TOOL, "Закончить разговор с конструктором");
+      run.building = await runExpertSession(app, expert, scenario.expertReplies ?? 0);
+      run.settings = await app.draft();
+      const final = await app.corrections();
+      run.corrections.final = seeded.map(({ id }) => final.find((correction) => correction.id === id)).flatMap((correction) => (correction ? [{ id: correction.id, status: correction.status, outcome: correction.outcome }] : []));
+    } else if (scenario.leadMagnet) {
       // Лидмагнит готов заранее: конструктор не участвует, сразу клиенты
       run.building = { ...run.building, endedBy: "from_file" };
       run.settings = await app.useLeadMagnet(await leadMagnetInput(scenario, options.projectRoot ?? process.cwd()));

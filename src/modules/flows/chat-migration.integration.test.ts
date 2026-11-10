@@ -5,13 +5,15 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../../../tests/integration/db-helper";
-import { createLiveDialogKit, type LiveDialogKit, type PublishedLeadMagnet } from "../../../tests/integration/live-dialog-kit";
+import { DEFAULT_CONSULTANT_REPLY, createLiveDialogKit, type LiveDialogKit, type PublishedLeadMagnet } from "../../../tests/integration/live-dialog-kit";
 import { agentLogEntries, agentLogTurns } from "../agent-log/schema";
-import { getLeadMagnet, saveDraft, type LeadMagnetSettings, type Stage } from "../lead-magnets";
+import { getLeadMagnet, newProgramSettings, saveDraft, type LeadMagnetSettings, type Stage } from "../lead-magnets";
+import { getFields } from "../people";
 import { publishLeadMagnet } from "../lead-magnets/publish";
 import { updateSettings } from "../platform/settings";
 import type { JobEnqueuer, JobName, JobPayloads } from "../platform/queue";
 import { applyChatMigration, migrateLiveChats, planChatMigration, requeuePendingChatMigrations } from "./chat-migration";
+import { leadMagnetToFlow } from "./index";
 
 const STAGES: Stage[] = [
   { id: "build", name: "Сборка", instruction: "Помоги собрать приложение.", transitionCondition: "Прислал ссылку", startDay: null, isSale: false },
@@ -173,6 +175,27 @@ describe("перевод идущих разговоров на новую ве�
     expect(lastCall.system).toContain(V2_MARK);
     const run = await kit.dialog.flow.readRun((await kit.personOf(c))!.id, (await passageOf(c)).chatId);
     expect(run).toMatchObject({ state: "build" });
+  });
+
+  // Сейчас человек сразу на дне N и часто «срок вышел»: `flow.migrateChats` SDK не умеет начать программу заново, а дни
+  // считает от старта чата. Включить, когда SDK научится
+  it.skip("переход на версию с программой: разговор, начатый дни назад, продолжается, а не кончается сроком", async () => {
+    const person = await startPerson();
+    kit.clock.advance(4 * 24 * 60 * 60_000);
+    const current = (await getLeadMagnet(kit.db, lead.leadMagnetId))!;
+    const withProgram = { ...current.draft, program: newProgramSettings(3) };
+    const programFlow = leadMagnetToFlow(withProgram, await getFields(kit.db, withProgram.fieldIds));
+    await saveDraft(kit.db, lead.leadMagnetId, { ...withProgram, flow: programFlow }, "manual");
+    const v2 = (await publishLeadMagnet(kit.db, lead.leadMagnetId)).snapshotId;
+
+    await migrate();
+    await apply(v2);
+    await kit.runDue();
+    await kit.dialog.flow.settled();
+    await say(person, "Продолжим?");
+
+    expect(await passageOf(person)).toMatchObject({ snapshotId: v2, status: "active" });
+    expect(kit.textsTo(person).at(-1)).toBe(DEFAULT_CONSULTANT_REPLY);
   });
 
   it("закрытые разговоры и тестовые чаты «Проверки» не трогает", async () => {

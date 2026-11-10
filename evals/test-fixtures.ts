@@ -169,3 +169,64 @@ export function stubPersonaRoute(models: AppModels): PersonaRoute {
     report: async () => ({ model: "stub", provider: "stub", temperature: 0, requests: 0, served: {}, offRoute: 0, failed: 0 }),
   };
 }
+
+/** Общая инструкция консультанта: в настройках она и в `instruction`, и в `flow.common`. */
+export const withCommonInstruction = (settings: LeadMagnetSettings, instruction: string): LeadMagnetSettings => ({ ...settings, instruction, flow: { ...settings.flow, common: instruction } });
+
+/** Правка «Проверки» в сценарии разбора правок: ответ про сон, эксперт сократил его. */
+export const SLEEP_CORRECTION = {
+  title: "про сон",
+  answerKind: "reply" as const,
+  context: [{ role: "user" as const, text: "Не сплю с переезда" }],
+  originalText: "Спасибо, что поделились! Сон после переезда часто сбивается. Вот три совета: режим, свет и прогулки. Расскажите, что пробовали?",
+  correctedText: "Сон после переезда часто сбивается. Попробуйте ложиться в одно время. Что мешает уснуть сильнее всего?",
+  reason: "Длинное в мессенджере не дочитывают",
+};
+
+/**
+ * Сценарий разбора правок: лидмагнит из файла, одна правка. Ход 1 — конструктор прочитал правки и показал предложение,
+ * ход 2 — эксперт согласился, конструктор записал и отметил правку учтённой.
+ */
+export function correctionsRun(overrides: Partial<ScenarioRun> = {}): ScenarioRun {
+  const base = scenarioRun();
+  const before = withCommonInstruction(base.settings!, "Ты консультант психолога. Отвечай развёрнуто и давай три совета.");
+  return scenarioRun({
+    scenario: {
+      ...base.scenario,
+      id: "corrections-length",
+      kind: "corrections",
+      title: "Короче ответы",
+      expertReplies: 8,
+      consent: "agree",
+      corrections: [SLEEP_CORRECTION],
+      leadMagnet: { file: "evals/lead-magnets/psychologist.json", overlay: {} },
+    },
+    building: {
+      turns: [
+        {
+          expert: "Я поправил пару ответов бота, посмотрите",
+          reply: "Вижу правку: вы сократили ответ. Предлагаю правило: одна мысль и один вопрос. Записать?",
+          tools: [{ name: "read_answer_corrections", input: {}, output: "Правка c1 …" }],
+          status: "complete",
+          durationMs: 3000,
+        },
+        {
+          expert: "Да, записывайте",
+          reply: "Записал правило в инструкцию.",
+          tools: [
+            { name: "edit_lead_magnet", input: {}, output: { ok: true } },
+            { name: "resolve_answer_corrections", input: { ids: ["c1"], outcome: "applied" }, output: { ok: true, resolved: 1 } },
+          ],
+          status: "complete",
+          durationMs: 3000,
+        },
+      ],
+      expertReplies: 2,
+      endedBy: "expert_finished",
+      chat: [],
+    },
+    settings: withCommonInstruction(before, "Ты консультант психолога. Отвечай коротко: одна мысль и один вопрос, потому что длинное в мессенджере не дочитывают."),
+    corrections: { before, final: [{ id: "c1", status: "resolved", outcome: "applied" }] },
+    ...overrides,
+  });
+}

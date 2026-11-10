@@ -1,5 +1,5 @@
-import { seal, unseal } from '../core/cookie-seal.js';
-import type { SessionData } from '../core/session-data.js';
+import { seal, unseal } from '../core/cookie-seal';
+import type { SessionData } from '../core/session-data';
 import {
   SESSION_COOKIE,
   SESSION_MAX_AGE,
@@ -7,10 +7,10 @@ import {
   isSecureRequest,
   parseCookies,
   serializeCookie,
-} from '../cookies.js';
-import { createLoginAttempts, type LoginAttempts } from './login-attempts.js';
-import { decoyHash, verifyPassword } from './password-hash.js';
-import { isSessionAlive, passwordSessionData, type AccountStore } from './password-session.js';
+} from '../cookies';
+import { createLoginAttempts, type LoginAttempts } from './login-attempts';
+import { decoyHash, verifyPassword } from './password-hash';
+import { isSessionAlive, passwordSessionData, type AccountStore } from './password-session';
 
 export interface PasswordHandlerOptions {
   cookieSecret: string;

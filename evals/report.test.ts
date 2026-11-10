@@ -7,7 +7,7 @@ import { readConstructorPrompt } from "../src/modules/constructor/endpoint";
 import { buildProgramInstructionSection } from "../src/modules/program/instruction-section";
 import { checkScenario } from "./checks";
 import { runFolderName, writeRunSummary, writeScenarioReport } from "./report";
-import { flowStart, programClient, programRun, said, scenarioRun, silent, transition } from "./test-fixtures";
+import { correctionsRun, flowStart, programClient, programRun, said, scenarioRun, silent, transition } from "./test-fixtures";
 import type { UsageTotals } from "./types";
 
 const spent = (costUsd: number): UsageTotals => ({ inputTokens: 100, cachedInputTokens: 80, outputTokens: 10, reasoningTokens: 0, costUsd });
@@ -53,6 +53,24 @@ describe("writeScenarioReport", () => {
     const checks = JSON.parse(await readFile(path.join(runDir, "normal-yoga", "checks.json"), "utf8"));
     expect(checks.checks.length).toBeGreaterThan(5);
     expect(checks.stats.costUsd).toBeCloseTo(0.012);
+  });
+});
+
+describe("writeScenarioReport: разбор правок", () => {
+  it("правки с итогами — в constructor.md, настройки до разбора — в lead-magnet-before.md", async () => {
+    const runDir = await mkdtemp(path.join(tmpdir(), "eval-run-"));
+    const run = correctionsRun();
+    await writeScenarioReport(runDir, { run, checks: checkScenario(run) });
+    const dir = path.join(runDir, "corrections-length");
+    const constructorMd = await readFile(path.join(dir, "constructor.md"), "utf8");
+    expect(constructorMd).toContain("Эксперт согласится с предложением");
+    expect(constructorMd).toContain("Правка 1 «про сон»");
+    expect(constructorMd).toContain("Не сплю с переезда");
+    expect(constructorMd).toContain("Попробуйте ложиться в одно время");
+    expect(constructorMd).toContain("Длинное в мессенджере не дочитывают");
+    expect(constructorMd).toContain("Итог: учтено");
+    const before = await readFile(path.join(dir, "lead-magnet-before.md"), "utf8");
+    expect(before).toContain("Отвечай развёрнуто и давай три совета");
   });
 });
 

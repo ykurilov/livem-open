@@ -10,12 +10,12 @@ export const PERSON_NAME_FIELD = "Имя";
 /**
  * Имя из профиля мессенджера для хвоста хода — только пока поле «Имя» не заполнено. Человек сказал, как к нему
  * обращаться, — имя уже в карточке, а строка в каждом ходе подталкивала бы звать по имени слишком часто (eval 14.10).
- * Владелец чата не человек (тестовый разговор эксперта) — `null`.
+ * Владелец чата не человек (тестовый разговор эксперта) — `null`. У веб-чата профиля нет: «Гость веб-чата …» — не имя.
  */
 export async function profileNameForTail(db: Database, ownerId: string): Promise<string | null> {
   if (!isUuid(ownerId)) return null;
-  const [person] = await db.select({ name: people.displayName }).from(people).where(eq(people.id, ownerId));
-  if (!person?.name) return null;
+  const [person] = await db.select({ name: people.displayName, channel: people.channel }).from(people).where(eq(people.id, ownerId));
+  if (!person?.name || person.channel === "web") return null;
   return (await cardName(db, ownerId)) === null ? person.name : null;
 }
 

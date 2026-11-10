@@ -8,6 +8,7 @@ import type { LeadMagnetSettings } from "../../src/modules/lead-magnets/settings
 import { createField, type FieldDefinition } from "../../src/modules/people";
 import { connectDatabase, type DatabaseConnection } from "../../src/modules/platform/db";
 import { E2E_BASE_URL, E2E_COOKIE_SECRET, E2E_EMAIL, e2eDatabaseUrl } from "./e2e-env";
+import { openTab } from "./open-tab";
 
 // Вкладка «Сценарий» отдаёт доске почти всё окно: меню — узкая полоса значков, шапка в одну строку, вокруг доски нет полей.
 // SHOTS_DIR — папка для снимков и замера площади холста (сравнение «до/после»); без неё снимки не снимаются.
@@ -28,7 +29,11 @@ test.beforeEach(async ({ context }) => {
     refreshToken: "e2e",
     accessTokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000,
   };
-  await context.addCookies([{ name: "auth_session", value: await seal(session, E2E_COOKIE_SECRET), url: E2E_BASE_URL }]);
+  // Доске нужна вся ширина: меню свёрнуто до значков, как его сворачивает сам человек
+  await context.addCookies([
+    { name: "auth_session", value: await seal(session, E2E_COOKIE_SECRET), url: E2E_BASE_URL },
+    { name: "cabinet-navigation-expanded", value: "0", url: E2E_BASE_URL },
+  ]);
 });
 
 /** «Твоё первое приложение» в старом виде (этапы и программа): из него собирается сценарий, как при переводе на сценарии. */
@@ -86,15 +91,15 @@ async function openBoard(page: Page, id: string) {
   return board;
 }
 
-/** Узкая полоса меню «Студии»: только значки разделов, одинаковой ширины на всех вкладках. */
+/** Свёрнутое меню: только значки разделов, одинаковой ширины на всех вкладках. */
 const NARROW_NAVIGATION_MAX_WIDTH = 80;
 const navigation = (page: Page) => page.getByRole("navigation", { name: "Разделы кабинета" });
 const navigationBox = async (page: Page) => (await navigation(page).boundingBox())!;
-/** Панель «Рабочая область» отстоит от низа окна на рамку «Студии» (`--yk-space-4` под панелью), не больше. */
-const STUDIO_FRAME_GAP = 16;
-/** Верх холста: под шапкой «Студии» и компактной шапкой редактора, без полей страницы. */
+/** Рабочая область отстоит от низа окна на рамку оболочки (`--yk-space-5` под панелью), не больше. */
+const SHELL_FRAME_GAP = 20;
+/** Верх холста: под отступом оболочки и компактной шапкой редактора, без полей страницы. */
 const CANVAS_MAX_TOP = 185;
-const workAreaBox = async (page: Page) => (await page.getByRole("region", { name: "Рабочая область" }).boundingBox())!;
+const workAreaBox = async (page: Page) => (await page.getByRole("main").boundingBox())!;
 
 const canvasBox = async (board: ReturnType<Page["getByRole"]>) => (await board.getByRole("application").boundingBox())!;
 const canvasSize = (box: { width: number; height: number }) => `${Math.round(box.width)}×${Math.round(box.height)}`;
@@ -114,10 +119,8 @@ async function settledCanvasSize(board: ReturnType<Page["getByRole"]>): Promise<
   return last;
 }
 
-for (const size of [
-  { width: 1440, height: 900 },
-  { width: 1920, height: 1080 },
-]) {
+// Одна ширина: проверки доли окна не меняются от размера, второй проход лишь повторял бы сценарий
+for (const size of [{ width: 1440, height: 900 }]) {
   test(`доска занимает окно ${size.width}×${size.height}`, async ({ page }) => {
     test.setTimeout(180_000);
     await page.setViewportSize(size);
@@ -139,15 +142,15 @@ for (const size of [
     }
 
     // Меню — узкая полоса со значками всех разделов, доска начинается сразу за ней
-    await expect(navigation(page).getByRole("link", { name: "Настройки", exact: true })).toBeVisible();
+    await expect(navigation(page).getByRole("link", { name: "База знаний", exact: true })).toBeVisible();
     const nav = await navigationBox(page);
     expect(nav.width).toBeLessThanOrEqual(NARROW_NAVIGATION_MAX_WIDTH);
     expect(box.x - (nav.x + nav.width)).toBeLessThan(32);
-    // Внутри рабочей области у доски нет полей: холст доходит до её низа, а под ней только рамка «Студии»
+    // Внутри рабочей области у доски нет полей: холст доходит до её низа, а под ней только рамка оболочки
     const workArea = await workAreaBox(page);
     expect(workArea.y + workArea.height - (box.y + box.height)).toBeLessThan(4);
-    expect(size.height - (workArea.y + workArea.height)).toBeLessThanOrEqual(STUDIO_FRAME_GAP);
-    // Сверху только шапка «Студии» и компактная шапка редактора (как в first-app-simplified); по ширине граф рядом с правой панелью доски — больше половины окна
+    expect(size.height - (workArea.y + workArea.height)).toBeLessThanOrEqual(SHELL_FRAME_GAP);
+    // Сверху только отступ оболочки и компактная шапка редактора (как в first-app-simplified); по ширине граф рядом с правой панелью доски — больше половины окна
     expect(box.y).toBeLessThan(CANVAS_MAX_TOP);
     expect(box.width).toBeGreaterThan(size.width * 0.55);
   });
@@ -161,13 +164,13 @@ test("меню одной ширины на всех вкладках: «Сце�
   const canvas = await settledCanvasSize(board);
   expect(onBoard.width).toBeLessThanOrEqual(NARROW_NAVIGATION_MAX_WIDTH);
 
-  await page.getByRole("tab", { name: "Настройки" }).click();
+  await openTab(page, "Настройки");
   await expect(page.getByRole("tab", { name: "Настройки" })).toHaveAttribute("aria-selected", "true");
   expect((await navigationBox(page)).width).toBe(onBoard.width);
-  await expect(navigation(page).getByRole("link", { name: "Настройки", exact: true })).toBeVisible();
+  await expect(navigation(page).getByRole("link", { name: "База знаний", exact: true })).toBeVisible();
 
   // Другая вкладка и обратно: ни меню, ни доска не меняют размер
-  await page.getByRole("tab", { name: "Сценарий" }).click();
+  await openTab(page, "Сценарий");
   await expect(board.getByRole("application")).toBeVisible();
   expect((await navigationBox(page)).width).toBe(onBoard.width);
   expect(await settledCanvasSize(board)).toBe(canvas);

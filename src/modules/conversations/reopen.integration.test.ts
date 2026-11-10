@@ -180,6 +180,71 @@ describe("вернулся в брошенный разговор", () => {
     expect(await lastInbound()).toMatchObject({ route: "inbox", autoreply: true });
   });
 
+  it("после разговора эксперт ответил из «Входящих» — следующее сообщение идёт эксперту, не консультанту", async () => {
+    const ended = await abandon();
+    kit.clock.advance(DAY);
+    await database.db.insert(outboundMessages).values({
+      botId: kit.bot.id,
+      personId: ended.personId,
+      kind: "manual_reply",
+      text: "Добрый день! Я на связи",
+      status: "sent",
+      sentAt: kit.clock.now(),
+      idempotencyKey: `manual-${randomUUID()}`,
+    });
+    kit.clock.advance(DAY);
+    const callsBefore = kit.consultantCalls().length;
+
+    await say("Спасибо, а можно подробнее?");
+
+    expect(await passages()).toEqual([expect.objectContaining({ id: ended.id, status: "not_completed" })]);
+    expect(await lastInbound()).toMatchObject({ route: "inbox" });
+    expect(kit.consultantCalls()).toHaveLength(callsBefore);
+  });
+
+  it("ответ эксперта ещё в очереди — человек всё равно пишет эксперту", async () => {
+    const ended = await abandon();
+    kit.clock.advance(DAY);
+    await database.db.insert(outboundMessages).values({
+      botId: kit.bot.id,
+      personId: ended.personId,
+      kind: "manual_reply",
+      text: "Сейчас отвечу подробно",
+      idempotencyKey: `manual-${randomUUID()}`,
+    });
+
+    await say("Жду");
+
+    expect(await passages()).toEqual([expect.objectContaining({ id: ended.id, status: "not_completed" })]);
+    expect(await lastInbound()).toMatchObject({ route: "inbox" });
+  });
+
+  it("эксперт отвечал ещё до конца разговора — вернувшийся продолжает тот же разговор", async () => {
+    const lead = await kit.publish({ firstMessage: FIRST_MESSAGE }, giveUpAfter(3));
+    await kit.send(person, `/start ${lead.code}`, { startCode: lead.code });
+    await kit.runDue();
+    const ownerId = (await kit.personOf(person))!.id;
+    await database.db.insert(outboundMessages).values({
+      botId: kit.bot.id,
+      personId: ownerId,
+      kind: "manual_reply",
+      text: "Добро пожаловать!",
+      status: "sent",
+      sentAt: kit.clock.now(),
+      idempotencyKey: `manual-${randomUUID()}`,
+    });
+    kit.clock.advance(MINUTE);
+    await say("Привет, я дизайнер");
+    await walk(later(3 * DAY + 2 * 60 * MINUTE));
+    const [ended] = await passages();
+    expect(ended).toMatchObject({ status: "not_completed" });
+    kit.clock.advance(DAY);
+
+    await say("Я вернулся");
+
+    expect(await lastInbound()).toMatchObject({ route: "passage", passageId: ended!.id });
+  });
+
   it("срок программы уже вышел — сценарий не открывается: «Входящие» с автоответом", async () => {
     // Программа 3 дня с 12 октября; разговор закончен своей причиной приложения 13-го, человек вернулся 16-го —
     // меньше недели, но программа кончилась

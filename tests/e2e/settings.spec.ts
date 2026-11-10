@@ -84,4 +84,9 @@ test("эксперт задаёт лимит и бюджет, видит пре�
   await expect(page.getByTestId("month-spending")).toContainText("из $1.00");
   await page.getByRole("button", { name: "Вижу" }).click();
   await expect(page.getByRole("button", { name: "Вижу" })).toBeHidden();
+
+  // Новая правка ещё не сохранена: «Сохранено» больше не обещает, что на экране то, что в базе
+  await expect(page.getByText("Сохранено")).toBeVisible();
+  await page.getByLabel("Дневной лимит на человека, $").fill("7");
+  await expect(page.getByText("Сохранено")).toBeHidden();
 });

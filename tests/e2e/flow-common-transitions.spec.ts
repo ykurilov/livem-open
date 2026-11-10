@@ -4,6 +4,7 @@ import { leadMagnetToFlow } from "../../src/modules/flows/settings-to-flow";
 import { createLeadMagnet, getLeadMagnet, saveDraft } from "../../src/modules/lead-magnets";
 import { connectDatabase, type DatabaseConnection } from "../../src/modules/platform/db";
 import { E2E_BASE_URL, E2E_COOKIE_SECRET, E2E_EMAIL, e2eDatabaseUrl } from "./e2e-env";
+import { openConstructor, openTab } from "./open-tab";
 
 let connection: DatabaseConnection;
 test.beforeAll(() => { connection = connectDatabase(e2eDatabaseUrl(), { poolSize: 2 }); });
@@ -58,6 +59,14 @@ for (const width of [1440, 390]) test(`SDK121: compact ${width}px, правил�
   }
   await page.screenshot({ path: test.info().outputPath(`sdk076-canvas-${width}.png`) });
   const panel = await common(page, board);
+  if (width === 390) {
+    // На телефоне зависит от экрана только путь к панели (через «Ещё действия») и вёрстка; правка и сохранение — на компьютере
+    await panel.getByRole("button", { name: "Знакомство", exact: true }).click();
+    await expect(panel.locator('[data-exit-card="common_help"]')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath(`sdk076-common-${width}.png`) });
+    return;
+  }
   await panel.getByRole("button", { name: "Знакомство", exact: true }).click();
   const rule = panel.locator('[data-exit-card="common_help"]');
   await rule.getByRole("textbox", { name: "Когда", exact: true }).fill("Человек явно просит вернуться к идее");
@@ -108,7 +117,7 @@ test("SDK121: замечание открывает общие переходы 
   const panel = await common(page, board);
   await panel.locator('[data-exit-card="common_help"]').getByRole("textbox", { name: "Когда", exact: true }).fill("");
   await board.getByRole("button", { name: "Скрыть панель «Сценарий»", exact: true }).click();
-  await board.getByRole("button", { name: "Проверить граф" }).click();
+  await board.getByRole("button", { name: "Проверить схему" }).click();
   const checks = board.getByRole("region", { name: "Проверка", exact: true });
   await checks.getByRole("button").filter({ hasText: /условие|пуст/i }).first().click();
   const rule = board.locator('[data-exit-card="common_help"]');
@@ -131,11 +140,10 @@ test("SDK121: readOnly позволяет просмотр общих прави
     else await route.continue();
   });
   try {
-    await page.getByRole("tab", { name: "Разговор", exact: true }).click();
-    const constructor = page.getByRole("region", { name: "Конструктор", exact: true });
+    const constructor = await openConstructor(page);
     const input = constructor.getByRole("textbox");
     await input.fill("Проверь сценарий"); await input.press("Enter");
-    await page.getByRole("tab", { name: "Сценарий", exact: true }).click();
+    await openTab(page, "Сценарий");
     await expect(board.getByText("Только просмотр")).toBeVisible();
     const panel = await common(page, board);
     await expect(panel.getByRole("textbox", { name: "Когда", exact: true })).toBeDisabled();

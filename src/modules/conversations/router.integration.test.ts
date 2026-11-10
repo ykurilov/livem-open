@@ -113,16 +113,19 @@ describe("маршрутизация входящих", () => {
     expect(kit.textsTo(person).at(-1)).toContain("Второй лидмагнит");
   });
 
-  it("та же ссылка посреди разговора — разговор продолжается, первое сообщение не повторяется", async () => {
-    const lead = await kit.publish();
+  it("та же ссылка посреди разговора — разговор продолжается, человеку повторяется последнее сообщение консультанта, а не первое", async () => {
+    const lead = await kit.publish({ firstMessage: "Здравствуйте! Что у вас за бизнес?" });
     await start(lead.code);
     await say("Я дизайнер");
-    const sent = kit.textsTo(person).length;
+    const sent = kit.textsTo(person);
+    const calls = kit.calls.length;
 
     await start(lead.code);
 
     expect(await kit.passagesOf(person)).toHaveLength(1);
-    expect(kit.textsTo(person)).toHaveLength(sent);
+    expect(kit.textsTo(person)).toEqual([...sent, sent.at(-1)]);
+    expect(sent.at(-1)).not.toContain("Что у вас за бизнес?");
+    expect(kit.calls).toHaveLength(calls);
     expect((await kit.inboundOf(person)).at(-1)!.route).toBe("ignored");
   });
 
@@ -217,8 +220,46 @@ describe("маршрутизация входящих", () => {
       expect((await kit.passagesOf(person))[0]!.programStartDate).toBeNull();
     });
 
+    it("временный сбой закрепления за сценарием — задача повторяется, начало программы не сдвигается, первое сообщение одно", async () => {
+      const lead = await kit.publish(programSettings());
+      const startedAt = kit.clock.now().getTime();
+      const flow = kit.dialog.flow;
+      const adopt = flow.adopt.bind(flow);
+      let failures = 1;
+      flow.adopt = async (input) => {
+        if (failures-- > 0) throw new Error("Connection terminated unexpectedly");
+        return adopt(input);
+      };
+
+      await expect(start(lead.code)).rejects.toThrow(/Connection terminated/);
+      const [passage] = await kit.passagesOf(person);
+      expect(await flow.readRun(passage!.personId, passage!.chatId)).toBeNull();
+
+      // Очередь повторяет задачу позже
+      kit.clock.advance(60_000);
+      const [inbound] = await kit.inboundOf(person);
+      await kit.queue.enqueue("inbound-route", { inboundMessageId: inbound!.id });
+      await kit.drain();
+
+      expect((await flow.readRun(passage!.personId, passage!.chatId))?.startedAt).toBe(startedAt);
+      expect(kit.textsTo(person)).toHaveLength(1);
+    });
+
+    it("сценарий снимка с ошибкой — повтор не поможет: разговор начинается без сценария, задача не падает", async () => {
+      const lead = await kit.publish(programSettings());
+      const flow = kit.dialog.flow;
+      flow.adopt = async () => {
+        throw new Error("[сценарий] lead@version с ошибками, чат идёт без сценария: нет старта");
+      };
+
+      await start(lead.code);
+
+      expect((await kit.passagesOf(person))[0]).toMatchObject({ status: "active" });
+      expect(kit.textsTo(person)).toHaveLength(1);
+    });
+
     it.each(["completed", "term_ended", "blocked"] as const)(
-      "ссылка лидмагнита, чья программа закончилась (%s), программу заново не начинает: сообщение во «Входящие»",
+      "ссылка лидмагнита, чья программа закончилась (%s), программу заново не начинает: сообщение во «Входящие», автоответ раз в сутки",
       async (status) => {
         const lead = await kit.publish(programSettings());
         await start(lead.code);
@@ -226,9 +267,11 @@ describe("маршрутизация входящих", () => {
         const sent = kit.textsTo(person).length;
 
         await start(lead.code);
+        await start(lead.code);
 
         expect(await kit.passagesOf(person)).toHaveLength(1);
-        expect(kit.textsTo(person)).toHaveLength(sent);
+        expect(kit.textsTo(person).slice(sent)).toEqual([AUTOREPLY_TEXT]);
+        expect(kit.calls).toHaveLength(0);
         expect((await kit.inboundOf(person)).at(-1)).toMatchObject({ route: "inbox", startedPassage: false });
       },
     );

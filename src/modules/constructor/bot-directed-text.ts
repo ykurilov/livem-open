@@ -26,6 +26,14 @@ const TO_SOMEONE = new RegExp(
   "u",
 );
 
+// Первое сообщение часто обращается к человеку на «ты» («Скажи, чем занимаешься?», «Напомни, как зовут?»): там узнаются
+// только глаголы приветствия, обращённые к боту, и «если человек».
+const GREETING_VERBS = ["поздоровайся", "поприветствуй", "представься"];
+const GREETING_DIRECTION = new RegExp(
+  `${SENTENCE_START}((?:(?:${MANNER.join("|")})\\s+)*(?:${GREETING_VERBS.join("|")})${NOT_LETTER})|(если человек${NOT_LETTER})`,
+  "iu",
+);
+
 const AFTER_I = new RegExp(String.raw`(?<![а-яё])[Яя]\s+(?:всё\s+|все\s+)?${VERB}${NOT_LETTER}`, "u");
 
 /** «Передал Кириллу», «Всё передал эксперту», «Я передам» — помощник будто передаёт что-то эксперту; `null` — нет. */
@@ -35,7 +43,15 @@ export function assistantHandoffIn(text: string): string | null {
 
 /** Указание консультанту в тексте для человека — его начало («Коротко попрощайся»); `null` — указаний нет. */
 export function botDirectionIn(text: string): string | null {
-  const match = DIRECTION.exec(text);
+  return directionStart(DIRECTION.exec(text));
+}
+
+/** Указание консультанту в первом сообщении («Поздоровайся», «Если человек»); `null` — указаний нет. */
+export function greetingDirectionIn(text: string): string | null {
+  return directionStart(GREETING_DIRECTION.exec(text));
+}
+
+function directionStart(match: RegExpExecArray | null): string | null {
   if (!match) return null;
   const found = (match[1] ?? match[2])!;
   return found.charAt(0).toUpperCase() + found.slice(1);

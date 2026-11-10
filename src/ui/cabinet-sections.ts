@@ -1,5 +1,5 @@
 import type { Icon as CabinetIcon } from "@phosphor-icons/react";
-import { RobotIcon as Bot, TrayIcon as Inbox, ListChecksIcon as ListChecks, MagnetIcon as Magnet, PaperPlaneTiltIcon as Send, GearIcon as Settings, ImageIcon as Picture, UsersIcon as Users, VideoCameraIcon as Video } from "@phosphor-icons/react/dist/ssr";
+import { TrayIcon as Inbox, MagnetIcon as Magnet, PaperPlaneTiltIcon as Send, GearIcon as Settings, BooksIcon as Knowledge, UsersIcon as Users } from "@phosphor-icons/react/dist/ssr";
 
 export interface CabinetSection {
   href: string;
@@ -8,22 +8,61 @@ export interface CabinetSection {
   icon: CabinetIcon;
   /** Что открывается на этом экране — для заглушек, пока экран не сделан. */
   purpose: string;
+  /** Вкладки раздела: пункт меню подсвечен на любой из них и на вложенных страницах. Нет вкладок — только `href`. */
+  tabs?: SectionTab[];
 }
+
+export interface SectionTab {
+  href: string;
+  label: string;
+}
+
+export const PEOPLE_TABS: SectionTab[] = [
+  { href: "/people", label: "Список" },
+  { href: "/fields", label: "Что запоминает агент" },
+];
+
+export const KNOWLEDGE_TABS: SectionTab[] = [
+  { href: "/knowledge", label: "Тексты" },
+  { href: "/videos", label: "Видео" },
+  { href: "/images", label: "Картинки" },
+];
+
+export const SETTINGS_TABS: SectionTab[] = [
+  { href: "/settings", label: "Общие" },
+  { href: "/bots", label: "Боты" },
+];
+
+export const SETTINGS_SECTION: CabinetSection = {
+  href: "/settings",
+  title: "Настройки",
+  icon: Settings,
+  purpose: "Боты, лимиты, бюджет, напоминания, политика конфиденциальности.",
+  tabs: SETTINGS_TABS,
+};
 
 /** Разделы кабинета в порядке бокового меню. */
 export const CABINET_SECTIONS: CabinetSection[] = [
   { href: "/", title: "Лидмагниты", icon: Magnet, purpose: "Карточки лидмагнитов и кнопка «Создать»." },
-  { href: "/bots", title: "Боты", icon: Bot, purpose: "Подключение ботов Telegram, ВКонтакте и Max." },
-  { href: "/people", title: "База", icon: Users, purpose: "Люди, которые прошли через ваши лидмагниты." },
-  { href: "/fields", title: "Поля базы", icon: ListChecks, purpose: "Что консультант запоминает о людях." },
-  { href: "/videos", title: "Видео", icon: Video, purpose: "Архив роликов, которые консультант может присылать." },
-  { href: "/images", title: "Картинки", icon: Picture, purpose: "Архив картинок и скриншотов, которые консультант может показывать." },
-  { href: "/mailings", title: "Рассылки", icon: Send, purpose: "Сообщения людям из базы." },
   { href: "/inbox", title: "Входящие", icon: Inbox, purpose: "Сообщения, на которые консультант не отвечал." },
-  { href: "/settings", title: "Настройки", icon: Settings, purpose: "Лимиты, бюджет, напоминания, политика конфиденциальности." },
+  { href: "/people", title: "Люди", icon: Users, purpose: "Люди, которые прошли через ваши лидмагниты, и что о них запоминает агент.", tabs: PEOPLE_TABS },
+  { href: "/mailings", title: "Рассылки", icon: Send, purpose: "Сообщения людям." },
+  {
+    href: "/knowledge",
+    title: "База знаний",
+    icon: Knowledge,
+    purpose: "Тексты, на которые консультант опирается в ответах, а также ролики и картинки, которые он может присылать.",
+    tabs: KNOWLEDGE_TABS,
+  },
+  SETTINGS_SECTION,
 ];
 
 export function isSectionActive(section: CabinetSection, pathname: string): boolean {
   if (section.href === "/") return pathname === "/" || pathname.startsWith("/lead-magnets");
-  return pathname === section.href || pathname.startsWith(`${section.href}/`);
+  return (section.tabs?.map((tab) => tab.href) ?? [section.href]).some((href) => isUnder(href, pathname));
+}
+
+/** Адрес — эта страница или вложенная в неё: `/people/42` под `/people`, а `/people-extra` — нет. */
+export function isUnder(href: string, pathname: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
 }

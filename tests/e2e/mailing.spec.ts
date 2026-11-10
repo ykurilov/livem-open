@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { basename } from "node:path";
 import { expect, test } from "@playwright/test";
 import { and, eq, isNull } from "drizzle-orm";
 import { seal } from "../../src/auth/core/cookie-seal";
@@ -62,31 +63,51 @@ test("эксперт создаёт рассылку, присылает себ�
   await page.getByRole("link", { name: "Новая рассылка" }).click();
   await expect(page).toHaveURL(/\/mailings\/new/);
 
+  // Ключ повтора — на одно открытие формы: перерисовка страницы его не меняет, и повтор после потерянного ответа не заведёт вторую рассылку
+  const requestId = () => page.locator('input[name="requestId"]').inputValue();
+  const openedRequestId = await requestId();
   await page.getByRole("combobox", { name: "Бот" }).selectOption({ label: bot!.title });
   await page.getByRole("button", { name: "Показать" }).click();
+  await expect(page).toHaveURL(/\/mailings\/new\?bot=/);
   await expect(page.getByTestId("recipient-count")).toHaveText("Получателей: 2");
+  expect(await requestId()).toBe(openedRequestId);
+
+  // Пустой текст ловит сама форма: своя ошибка у поля, рассылка не уходит
+  await expect(page.getByTestId("recipients-phrase")).toHaveText("Уйдёт 2 людям");
+  await page.getByRole("button", { name: "Отправить сейчас" }).click();
+  await expect(page.getByText("Напишите текст рассылки")).toBeVisible();
+  await expect(page.getByLabel("Текст")).toBeFocused();
+  await expect(page).toHaveURL(/\/mailings\/new/);
 
   const text = `Завтра эфир ${tag}: https://example.com/live`;
   await page.getByLabel("Текст").fill(text);
-  // После неудачной отправки форма сбрасывает выбранный файл — подпись не врёт, что он ещё прикреплён
+  // Неудачная отправка не стирает набранное: текст и выбранная картинка остаются для повтора
   const tinyPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
+  // Картинку больше предела сервер не примет: ошибка у поля сразу, а не экран сбоя после отправки
+  await page.getByLabel("Картинка").setInputFiles({ name: "огромная.png", mimeType: "image/png", buffer: Buffer.alloc(10 * 1024 * 1024 + 1) });
+  await expect(page.getByRole("alert").filter({ hasText: "Картинка больше 10 МБ" })).toBeVisible();
+  await expect(page.getByText("Файл не выбран")).toBeVisible();
   await page.getByLabel("Картинка").setInputFiles({ name: "обложка.png", mimeType: "image/png", buffer: tinyPng });
   await expect(page.getByText("обложка.png")).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "Картинка больше 10 МБ" })).toHaveCount(0);
   await page.getByRole("button", { name: "Отправить себе" }).click();
   await expect(page.getByText("Выберите, кому прислать пробу")).toBeVisible();
-  await expect(page.getByText("Файл не выбран")).toBeVisible();
-  expect(await page.getByLabel("Картинка").evaluate((input: HTMLInputElement) => input.files?.length ?? 0)).toBe(0);
-  await page.getByLabel("Текст").fill(text);
-  // В базе e2e много людей: себя эксперт находит поиском по имени
-  await page.getByLabel("Найти себя").fill(myName);
-  await page.getByLabel("Найти себя").press("Enter");
-  // Поиск срабатывает с задержкой, и список может обновиться прямо под курсором: выбор повторяется, пока не встанет
+  await expect(page.getByLabel("Текст")).toHaveValue(text);
+  await expect(page.getByText("обложка.png")).toBeVisible();
+  expect(await page.getByLabel("Картинка").evaluate((input: HTMLInputElement) => input.files?.length ?? 0)).toBe(1);
+  // В базе e2e много людей: себя эксперт находит поиском по имени в том же поле
   const tester = page.getByRole("combobox", { name: "Кому прислать пробу" });
+  await tester.fill(myName);
+  // Enter в поле выбора не отправляет форму
+  await tester.press("Enter");
+  await expect(page).toHaveURL(/\/mailings\/new/);
+  // Поиск срабатывает с задержкой, и список может обновиться прямо под курсором: выбор повторяется, пока не встанет
   await expect(async () => {
-    await tester.selectOption(me!.id);
-    await expect(tester).toHaveValue(me!.id, { timeout: 1_000 });
+    await tester.click();
+    await tester.fill(myName);
+    await page.getByRole("option", { name: new RegExp(myName) }).click({ timeout: 2_000 });
+    await expect(page.locator('input[name="testPersonId"]')).toHaveValue(me!.id, { timeout: 1_000 });
   }).toPass({ timeout: 20_000 });
-  await page.getByLabel("Картинка").setInputFiles({ name: "обложка.png", mimeType: "image/png", buffer: tinyPng });
   await page.getByRole("button", { name: "Отправить себе" }).click();
 
   // Сохранение, постановка пробы в очередь и первая сборка страницы рассылки под нагрузкой бывают дольше 5 секунд
@@ -111,12 +132,52 @@ test("эксперт создаёт рассылку, присылает себ�
   await expect(page.getByLabel("Текст")).toHaveValue(text);
   await expect(page.getByTestId("recipient-count")).toHaveText("Получателей: 2");
 
-  expect((await db.select().from(mailings).where(eq(mailings.id, mailingId)))[0]?.imagePath).toBeTruthy();
+  const savedMailing = async () => (await db.select().from(mailings).where(eq(mailings.id, mailingId)))[0];
+
+  // «Сбросить» в черновике с ограничением — это вся база, а не возврат к сохранённому фильтру
+  const botSelect = page.getByRole("combobox", { name: "Бот" });
+  await page.getByRole("button", { name: "Сбросить" }).click();
+  await expect(page).toHaveURL(/all=1/);
+  await expect(botSelect).toHaveValue("any");
+  await page.getByRole("button", { name: "Сохранить черновик" }).click();
+  await expect(page).toHaveURL(/done=save/, { timeout: 30_000 });
+  await expect(botSelect).toHaveValue("any");
+  expect((await savedMailing())?.filter).not.toHaveProperty("botIds");
+  // Выбор в «Кому» без «Показать» не применён: рассылка не уходит по прежней выборке
+  await botSelect.selectOption({ label: bot!.title });
+  await expect(page.getByText("Выбор в «Кому» ещё не применён")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Отправить сейчас/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Запланировать" })).toBeDisabled();
+  // «Сбросить» при том же адресе убирает и неприменённый выбор
+  await page.getByRole("button", { name: "Сбросить" }).click();
+  await expect(botSelect).toHaveValue("any");
+  await expect(page.getByText("Выбор в «Кому» ещё не применён")).toBeHidden();
+  await botSelect.selectOption({ label: bot!.title });
+  await page.getByRole("button", { name: "Показать" }).click();
+  await expect(page.getByText("Выбор в «Кому» ещё не применён")).toBeHidden();
+  await expect(page.getByTestId("recipient-count")).toHaveText("Получателей: 2");
+
+  // Новая картинка снимает «Убрать»: иначе следующее сохранение удалило бы её
+  const firstImage = (await savedMailing())?.imagePath;
+  expect(firstImage).toBeTruthy();
   const removeImage = page.getByRole("checkbox", { name: /Убрать прикреплённую картинку/ });
+  await removeImage.check();
+  await page.getByLabel("Картинка").setInputFiles({ name: "вторая.png", mimeType: "image/png", buffer: tinyPng });
+  await expect(removeImage).not.toBeChecked();
+  await page.getByRole("button", { name: "Сохранить черновик" }).click();
+  await expect.poll(async () => (await savedMailing())?.imagePath, { timeout: 30_000 }).not.toBe(firstImage);
+  const secondImage = (await savedMailing())?.imagePath;
+  expect(secondImage).toBeTruthy();
+  // База обновилась раньше страницы: дальше — когда форма покажет новую картинку
+  await expect(removeImage).toHaveAccessibleName(new RegExp(basename(secondImage!)));
+  await expect(page.getByTestId("recipient-count")).toHaveText("Получателей: 2");
+  await expect(removeImage).not.toBeChecked();
+
   await removeImage.check();
   await expect(removeImage).toBeChecked();
   await page.getByLabel("Время по Москве").fill(tomorrowAt18Msk());
-  await page.getByRole("button", { name: "Запланировать" }).click();
+  // Enter во времени — «Запланировать», а не проба первой кнопкой формы
+  await page.getByLabel("Время по Москве").press("Enter");
   await expect(page.getByTestId("mailing-status")).toHaveText("Запланирована");
   await expect(page.getByText(/Уйдёт .* по Москве/)).toBeVisible();
   expect((await db.select().from(mailings).where(eq(mailings.id, mailingId)))[0]?.imagePath).toBeNull();
