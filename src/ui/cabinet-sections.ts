@@ -41,7 +41,7 @@ export const SETTINGS_SECTION: CabinetSection = {
   tabs: SETTINGS_TABS,
 };
 
-/** Разделы кабинета в порядке бокового меню. */
+/** Разделы кабинета в порядке бокового меню. Настройки сюда не входят: их открывает шестерёнка внизу панели и пункт меню аккаунта. */
 export const CABINET_SECTIONS: CabinetSection[] = [
   { href: "/", title: "Лидмагниты", icon: Magnet, purpose: "Карточки лидмагнитов и кнопка «Создать»." },
   { href: "/inbox", title: "Входящие", icon: Inbox, purpose: "Сообщения, на которые консультант не отвечал." },
@@ -54,7 +54,6 @@ export const CABINET_SECTIONS: CabinetSection[] = [
     purpose: "Тексты, на которые консультант опирается в ответах, а также ролики и картинки, которые он может присылать.",
     tabs: KNOWLEDGE_TABS,
   },
-  SETTINGS_SECTION,
 ];
 
 export function isSectionActive(section: CabinetSection, pathname: string): boolean {

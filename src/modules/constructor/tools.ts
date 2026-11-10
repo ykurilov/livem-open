@@ -202,12 +202,26 @@ function editFlow(flow: AgentFlow, edit: (json: Json & { states: Json[] }) => vo
   return reparsed(json);
 }
 
+/**
+ * Касания разговора при «Днях и времени» без своих касаний: приложение подставило бы касания программы, и касания
+ * конструктора не действовали бы и не были бы видны в «Днях и времени». Место касаний он выбирает сам.
+ */
+function checkNudgesPlace(json: Json): void {
+  const schedule = json.schedule;
+  if (typeof schedule !== "object" || schedule === null || "nudges" in schedule || json.nudges === undefined) return;
+  throw new ChangeRejected(
+    "«flow.nudges»: при «Днях и времени» общие касания задаются в «flow.schedule.nudges», а nudges сценария действуют только без «Дней и времени»",
+  );
+}
+
 function applyFlowChange(flow: AgentFlow, item: Change): AgentFlow {
   switch (item.op) {
     case "put_flow": {
       // Служебное — из текущего сценария: «Общее» правится своей операцией, раскладку двигает эксперт на доске.
       // Карточка клиента без clientCard — прежняя: поля заводят create_field и attach_field, а не сценарий
-      const next = reparsed(completeFlowJson({ clientCard: flow.clientCard, ...jsonOf(item.flow, "Сценарий") }, flow));
+      const json = jsonOf(item.flow, "Сценарий");
+      checkNudgesPlace(json);
+      const next = reparsed(completeFlowJson({ clientCard: flow.clientCard, ...json }, flow));
       const ids = new Set(next.states.map((state) => state.id));
       const layout = Object.fromEntries(Object.entries(flow.layout).filter(([id]) => ids.has(id)));
       return { ...next, id: flow.id, name: flow.name, common: flow.common, layout };

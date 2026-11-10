@@ -148,6 +148,12 @@ function Message({ message }: { message: InboxMessage }) {
   return (
     <AgentMessage side={message.direction === "in" ? "user" : "agent"} className="whitespace-pre-wrap">
       {author ? <span className="block text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">{author}{message.failed ? ` · не доставлено${message.failureReason ? `: ${message.failureReason}` : ""}` : ""}</span> : null}
+      {message.warning ? (
+        <span className="my-1 flex flex-wrap items-center gap-1 text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">
+          <Badge variant="warm">Без картинки</Badge>
+          {message.warning}
+        </span>
+      ) : null}
       {message.image ? <MessageImage image={message.image} {...(message.direction === "in" ? CLIENT_PHOTO : SENT_IMAGE)} /> : null}
       {message.video ? <VideoLink video={message.video} /> : message.text}
       <span className="block text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">{timeFormat.format(message.at)}</span>

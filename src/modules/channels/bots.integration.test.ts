@@ -10,6 +10,8 @@ import { FakeChannel } from "./fake";
 import { createTelegramAdapter } from "./telegram/adapter";
 import { FakeTelegramApi, getUpdatesConflict, telegramError, webhookInfo } from "./telegram/fake-telegram-api";
 import { bots, outboundMessages } from "./schema";
+import { createVkAdapter } from "./vk/adapter";
+import { FakeVkApi } from "./vk/fake-vk-api";
 
 const cipher = createTokenCipher(Buffer.alloc(32, 3).toString("base64"));
 const PUBLIC_BASE_URL = "https://livem.test";
@@ -444,10 +446,75 @@ describe("список ботов и данные для отправки", () =
       externalId: "ext-fake-alpha",
       username: "bot_alpha",
       webhookSecret: (await allBots())[0]?.webhookSecret,
+      canSendPhotos: true,
     });
   });
 
   it("loadBotCredentials: бота нет — null", async () => {
     expect(await service.loadBotCredentials("00000000-0000-4000-8000-000000000000")).toBeNull();
+  });
+});
+
+describe("бот ВКонтакте и право «Фотографии»", () => {
+  const WITHOUT_PHOTOS = { status: 200, body: { response: { mask: 262144 + 4096, permissions: [] } } };
+  let vkApi: FakeVkApi;
+  const vkService = () =>
+    createBotService({
+      db: database.db,
+      adapters: { vk: createVkAdapter({ apiBaseUrl: "https://vk-api.test", fetch: vkApi.fetch }) },
+      cipher,
+      alerts,
+      queue,
+      publicBaseUrl: PUBLIC_BASE_URL,
+    });
+
+  beforeEach(() => {
+    vkApi = new FakeVkApi();
+  });
+
+  it("ключ без права «Фотографии» — бот подключается и помечен как без картинок", async () => {
+    vkApi.replyOnce("groups.getTokenPermissions", WITHOUT_PHOTOS);
+    const result = await vkService().connectBot({ channel: "vk", token: "vk1.a.no-photos" });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.bot).toMatchObject({ status: "ok", canSendPhotos: false });
+    expect((await allBots())[0]?.canSendPhotos).toBe(false);
+  });
+
+  it("ключ со всеми правами — бот присылает картинки", async () => {
+    const result = await vkService().connectBot({ channel: "vk", token: "vk1.a.all-rights" });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.bot.canSendPhotos).toBe(true);
+  });
+
+  it("новый ключ с правом «Фотографии» для работающего бота: та же запись, ключ заменён, пометка снята", async () => {
+    vkApi.replyOnce("groups.getTokenPermissions", WITHOUT_PHOTOS);
+    const first = await vkService().connectBot({ channel: "vk", token: "vk1.a.no-photos" });
+    if (!first.ok) throw new Error(first.error);
+
+    const replaced = await vkService().replaceBotToken(first.bot.id, "vk1.a.all-rights");
+    expect(replaced).toEqual({ ok: true });
+    const rows = await allBots();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: first.bot.id, canSendPhotos: true, status: "ok" });
+    expect(cipher.decrypt(rows[0]!.tokenEncrypted)).toBe("vk1.a.all-rights");
+  });
+
+  it("новый ключ через окно подключения тоже заменяет ключ работающего бота", async () => {
+    vkApi.replyOnce("groups.getTokenPermissions", WITHOUT_PHOTOS);
+    const first = await vkService().connectBot({ channel: "vk", token: "vk1.a.no-photos" });
+    if (!first.ok) throw new Error(first.error);
+    const second = await vkService().connectBot({ channel: "vk", token: "vk1.a.all-rights" });
+    if (!second.ok) throw new Error(second.error);
+    expect(second.bot).toMatchObject({ id: first.bot.id, canSendPhotos: true });
+    expect(await allBots()).toHaveLength(1);
+  });
+
+  it("ключ другого сообщества бота не заменяет", async () => {
+    const first = await vkService().connectBot({ channel: "vk", token: "vk1.a.all-rights" });
+    if (!first.ok) throw new Error(first.error);
+    vkApi.replyOnce("groups.getById", { status: 200, body: { response: { groups: [{ id: 999, name: "Чужое", screen_name: "other" }] } } });
+    const replaced = await vkService().replaceBotToken(first.bot.id, "vk1.a.other-group");
+    expect(replaced).toEqual({ ok: false, error: "Это ключ другого сообщества: создайте ключ в сообществе этого бота" });
+    expect(cipher.decrypt((await allBots())[0]!.tokenEncrypted)).toBe("vk1.a.all-rights");
   });
 });

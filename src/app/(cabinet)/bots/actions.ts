@@ -59,6 +59,21 @@ export async function saveNoCodeAction(botId: string, _previous: BotSettingsStat
   return { saved: true };
 }
 
+/** Новый ключ бота ВК — так боту добавляют право «Фотографии». У нового ключа его тоже нет — эксперт узнаёт сразу. */
+export async function replaceBotTokenAction(botId: string, _previous: BotSettingsState, formData: FormData): Promise<BotSettingsState> {
+  await requireUser();
+  const token = formData.get("token");
+  if (typeof token !== "string") return { error: "Вставьте новый ключ" };
+  const service = createBotServiceFromEnv();
+  const result = await service.replaceBotToken(botId, token);
+  if (!result.ok) return { error: result.error };
+  revalidatePath("/bots");
+  revalidatePath(`/bots/${botId}`);
+  const bot = await service.getBot(botId);
+  if (bot && !bot.canSendPhotos) return { error: "Ключ заменён, но права «Фотографии» нет и у нового. Создайте ключ ещё раз и отметьте это право." };
+  return { saved: true };
+}
+
 /** Удаляет бота; с опубликованными лидмагнитами — отказ с объяснением. */
 export async function deleteBotAction(botId: string, _previous: BotSettingsState): Promise<BotSettingsState> {
   await requireUser();

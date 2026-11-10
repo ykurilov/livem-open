@@ -1,3 +1,4 @@
+import { ThemeSettings } from "@ykurilov/ds-react";
 import { Alert, Button, Card, CardContent, CardHeader, CardTitle } from "@/ui/primitives";
 import { requireUser } from "@/modules/access";
 import { getChatStorage } from "@/modules/platform/chat-storage";
@@ -7,9 +8,9 @@ import { requireEnv } from "@/modules/platform/env";
 import { readSettings } from "@/modules/platform/settings";
 import { formatUsd, readSpendingOverview, type SpendingOverview } from "@/modules/spending";
 import { PageHeader, SectionTabs, SETTINGS_TABS } from "@/ui";
+import { THEME_STORAGE_KEY } from "@/ui/theme-storage-key";
 import { acknowledgeOverrunAction } from "./actions";
 import { SettingsForm } from "./settings-form";
-import { ThemeSetting } from "./theme-setting";
 
 export const dynamic = "force-dynamic";
 
@@ -52,12 +53,8 @@ export default async function Page() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader>
-            <CardTitle>Тема</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-[var(--yk-space-3)]">
-            <ThemeSetting />
-            <p className="app-muted">«Автоматически» — светлая или тёмная, как в настройках устройства.</p>
+          <CardContent>
+            <ThemeSettings storageKey={THEME_STORAGE_KEY} />
           </CardContent>
         </Card>
       </div>

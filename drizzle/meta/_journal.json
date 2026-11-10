@@ -383,8 +383,15 @@
     {
       "idx": 54,
       "version": "7",
+      "when": 1794310799105,
+      "tag": "0054_bot_photos_right",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
       "when": 1793256194999,
-      "tag": "0054_password_accounts",
+      "tag": "0055_password_accounts",
       "breakpoints": true
     }
   ]

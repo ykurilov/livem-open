@@ -67,16 +67,19 @@ const REPLY_WINDOW_CLOSED_CODE = 950;
 const MANAGE_RIGHT = "Управление сообществом";
 const CALLBACK_SERVER_REMOVED = "в сообществе удалили наш сервер в «Работа с API» → «Callback API», сообщения людей сюда не приходят";
 const MESSAGES_EVENT_OFF = "в сообществе выключили событие «Входящее сообщение» в «Callback API», сообщения людей сюда не приходят";
-/** Права ключа сообщества, без которых бот не работает (биты маски ВК): сервер событий, сообщения, картинки. */
+/** Права ключа сообщества, без которых бот не работает (биты маски ВК): сервер событий и сообщения. */
 const REQUIRED_RIGHTS = [
   { bit: 262144, name: MANAGE_RIGHT },
   { bit: 4096, name: "Сообщения сообщества" },
-  { bit: 4, name: "Фотографии" },
 ] as const;
+/** «Фотографии» — не обязательное: без него бот работает текстом, картинки не присылает. */
+const PHOTOS_RIGHT_BIT = 4;
+/** Отказ ВК в методах фото: у ключа нет права «Фотографии». */
+const PHOTOS_DENIED_CODES = new Set([7, ERROR_ACCESS_DENIED]);
 
 const missingRightsError = (names: readonly string[]) =>
   new Error(
-    `${names.map((name) => `У ключа нет права «${name}»`).join(". ")}. Создайте в сообществе новый ключ доступа и отметьте права ${REQUIRED_RIGHTS.map((right) => `«${right.name}»`).join(", ")}.`,
+    `${names.map((name) => `У ключа нет права «${name}»`).join(". ")}. Создайте в сообществе новый ключ доступа и отметьте права ${REQUIRED_RIGHTS.map((right) => `«${right.name}»`).join(", ")}, а ещё «Фотографии» — если бот будет присылать картинки.`,
   );
 
 type ApiOutcome =
@@ -168,7 +171,9 @@ export function createVkAdapter(config: VkAdapterConfig = {}): VkAdapter {
         const missing = REQUIRED_RIGHTS.filter((right) => (mask & right.bit) === 0).map((right) => right.name);
         if (missing.length > 0) throw missingRightsError(missing);
       }
-      return { externalId: String(group.id), username: group.screen_name ?? "", title: group.name };
+      // Права неизвестны — картинки не запрещаем: откажет ВК при первой, и бот это запомнит
+      const canSendPhotos = typeof mask === "number" ? (mask & PHOTOS_RIGHT_BIT) !== 0 : true;
+      return { externalId: String(group.id), username: group.screen_name ?? "", title: group.name, canSendPhotos };
     },
 
     async connect(bot, webhookUrl) {
@@ -273,6 +278,8 @@ export function createVkAdapter(config: VkAdapterConfig = {}): VkAdapter {
       const parts = [...chunks, ...followUps].map((chunk, index) => async (): Promise<SendResult> => {
         let attachment: string | undefined;
         if (index === 0 && message.imagePath) {
+          // Бот уже знает, что картинки ему нельзя: в ВК не идём, вызывающий отправит без неё
+          if (bot.canSendPhotos === false) return { ok: false, reason: "photos_not_allowed" };
           const photo = await uploadPhoto(bot, to, message.imagePath);
           if (!photo.ok) return photo.failure;
           attachment = photo.attachment;
@@ -342,7 +349,7 @@ export function createVkAdapter(config: VkAdapterConfig = {}): VkAdapter {
     if (!loaded.ok) return { ok: false, failure: { ok: false, reason: loaded.reason, error: loaded.error } };
 
     const server = await call(bot.token, "photos.getMessagesUploadServer", { peer_id: to });
-    if (!server.ok) return { ok: false, failure: toFailure(server) };
+    if (!server.ok) return { ok: false, failure: photoFailure(server) };
 
     const form = new FormData();
     form.set("photo", new Blob([loaded.image.bytes as BlobPart], { type: loaded.image.contentType }), loaded.image.filename);
@@ -370,11 +377,17 @@ export function createVkAdapter(config: VkAdapterConfig = {}): VkAdapter {
       photo: uploaded.photo,
       hash: uploaded.hash ?? "",
     });
-    if (!saved.ok) return { ok: false, failure: toFailure(saved) };
+    if (!saved.ok) return { ok: false, failure: photoFailure(saved) };
     const photo = (saved.response as Array<{ id: number; owner_id: number; access_key?: string }>)[0];
     if (!photo) return { ok: false, failure: { ok: false, reason: "permanent", error: "ВК не сохранил картинку" } };
     return { ok: true, attachment: `photo${photo.owner_id}_${photo.id}${photo.access_key ? `_${photo.access_key}` : ""}` };
   }
+}
+
+/** Сбой метода фото: отказ в доступе — у ключа нет права «Фотографии», остальное — как у любого метода. */
+function photoFailure(outcome: Extract<ApiOutcome, { ok: false }>): SendResult {
+  if (outcome.code !== undefined && PHOTOS_DENIED_CODES.has(outcome.code)) return { ok: false, reason: "photos_not_allowed" };
+  return toFailure(outcome);
 }
 
 function toFailure(outcome: Extract<ApiOutcome, { ok: false }>): SendResult {

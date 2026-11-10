@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 import { seal } from "../../src/auth/core/cookie-seal";
 import { listCorrections } from "../../src/modules/corrections";
@@ -11,6 +12,8 @@ let connection: DatabaseConnection;
 
 // Значок разработки Next в углу появляется не в каждом прогоне: на снимках его нет
 const hideDevIndicator = (page: Page) => page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
+// Вставленный стиль сборка Next.js может убрать до снимка: значок прячет и сам снимок
+const WITHOUT_DEV_INDICATOR = fileURLToPath(new URL("./hide-dev-indicator.css", import.meta.url));
 
 test.beforeAll(() => {
   connection = connectDatabase(e2eDatabaseUrl(), { poolSize: 2 });
@@ -74,7 +77,7 @@ test("«Поменяемся ролями»: клиент отвечает, эк
   await page.mouse.move(0, 0);
   // Панель доходит до угла окна (оболочка ds-react 0.6 без внешнего отступа): значок сборки Next.js попадал бы в снимок
   await hideDevIndicator(page);
-  await expect(conversation).toHaveScreenshot("role-swap-client-light.png", { animations: "disabled", caret: "hide", mask: [conversation.locator("time")] });
+  await expect(conversation).toHaveScreenshot("role-swap-client-light.png", { animations: "disabled", caret: "hide", stylePath: WITHOUT_DEV_INDICATOR, mask: [conversation.locator("time")] });
 
   await consultantMode(page);
   await expect(conversation.getByText("Агент сыграет клиента лидмагнита")).toBeVisible();
@@ -119,6 +122,7 @@ test("«Поменяемся ролями»: клиент отвечает, эк
     await expect(conversation).toHaveScreenshot(`role-swap-chat-${colorScheme}.png`, {
       animations: "disabled",
       caret: "hide",
+      stylePath: WITHOUT_DEV_INDICATOR,
       mask: [conversation.locator("time")],
     });
   }
@@ -196,5 +200,5 @@ test("переключатель и экран старта на телефон�
   await consultantMode(page);
   await expect(conversation.getByRole("textbox", { name: "Кто клиент" })).toBeVisible();
   await hideDevIndicator(page);
-  await expect(page).toHaveScreenshot("role-swap-start-phone.png", { animations: "disabled", caret: "hide" });
+  await expect(page).toHaveScreenshot("role-swap-start-phone.png", { animations: "disabled", caret: "hide", stylePath: WITHOUT_DEV_INDICATOR });
 });

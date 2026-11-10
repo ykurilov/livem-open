@@ -19,6 +19,8 @@ export interface LeadMagnetCard {
   averagePassageCostUsd: number | null;
   /** Версия черновика — для публикации прямо с карточки. */
   draftVersionId: string;
+  /** В черновике есть картинки: публикация предупредит о боте, который их не пришлёт. */
+  sendsImages: boolean;
 }
 
 function asLeadMagnet(row: typeof leadMagnets.$inferSelect): LeadMagnet {
@@ -164,6 +166,7 @@ export async function listLeadMagnetCards(db: DatabaseExecutor): Promise<LeadMag
         cardDescription: sql<string>`${leadMagnets.draft} ->> 'cardDescription'`,
         publishedSnapshotId: leadMagnets.publishedSnapshotId,
         draftVersionId: leadMagnets.draftVersionId,
+        sendsImages: sql<boolean>`coalesce(jsonb_array_length(${leadMagnets.draft} -> 'imageIds'), 0) > 0`,
         updatedAt: leadMagnets.updatedAt,
       })
       .from(leadMagnets)
@@ -178,6 +181,7 @@ export async function listLeadMagnetCards(db: DatabaseExecutor): Promise<LeadMag
     updatedAt: row.updatedAt,
     averagePassageCostUsd: averageCosts.get(row.id) ?? null,
     draftVersionId: row.draftVersionId ?? "",
+    sendsImages: row.sendsImages,
   }));
 }
 

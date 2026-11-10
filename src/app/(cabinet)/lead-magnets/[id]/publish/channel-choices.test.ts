@@ -6,6 +6,7 @@ const bot = (fields: Partial<BotSummary> & Pick<BotSummary, "id" | "title" | "us
   channel: "telegram",
   status: "ok",
   statusError: null,
+  canSendPhotos: true,
   noCodeMode: "nothing",
   defaultLeadMagnetId: null,
   createdAt: new Date(0),
@@ -26,5 +27,22 @@ describe("выбор ботов публикации", () => {
     ]);
     expect(telegram!.selected).toBe("b");
     expect(telegram!.brokenBots).toEqual({ b: "Токен отозван" });
+  });
+
+  it("бот ВК без права «Фотографии» помечен в списке; лидмагнит с картинками — форма знает, что их не будет", () => {
+    const bots = [
+      bot({ id: "a", channel: "vk", title: "Школа", username: "school" }),
+      bot({ id: "b", channel: "vk", title: "Клуб", username: "club", canSendPhotos: false }),
+    ];
+    const vk = (sendsImages: boolean) => channelChoices(bots, [], sendsImages).find((choice) => choice.channel === "vk")!;
+
+    expect(vk(true).bots).toEqual([
+      { value: "a", label: "Школа (@school)" },
+      { value: "b", label: "Клуб (@club) — без картинок" },
+    ]);
+    expect(vk(true).photolessBots).toEqual(["b"]);
+    // Картинок у лидмагнита нет — и предупреждать не о чем, пометка в списке остаётся
+    expect(vk(false).photolessBots).toEqual([]);
+    expect(vk(false).bots[1]!.label).toBe("Клуб (@club) — без картинок");
   });
 });

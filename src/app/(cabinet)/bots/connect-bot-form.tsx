@@ -1,13 +1,14 @@
 "use client";
 
-import { startTransition, useActionState, useState } from "react";
+import { startTransition, useActionState, useState, type ReactNode } from "react";
 import { Alert, Button, Field, Input } from "@/ui/primitives";
 import { Select, type SelectOption } from "@/ui";
 import { connectBotAction, type ConnectBotState, type ConnectedBot } from "./actions";
 import { keepingFormOnSendFailure } from "@/ui/form-upload";
+import { VkKeyRights } from "./vk-key-rights";
 
 // Откуда взять токен и как он выглядит: у каждого мессенджера по-своему
-const TOKEN_HELP: Record<string, { label: string; hint: string; placeholder: string; steps?: string[] }> = {
+const TOKEN_HELP: Record<string, { label: string; hint: string; placeholder: string; steps?: ReactNode[] }> = {
   telegram: {
     label: "Токен бота",
     hint: "Создайте бота у @BotFather командой /newbot и вставьте токен сюда.",
@@ -15,12 +16,16 @@ const TOKEN_HELP: Record<string, { label: string; hint: string; placeholder: str
   },
   vk: {
     label: "Ключ доступа сообщества",
-    hint: "Ключ из шага 3. Без любой из трёх галочек бот не заработает: приложение скажет, какой не хватает.",
+    hint: "Ключ из шага 3. Без первых двух прав бот не заработает: приложение скажет, какого не хватает. Без «Фотографий» он работает, но без картинок.",
     // Шаги и права сверены с документацией ВК (dev.vk.com): кнопкам нужны «Возможности ботов», серверу событий — управление сообществом
     steps: [
       "В сообществе откройте Управление → Сообщения и включите «Сообщения сообщества».",
       "Там же откройте «Настройки для бота» и включите «Возможности ботов» — без этого у бота не будет кнопок.",
-      "Откройте Управление → Дополнительно → Работа с API → Ключи доступа и нажмите «Создать ключ». Отметьте три права: управление сообществом, сообщения сообщества и фотографии. Подтвердите создание по СМС или в приложении ВКонтакте.",
+      <>
+        Откройте Управление → Дополнительно → Работа с API → Ключи доступа и нажмите «Создать ключ». Отметьте права:
+        <VkKeyRights />
+        Подтвердите создание по СМС или в приложении ВКонтакте.
+      </>,
       "Скопируйте ключ и вставьте его сюда.",
     ],
     placeholder: "vk1.a.…",
@@ -74,8 +79,8 @@ export function ConnectBotForm({ channels, onConnected }: { channels: SelectOpti
       </div> : null}
       {help.steps ? (
         <ol className="flex list-decimal flex-col gap-1 pl-5 text-[length:var(--yk-text-small-size)]" aria-label="Как подключить">
-          {help.steps.map((step) => (
-            <li key={step}>{step}</li>
+          {help.steps.map((step, index) => (
+            <li key={index}>{step}</li>
           ))}
         </ol>
       ) : null}

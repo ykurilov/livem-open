@@ -20,20 +20,10 @@ body { margin: 0; }
 /* Обычные страницы кабинета — с полями рабочей области, холст доски занимает её целиком. */
 .app-shell .yk-app-shell__content { padding: var(--yk-space-6); overflow: hidden; }
 .app-shell--board .yk-app-shell__content { padding: 0; }
-/* На компьютере шапки нет: название приложения — вверху панели. */
-@media (min-width: 701px) { .app-shell .yk-app-shell__header { display: none; } }
-.app-mobile-brand { display: flex; align-items: center; gap: var(--yk-space-3); min-width: 0; font-weight: 600; color: var(--yk-text); text-decoration: none; }
 /* Знак приложения: на тёмной теме синий светлее, иначе он теряется. */
 .brand-logo { flex: none; color: #1C89BF; }
 :root[data-theme="dark"] .brand-logo { color: #4FB3E8; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .brand-logo { color: #4FB3E8; } }
-.app-mobile-brand > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.app-account { box-sizing: border-box; display: flex; align-items: center; gap: var(--yk-space-3); width: 100%; min-width: 0; min-height: 48px; padding: var(--yk-space-3); border: 0; border-radius: var(--yk-radius-md); background: transparent; color: var(--yk-muted); font: inherit; font-size: var(--yk-text-small-size); text-align: left; cursor: pointer; }
-.app-account:hover { background: var(--yk-surface-2); }
-.app-account:focus-visible { outline: 2px solid var(--yk-accent); outline-offset: -2px; }
-.app-account > .yk-avatar { flex: none; }
-.app-account-email { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.yk-app-shell--collapsed .app-account { width: 48px; justify-content: center; }
 .app-content { height: 100%; min-height: 0; overflow: auto; padding: 0 var(--yk-studio-scrollbar-gap) 0 0; scrollbar-gutter: stable; }
 .app-content:has([data-fill-window]) { display: flex; flex-direction: column; }
 .app-content--board { padding: 0; overflow: hidden; }

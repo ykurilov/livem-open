@@ -4,4 +4,4 @@ packages:
   - "."
 # Одна копия дизайн-системы у приложения и скина чата (скин SDK 0.102 просит ^0.6.2)
 overrides:
-  "@ykurilov/ds-react": 0.6.2
+  "@ykurilov/ds-react": 0.6.5

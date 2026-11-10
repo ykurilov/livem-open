@@ -45,7 +45,9 @@ for (const { width, theme, full } of CASES) {
         const menu = page.getByRole("dialog", { name: "Разделы кабинета" });
         await expect(menu).toBeVisible();
         await page.screenshot({ path: test.info().outputPath(`oduvanchik-menu-${theme}-${width}.png`) });
-        await menu.getByRole("link", { name: "Настройки", exact: true }).click();
+        // Настройки — шестерёнка внизу панели, раздела в списке нет
+        await expect(menu.getByRole("link", { name: "Настройки", exact: true })).toHaveCount(0);
+        await menu.getByRole("button", { name: "Настройки", exact: true }).click();
         await expect(menu).toBeHidden();
       } else {
         // Меню раскрыто с названиями разделов, свёрнутое переживает перезагрузку
@@ -66,22 +68,21 @@ for (const { width, theme, full } of CASES) {
         // Выход — в меню аккаунта: аватар с почтой внизу панели
         await page.getByRole("button", { name: E2E_EMAIL }).click();
         await expect(page.getByRole("menuitem", { name: "Выйти" })).toBeVisible();
-        await page.keyboard.press("Escape");
-        await expect(page.getByRole("menuitem", { name: "Выйти" })).toBeHidden();
-        await page.getByRole("link", { name: "Настройки", exact: true }).click();
+        await expect(navigation.getByRole("link", { name: "Настройки", exact: true })).toHaveCount(0);
+        await page.getByRole("menuitem", { name: "Настройки" }).click();
       }
       await expect(page.getByRole("heading", { name: "Настройки", exact: true })).toBeVisible();
       await page.screenshot({ path: test.info().outputPath(`oduvanchik-settings-${theme}-${width}.png`) });
       if (width === 1440 && theme === "light") {
-        // Тема выбирается в настройках: сразу применяется и запоминается; «Автоматически» отдаёт её устройству
+        // Тема выбирается в настройках: сразу применяется и запоминается; «Как в системе» отдаёт её устройству
         const themes = page.getByRole("radiogroup", { name: "Тема" });
-        await expect(themes.getByRole("radio", { name: "Светлая" })).toHaveAttribute("aria-checked", "true");
+        await expect(themes.getByRole("radio", { name: "Светлая" })).toBeChecked();
         await themes.getByRole("radio", { name: "Тёмная" }).click();
         await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
         expect(await page.evaluate(() => localStorage.getItem("theme"))).toBe("dark");
         await themes.scrollIntoViewIfNeeded();
         await page.screenshot({ path: test.info().outputPath("oduvanchik-settings-theme.png"), animations: "disabled" });
-        await themes.getByRole("radio", { name: "Автоматически" }).click();
+        await themes.getByRole("radio", { name: "Как в системе" }).click();
         await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
         expect(await page.evaluate(() => localStorage.getItem("theme"))).toBeNull();
       }

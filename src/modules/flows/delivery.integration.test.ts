@@ -6,7 +6,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { createTestDatabase, type TestDatabase } from "../../../tests/integration/db-helper";
 import { KIT_CIPHER, createLiveDialogKit, type LiveDialogKit } from "../../../tests/integration/live-dialog-kit";
 import { checkAllBots, reportSendFailure, type ChannelAdapter } from "../channels";
-import { outboundMessages } from "../channels/schema";
+import { IMAGE_REFUSED_WARNING, PHOTOS_NOT_ALLOWED_WARNING } from "../channels/outbound";
+import { bots, outboundMessages } from "../channels/schema";
 import { passages } from "../conversations/schema";
 import { people } from "../people/schema";
 import {
@@ -215,7 +216,31 @@ describe("доставка сообщений первым через наш б�
     const sent = kit.channel.messagesTo(person).slice(before);
     expect(sent.map((entry) => entry.message)).toEqual([expect.objectContaining({ text, imagePath: undefined })]);
     expect(failures).toEqual([]);
-    expect(await outreachRows()).toEqual([expect.objectContaining({ status: "sent", imagePath: null })]);
+    expect(await outreachRows()).toEqual([expect.objectContaining({ status: "sent", imagePath: null, imageNotSent: IMAGE_REFUSED_WARNING })]);
+  });
+
+  it("у бота нет права на картинки (ВК без «Фотографии») — касание уходит текстом, эксперт видит предупреждение, бот запоминает", async () => {
+    const fileName = "image-00000000-0000-4000-8000-0000000000c5.png";
+    const shownImage = {
+      type: "tool-show_image",
+      toolCallId: "call-c5",
+      state: "output-available",
+      input: { id: "c5" },
+      output: { картинка: { id: "c5", название: "Схема", подпись: "Схема", адрес: `/api/images/${fileName}`, ширина: 10, высота: 10 } },
+    } as unknown as FlowOutgoing["parts"][number];
+    const text = "Вот схема";
+    const before = kit.channel.messagesTo(person).length;
+    kit.channel.failNext({ ok: false, reason: "photos_not_allowed" });
+
+    expect(await delivery()(message({ text, parts: [{ type: "text", text }, shownImage] }))).toEqual({ status: "delivered" });
+    const sent = kit.channel.messagesTo(person).slice(before);
+    expect(sent.map((entry) => entry.message)).toEqual([expect.objectContaining({ text, imagePath: undefined })]);
+    expect(failures).toEqual([]);
+    const [row] = (await outreachRows()).filter((entry) => entry.text === text);
+    expect(row).toMatchObject({ status: "sent", imagePath: null, imageNotSent: PHOTOS_NOT_ALLOWED_WARNING });
+    const [bot] = await database.db.select({ canSendPhotos: bots.canSendPhotos }).from(bots).where(eq(bots.id, row!.botId));
+    expect(bot?.canSendPhotos).toBe(false);
+    await database.db.update(bots).set({ canSendPhotos: true }).where(eq(bots.id, row!.botId));
   });
 
   it("картинку не приняли, а текст не ушёл из-за сети — картинка остаётся: беда могла быть не в ней, повтор пробует снова", async () => {
@@ -234,12 +259,12 @@ describe("доставка сообщений первым через наш б�
     kit.channel.failNext({ ok: false, reason: "temporary", error: "ECONNRESET" });
 
     expect(await delivery()(outgoing)).toEqual({ status: "retry" });
-    expect(await outreachRows()).toEqual([expect.objectContaining({ imagePath: expect.stringContaining(fileName) })]);
+    expect(await outreachRows()).toEqual([expect.objectContaining({ imagePath: expect.stringContaining(fileName), imageNotSent: null })]);
     kit.channel.failNext({ ok: false, reason: "permanent", error: "Bad Request: wrong file" });
     expect(await delivery()({ ...outgoing, attempt: 2 })).toEqual({ status: "delivered" });
     const sent = kit.channel.messagesTo(person).slice(before);
     expect(sent.map((entry) => entry.message)).toEqual([expect.objectContaining({ text, imagePath: undefined })]);
-    expect(await outreachRows()).toEqual([expect.objectContaining({ status: "sent", imagePath: null })]);
+    expect(await outreachRows()).toEqual([expect.objectContaining({ status: "sent", imagePath: null, imageNotSent: IMAGE_REFUSED_WARNING })]);
   });
 
   it("картинка с текстом ушла, не прошёл ролик следом — повтор не задваивает и картинку не теряет: только остаток", async () => {

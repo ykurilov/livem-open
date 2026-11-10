@@ -7,7 +7,7 @@ import { videoMessageText, type ShownVideoLink } from "../videos/shown-video";
 import type { RateLimiter } from "./rate-limiter";
 import { passages } from "../conversations/schema";
 import { reopenAfterUndeliveredAnswer, reopenAfterUndeliveredReply } from "../inbox/undelivered-reply";
-import { outboundMessages, type OutboundKind } from "./schema";
+import { bots, outboundMessages, type OutboundKind } from "./schema";
 
 export type OutboundMessageRecord = typeof outboundMessages.$inferSelect;
 
@@ -70,6 +70,10 @@ const DEFAULT_MAX_ATTEMPTS = 5;
 /** Через сколько секунд сообщение, ждущее более раннее тому же человеку, проверит очередь снова. */
 const ORDER_RECHECK_SECONDS = 1;
 const EMPTY_MESSAGE_ERROR = "Пустое сообщение: отправлять нечего";
+/** Предупреждение эксперту: сообщение ушло, а картинка — нет. Не сбой: бот исправен, просто без картинок. */
+export const PHOTOS_NOT_ALLOWED_WARNING = "Картинка не отправлена: у ключа бота ВКонтакте нет права «Фотографии»";
+/** Пометка «Без картинки» во «Входящих»: мессенджер окончательно не принял саму картинку (размер, формат), текст ушёл. */
+export const IMAGE_REFUSED_WARNING = "Картинка не отправлена: мессенджер её не принял";
 const REPLY_WINDOW_CLOSED_ERROR = "Окно ответа закрыто: писать первым нельзя, пока человек не напишет сам";
 const BACKOFF_START_SECONDS = 10;
 const BACKOFF_CAP_SECONDS = 600;
@@ -195,14 +199,15 @@ export async function sendOutbound(deps: OutboundDependencies, outboundMessageId
 
     await deps.rateLimiter?.acquire(target.bot.id, target.adapter.ratePerSecond);
     let result = await attemptSend(target, message);
-    if (photoRefused(message, result, deps.maxAttempts ?? DEFAULT_MAX_ATTEMPTS)) {
+    if (result.photosNotAllowed) await notePhotosNotAllowed(tx, message.id, target.bot.id, result.photosNotAllowed);
+    else if (photoRefused(message, result, deps.maxAttempts ?? DEFAULT_MAX_ATTEMPTS)) {
       // Ответ важнее картинки — пробуем текстом. Текст ушёл — мессенджер не принял саму картинку (размер, формат):
       // повторы тоже без неё. Не ушёл и он — беда не в картинке (токен, сеть): она остаётся до повтора или починки бота
       const photoError = result.error;
       const withoutPhoto = await attemptSend(target, { ...message, imagePath: null });
       if (withoutPhoto.ok || (withoutPhoto.sentParts ?? 0) > 0) {
         console.error(`Картинка сообщения ${message.id} не принята: ${photoError}`);
-        await tx.update(outboundMessages).set({ imagePath: null }).where(eq(outboundMessages.id, message.id));
+        await tx.update(outboundMessages).set({ imagePath: null, imageNotSent: IMAGE_REFUSED_WARNING }).where(eq(outboundMessages.id, message.id));
       }
       // Без картинки сообщение пустое — итог прежний, ошибка картинки
       if (withoutPhoto.ok || withoutPhoto.reason !== "empty") result = withoutPhoto;
@@ -269,10 +274,17 @@ export async function sendOutbound(deps: OutboundDependencies, outboundMessageId
       }
 
       case "empty": {
-        // Отправлять нечего: повтор ничего не изменит, а эксперту тревога не нужна — бот исправен
-        const error = EMPTY_MESSAGE_ERROR;
+        // Отправлять нечего: повтор ничего не изменит, а эксперту тревога не нужна — бот исправен.
+        // Была одна картинка, а бот без картинок — эксперт видит именно это
+        const error = result.photosNotAllowed ? PHOTOS_NOT_ALLOWED_WARNING : EMPTY_MESSAGE_ERROR;
         await tx.update(outboundMessages).set({ status: "failed", error }).where(eq(outboundMessages.id, message.id));
         console.error(`Исходящее сообщение ${message.id} пустое, не отправлено`);
+        return { kind: "nothing" };
+      }
+
+      case "photos_not_allowed": {
+        // Без картинки отправка уже была (attemptSend): сюда попасть нельзя, но и тревога тут ни к чему — бот исправен
+        await tx.update(outboundMessages).set({ status: "failed", error: PHOTOS_NOT_ALLOWED_WARNING }).where(eq(outboundMessages.id, message.id));
         return { kind: "nothing" };
       }
 
@@ -453,8 +465,38 @@ function photoRefused(
   return result.reason === "permanent" || (result.reason === "temporary" && message.attempts + 1 >= maxAttempts);
 }
 
-/** Одна попытка отправки записи адаптером: части с `sentParts`, исключение адаптера — временный сбой. */
-export async function attemptSend(target: SendTarget, message: OutboundMessageRecord): Promise<SendResult> {
+/**
+ * Итог попытки. `photosNotAllowed` — у бота нет права на картинки, сообщение отправлялось без неё: `known` — бот это уже
+ * знал, `learned` — узнали только что, от мессенджера.
+ */
+export type AttemptResult = SendResult & { photosNotAllowed?: "known" | "learned" };
+
+/**
+ * Одна попытка отправки записи адаптером. Бот без права на картинки шлёт сообщение без неё: ответ важнее картинки.
+ * Мессенджер отказал в картинке из-за прав (признак устарел) — тот же повтор без неё.
+ */
+export async function attemptSend(target: SendTarget, message: OutboundMessageRecord): Promise<AttemptResult> {
+  if (!message.imagePath) return sendThroughAdapter(target, message);
+  if (target.bot.canSendPhotos === false) return { ...(await sendThroughAdapter(target, { ...message, imagePath: null })), photosNotAllowed: "known" };
+  const result = await sendThroughAdapter(target, message);
+  if (result.ok || result.reason !== "photos_not_allowed") return result;
+  return { ...(await sendThroughAdapter(target, { ...message, imagePath: null })), photosNotAllowed: "learned" };
+}
+
+/**
+ * Записывает, что картинка сообщения не ушла из-за прав бота: эксперт видит предупреждение, повторы идут без картинки.
+ * Узнали от мессенджера — бот запоминает, что картинок у него нет (до замены ключа).
+ */
+export async function notePhotosNotAllowed(db: DatabaseExecutor, messageId: string, botId: string, how: "known" | "learned"): Promise<void> {
+  await db.update(outboundMessages).set({ imagePath: null, imageNotSent: PHOTOS_NOT_ALLOWED_WARNING }).where(eq(outboundMessages.id, messageId));
+  if (how === "learned") {
+    console.warn(`Бот ${botId}: у ключа нет права на картинки, сообщения пойдут текстом`);
+    await db.update(bots).set({ canSendPhotos: false }).where(eq(bots.id, botId));
+  }
+}
+
+/** Части с `sentParts`; исключение адаптера — временный сбой. */
+async function sendThroughAdapter(target: SendTarget, message: OutboundMessageRecord): Promise<SendResult> {
   // Ролик — сразу после текста, прощание — после ролика: одно сообщение частями, повтор продолжает с места остановки
   const followUps = [...(message.video ? [videoMessageText(message.video)] : []), ...message.followUps];
   try {

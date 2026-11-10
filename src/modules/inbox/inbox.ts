@@ -60,6 +60,8 @@ export interface InboxMessage {
   video: ShownVideoLink | null;
   /** Фото клиента или картинка, которую отправил бот; `null` — сообщение без картинки. */
   image: InboxImage | null;
+  /** Сообщение ушло, но не целиком — например, без картинки: у бота нет права «Фотографии». Не сбой. */
+  warning: string | null;
 }
 
 export interface InboxThread extends Omit<InboxThreadSummary, "lastText"> {
@@ -208,6 +210,7 @@ export async function loadInboxThread(
         error: outboundMessages.error,
         video: outboundMessages.video,
         imagePath: outboundMessages.imagePath,
+        imageNotSent: outboundMessages.imageNotSent,
         followUps: outboundMessages.followUps,
         at: outboundMessages.createdAt,
       })
@@ -230,11 +233,11 @@ export async function loadInboxThread(
     ...incoming.map((row, index) => {
       // Старт бота — служебная команда с кодом ссылки: показываем, по какой ссылке пришёл человек
       if (isStartMessage(row))
-        return { id: row.id, direction: "in" as const, text: startNote(row.startCode, linkLabels), at: row.at, kind: "start" as const, failed: false, failureReason: null, video: null, image: null };
+        return { id: row.id, direction: "in" as const, text: startNote(row.startCode, linkLabels), at: row.at, kind: "start" as const, failed: false, failureReason: null, video: null, image: null, warning: null };
       const image = incomingImages[index]!;
       // Фото показано картинкой — пометка «[картинка]» в тексте не нужна
       const text = image ? row.text.trim() : messageText(row);
-      return { id: row.id, direction: "in" as const, text, at: row.at, kind: "person" as const, failed: false, failureReason: null, video: null, image };
+      return { id: row.id, direction: "in" as const, text, at: row.at, kind: "person" as const, failed: false, failureReason: null, video: null, image, warning: null };
     }),
     // Ответ с роликом и прощанием — одно исходящее, а человек видит их отдельными сообщениями: так и показываем.
     // Картинка уходит с первой частью, подписью к тексту
@@ -249,6 +252,8 @@ export async function loadInboxThread(
         failureReason: failureReasonOf(row),
         video: part.video,
         image: index === 0 ? outgoingImages[rowIndex]! : null,
+        // Без картинки ушла первая часть — у неё и предупреждение; не ушло всё сообщение — это уже сбой
+        warning: index === 0 && !UNDELIVERED_STATUSES.includes(row.status) ? row.imageNotSent : null,
       })),
     ),
   ]

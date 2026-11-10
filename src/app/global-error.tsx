@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect } from "react";
-import { tokens } from "@ykurilov/ds-tokens";
-import { themeInitScript } from "@/ui/theme-preference";
 import { Button, EmptyState } from "@ykurilov/ds-react";
+import { themeScript } from "@ykurilov/ds-react/theme-script";
+import { THEME_STORAGE_KEY } from "@/ui/theme-storage-key";
 import "./globals.css";
-
-const themeScript = themeInitScript({ light: tokens.color.light.bg, dark: tokens.color.dark.bg });
 
 /** Сбой самого каркаса приложения: своя страница вместо корневой разметки, по-русски и в теме из «Настроек». */
 export default function GlobalError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
@@ -17,7 +15,7 @@ export default function GlobalError({ error, retry }: { error: Error & { digest?
     <html lang="ru" suppressHydrationWarning>
       <head>
         <title>Живые лидмагниты</title>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: themeScript(THEME_STORAGE_KEY) }} />
       </head>
       <body>
         <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center p-[var(--yk-space-6)]">

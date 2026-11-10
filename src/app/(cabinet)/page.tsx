@@ -57,7 +57,7 @@ export default async function LeadMagnetsPage() {
                       leadMagnetId={card.id}
                       name={card.name}
                       draftVersionId={card.draftVersionId}
-                      channels={channelChoices(bots, attached)}
+                      channels={channelChoices(bots, attached, card.sendsImages)}
                       published={card.published}
                       webLink={webLinks.get(card.id) ?? null}
                       connections={attached.map((bot) => ({

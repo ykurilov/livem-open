@@ -9,6 +9,7 @@ import { getDatabase } from "@/modules/platform/db";
 import { createSenlerSettingsFromEnv } from "@/modules/senler";
 import { PageHeader } from "@/ui";
 import { BotSettingsForm, DeleteBotForm } from "./bot-settings-form";
+import { PhotosKeyForm } from "./photos-key-form";
 import { SenlerDisconnectForm, SenlerGroupsForm, SenlerKeyForm } from "./senler-form";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,16 @@ export default async function BotPage({ params }: { params: Promise<{ id: string
         <Link href="/bots" className="app-focus w-fit text-[length:var(--yk-text-small-size)] underline">
           ← Ко всем ботам
         </Link>
+        {bot.canSendPhotos ? null : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Картинки</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PhotosKeyForm botId={bot.id} />
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Если человек пришёл без кода</CardTitle>

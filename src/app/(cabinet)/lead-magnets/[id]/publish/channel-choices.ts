@@ -11,15 +11,20 @@ export const botProblem = (bot: Pick<BotSummary, "status" | "statusError">): str
 /**
  * Выбор ботов для формы публикации: все подключённые боты по мессенджерам и выбранный у лидмагнита в каждом.
  * Сломанные помечены в списке, а что с ними — в `brokenBots`: форма предупреждает, прежде чем публиковать на такой.
+ * Боты без картинок помечены всегда; `sendsImages` — у лидмагнита есть картинки, и форма предупредит, что этот бот их не пришлёт.
  */
-export function channelChoices(bots: BotSummary[], attached: Array<{ channel: ChannelKind; botId: string }>): ChannelChoice[] {
+export function channelChoices(bots: BotSummary[], attached: Array<{ channel: ChannelKind; botId: string }>, sendsImages = false): ChannelChoice[] {
   return AVAILABLE_CHANNELS.map((channel) => {
     const channelBots = bots.filter((bot) => bot.channel === channel);
     return {
       channel,
       label: CHANNEL_LABELS[channel],
-      bots: channelBots.map((bot) => ({ value: bot.id, label: `${bot.title} (@${bot.username})${botProblem(bot) ? " — не работает" : ""}` })),
+      bots: channelBots.map((bot) => ({
+        value: bot.id,
+        label: `${bot.title} (@${bot.username})${botProblem(bot) ? " — не работает" : ""}${bot.canSendPhotos ? "" : " — без картинок"}`,
+      })),
       brokenBots: Object.fromEntries(channelBots.flatMap((bot) => (botProblem(bot) ? [[bot.id, botProblem(bot)!]] : []))),
+      photolessBots: sendsImages ? channelBots.filter((bot) => !bot.canSendPhotos).map((bot) => bot.id) : [],
       selected: attached.find((bot) => bot.channel === channel)?.botId ?? null,
     };
   });

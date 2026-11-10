@@ -10,7 +10,7 @@ import {
   type SendFailureCause,
   type SendTarget,
 } from "../channels";
-import { BOT_REPAIR_RESEND_WINDOW_DAYS } from "../channels/outbound";
+import { BOT_REPAIR_RESEND_WINDOW_DAYS, IMAGE_REFUSED_WARNING, notePhotosNotAllowed, PHOTOS_NOT_ALLOWED_WARNING } from "../channels/outbound";
 import { outboundMessages } from "../channels/schema";
 import { mediaSentWith } from "../consultant/sent-media";
 import { sentImagePath } from "../images";
@@ -126,6 +126,7 @@ export function createFirstMessageDelivery(deps: FirstMessageDeliveryDependencie
       const target = await sendTargetOf(deps, db, row);
       if (target) await deps.rateLimiter?.acquire(target.bot.id, target.adapter.ratePerSecond);
       sending = target && (await sendDroppingRefusedImage(deps, target, row));
+      if (target && sending?.result.photosNotAllowed) await notePhotosNotAllowed(db, row.id, target.bot.id, sending.result.photosNotAllowed);
     } finally {
       await claim.release();
     }
@@ -134,7 +135,7 @@ export function createFirstMessageDelivery(deps: FirstMessageDeliveryDependencie
     const settle = (patch: Partial<typeof outboundMessages.$inferInsert>) =>
       db
         .update(outboundMessages)
-        .set({ attempts: row.attempts + 1, ...(sending?.imageDropped && { imagePath: null }), ...patch })
+        .set({ attempts: row.attempts + 1, ...(sending?.imageDropped && { imagePath: null }), ...(sending?.imageRefused && { imageNotSent: IMAGE_REFUSED_WARNING }), ...patch })
         .where(and(eq(outboundMessages.id, row.id), eq(outboundMessages.status, "sending"), eq(outboundMessages.nextAttemptAt, claim.heldUntil())));
     const fail = (status: "failed" | "blocked", error: string | null, sentParts = row.sentParts) => settle({ status, error, sentParts });
 
@@ -165,7 +166,11 @@ export function createFirstMessageDelivery(deps: FirstMessageDeliveryDependencie
         await fail("failed", AWAITS_FLOW_RETRY_ERROR, result.sentParts);
         return { status: "retry" };
       case "empty":
-        await fail("failed", "Пустое сообщение: отправлять нечего");
+        await fail("failed", result.photosNotAllowed ? PHOTOS_NOT_ALLOWED_WARNING : "Пустое сообщение: отправлять нечего");
+        return { status: "failed" };
+      case "photos_not_allowed":
+        // Без картинки отправка уже была (attemptSend): сюда попасть нельзя, а бот исправен — тревоги нет
+        await fail("failed", PHOTOS_NOT_ALLOWED_WARNING);
         return { status: "failed" };
       case "permanent": {
         await fail("failed", result.error, result.sentParts);
@@ -184,7 +189,8 @@ export function createFirstMessageDelivery(deps: FirstMessageDeliveryDependencie
   };
 }
 
-type SendOutcome = { result: Awaited<ReturnType<typeof attemptSend>>; imageDropped: boolean };
+/** `imageRefused` — мессенджер не принял саму картинку, а текст ушёл: эксперт видит пометку «Без картинки». */
+type SendOutcome = { result: Awaited<ReturnType<typeof attemptSend>>; imageDropped: boolean; imageRefused?: boolean };
 
 /**
  * Мессенджер окончательно не принял картинку, а ни одна часть ещё не ушла: касание важнее картинки — уходит текстом, как
@@ -197,10 +203,12 @@ async function sendDroppingRefusedImage(
   row: OutboundMessageRecord,
 ): Promise<SendOutcome> {
   const result = await attemptSend(target, row);
+  if (result.photosNotAllowed) return { result, imageDropped: true };
   if (!row.imagePath || result.ok || result.reason !== "permanent" || (result.sentParts ?? row.sentParts) > 0) return { result, imageDropped: false };
   deps.logError?.(`[сценарий] исходящее ${row.id}: картинка не принята (${result.error}), уходит текстом`);
   const withoutImage = await attemptSend(target, { ...row, imagePath: null });
-  return { result: withoutImage, imageDropped: withoutImage.ok || (withoutImage.sentParts ?? 0) > 0 };
+  const textSent = withoutImage.ok || (withoutImage.sentParts ?? 0) > 0;
+  return { result: withoutImage, imageDropped: textSent, imageRefused: textSent };
 }
 
 /**

@@ -6,7 +6,7 @@ import { createTestDatabase, type TestDatabase } from "../../../tests/integratio
 import { createFakeClock, type FakeClock } from "../platform/clock";
 import type { EnqueueOptions, JobEnqueuer, JobName, JobPayloads } from "../platform/queue";
 import type { BotCredentials } from "./channel";
-import { enqueueOutbound, requeueAfterBotRepair, sendOutbound, type OutboundDependencies } from "./outbound";
+import { enqueueOutbound, IMAGE_REFUSED_WARNING, requeueAfterBotRepair, sendOutbound, type OutboundDependencies } from "./outbound";
 import { outboundMessages } from "./schema";
 import { createTelegramAdapter } from "./telegram/adapter";
 import { FakeTelegramApi, telegramError } from "./telegram/fake-telegram-api";
@@ -140,7 +140,7 @@ describe("повтор отправки не шлёт уже отправлен�
     const { id } = await enqueue("Вот ваш экран", "https://cdn.test/long-screenshot.png");
 
     await sendOutbound(dependencies(), id);
-    expect(await rowOf(id)).toMatchObject({ status: "sent", imagePath: null });
+    expect(await rowOf(id)).toMatchObject({ status: "sent", imagePath: null, imageNotSent: IMAGE_REFUSED_WARNING });
     expect(api.callsTo("sendMessage")).toHaveLength(1);
   });
 
@@ -150,7 +150,7 @@ describe("повтор отправки не шлёт уже отправлен�
     const { id } = await enqueue("Вот ваш экран", "https://cdn.test/cover.png");
 
     await sendOutbound(dependencies("bot"), id);
-    expect(await rowOf(id)).toMatchObject({ status: "failed", awaitsBotRepair: true, imagePath: "https://cdn.test/cover.png" });
+    expect(await rowOf(id)).toMatchObject({ status: "failed", awaitsBotRepair: true, imagePath: "https://cdn.test/cover.png", imageNotSent: null });
 
     await requeueAfterBotRepair({ db: database.db, queue }, bot.id);
     await sendOutbound(dependencies(), id);
@@ -164,7 +164,7 @@ describe("повтор отправки не шлёт уже отправлен�
     const { id } = await enqueue("Вот ваш экран", "https://cdn.test/cover.png");
 
     await sendOutbound({ ...dependencies("bot"), maxAttempts: 1 }, id);
-    expect(await rowOf(id)).toMatchObject({ status: "failed", imagePath: "https://cdn.test/cover.png" });
+    expect(await rowOf(id)).toMatchObject({ status: "failed", imagePath: "https://cdn.test/cover.png", imageNotSent: null });
   });
 
   it("пустое сообщение: в Telegram не уходит, запись failed с понятной причиной", async () => {

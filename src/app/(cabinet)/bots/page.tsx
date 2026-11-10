@@ -26,15 +26,18 @@ const columns: DataTableColumn<BotSummary>[] = [
   {
     key: "status",
     header: "Статус",
-    render: (bot) =>
-      bot.status === "ok" ? (
-        <Badge variant="success">Работает</Badge>
-      ) : (
-        <div className="flex flex-col items-start gap-1">
-          <Badge variant="warm">Ошибка</Badge>
-          {bot.statusError ? <span className="text-[var(--yk-muted)]">{bot.statusError}</span> : null}
-        </div>
-      ),
+    render: (bot) => (
+      <div className="flex flex-col items-start gap-1">
+        {bot.status === "ok" ? <Badge variant="success">Работает</Badge> : <Badge variant="warm">Ошибка</Badge>}
+        {bot.status !== "ok" && bot.statusError ? <span className="text-[var(--yk-muted)]">{bot.statusError}</span> : null}
+        {bot.canSendPhotos ? null : (
+          <>
+            <Badge variant="warm">Без картинок</Badge>
+            <span className="text-[var(--yk-muted)]">Нет права «Фотографии»: ответы уходят текстом. Добавить — в «Настроить».</span>
+          </>
+        )}
+      </div>
+    ),
   },
   { key: "noCode", header: "Без кода", render: (bot) => NO_CODE_LABELS[bot.noCodeMode] },
   {

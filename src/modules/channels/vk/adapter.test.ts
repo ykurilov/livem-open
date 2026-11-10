@@ -39,7 +39,7 @@ async function eventsOf(body: unknown): Promise<ChannelEvent[]> {
 describe("подключение сообщества", () => {
   it("verifyToken: groups.getById и права ключа (groups.getTokenPermissions) с ключом и версией API, id, адрес и название сообщества", async () => {
     const identity = await adapter.verifyToken(bot.token);
-    expect(identity).toEqual({ externalId: "222333", username: "live_magnet_club", title: "Живые лидмагниты" });
+    expect(identity).toEqual({ externalId: "222333", username: "live_magnet_club", title: "Живые лидмагниты", canSendPhotos: true });
     expect(api.requests).toEqual([
       { method: "groups.getById", params: { access_token: bot.token, v: VK_API_VERSION } },
       { method: "groups.getTokenPermissions", params: { access_token: bot.token, v: VK_API_VERSION } },
@@ -52,7 +52,7 @@ describe("подключение сообщества", () => {
 
   it("verifyToken: понимает и старую форму ответа (массив сообществ)", async () => {
     api.replyOnce("groups.getById", { status: 200, body: { response: [{ id: 5, name: "Старое", screen_name: "old_club" }] } });
-    expect(await adapter.verifyToken(bot.token)).toEqual({ externalId: "5", username: "old_club", title: "Старое" });
+    expect(await adapter.verifyToken(bot.token)).toMatchObject({ externalId: "5", username: "old_club", title: "Старое" });
   });
 
   it("verifyToken: ошибка 5 — «неверный ключ», самого ключа в тексте нет", async () => {
@@ -73,14 +73,22 @@ describe("подключение сообщества", () => {
     const error = await adapter.verifyToken(bot.token).catch((caught: Error) => caught);
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain("У ключа нет права «Управление сообществом»");
-    expect((error as Error).message).toContain("«Фотографии»");
     expect((error as Error).message).not.toContain("нет права «Сообщения сообщества»");
+    // «Фотографии» — не обязательное: ошибка не требует его, а только объясняет, зачем оно
+    expect((error as Error).message).not.toContain("нет права «Фотографии»");
+    expect((error as Error).message).toContain("«Фотографии» — если бот будет присылать картинки");
+  });
+
+  it("verifyToken: без права «Фотографии» подключаем, бот помечен как без картинок", async () => {
+    api.replyOnce("groups.getTokenPermissions", { status: 200, body: { response: { mask: 262144 + 4096, permissions: [] } } });
+    await expect(adapter.verifyToken(bot.token)).resolves.toMatchObject({ externalId: "222333", canSendPhotos: false });
   });
 
   it("verifyToken: все права есть — подключаем; ВК не ответил про права — не мешаем, решит connect", async () => {
     await expect(adapter.verifyToken(bot.token)).resolves.toMatchObject({ externalId: "222333" });
     api.replyOnce("groups.getTokenPermissions", vkError(10, "Internal server error"));
-    await expect(adapter.verifyToken(bot.token)).resolves.toMatchObject({ externalId: "222333" });
+    // Про картинки неизвестно — считаем, что можно: откажет ВК при первой картинке, и бот запомнит
+    await expect(adapter.verifyToken(bot.token)).resolves.toMatchObject({ externalId: "222333", canSendPhotos: true });
   });
 
   it("verifyToken: у сообщества нет короткого адреса — username пустой, ссылка строится по id", async () => {
@@ -653,6 +661,17 @@ describe("отправка", () => {
     expect(first?.params).toMatchObject({ message: "а".repeat(3000), attachment: "photo-222333_456239017" });
     expect(second?.params.message).toBe("б".repeat(3000));
     expect(second?.params).not.toHaveProperty("attachment");
+  });
+
+  it.each([
+    ["photos.getMessagesUploadServer", 15, "Access denied: no access to call this method"],
+    ["photos.getMessagesUploadServer", 7, "Permission to perform this action is denied"],
+    ["photos.saveMessagesPhoto", 15, "Access denied: no access to call this method"],
+  ])("у ключа нет права на фото (%s, ошибка %i) — photos_not_allowed, в чат ничего не ушло", async (method, code, text) => {
+    api.serveFile("https://cdn.test/cover.png", Buffer.from([1]));
+    api.replyOnce(method, vkError(code, text));
+    expect(await send("Подпись", { imagePath: "https://cdn.test/cover.png" })).toEqual({ ok: false, reason: "photos_not_allowed" });
+    expect(api.callsTo("messages.send")).toHaveLength(0);
   });
 
   it("загрузка фото не удалась на стороне ВК — temporary, картинка не считается ушедшей", async () => {

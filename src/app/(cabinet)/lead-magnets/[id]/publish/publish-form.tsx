@@ -19,6 +19,8 @@ export interface ChannelChoice {
   bots: SelectOption[];
   /** Сломанные боты этого мессенджера: id → что с ним по последней проверке. */
   brokenBots: Record<string, string>;
+  /** Боты без права на картинки, когда у лидмагнита они есть: картинки люди не увидят. */
+  photolessBots: string[];
   selected: string | null;
 }
 
@@ -57,6 +59,10 @@ export function PublishForm(props: { leadMagnetId: string; draftVersionId: strin
       .map((bot) => ({ value: bot.id, label: bot.label })),
   ];
   const problemOfSelected = (choice: ChannelChoice): string | null => choice.brokenBots[selected[choice.channel]!] ?? null;
+  const photolessSelected = (choice: ChannelChoice): string | null => {
+    const botId = selected[choice.channel]!;
+    return choice.photolessBots.includes(botId) ? botId : null;
+  };
   const noBots = props.channels.every((choice) => botsOf(choice).length === 0);
   const openConnect = (channel: string | "all") => setConnectTarget((current) => ({ channel, attempt: (current?.attempt ?? 0) + 1 }));
   const dialogChannels = props.channels
@@ -156,6 +162,16 @@ export function PublishForm(props: { leadMagnetId: string; draftVersionId: strin
                   «Боты»
                 </Link>{" "}
                 или выберите другого.
+              </Alert>
+            ) : null}
+            {photolessSelected(choice) ? (
+              <Alert variant="warm" title="Этот бот не присылает картинки">
+                У его ключа нет права «Фотографии». Картинки лидмагнита люди не получат: ответы придут текстом.
+                Чтобы картинки приходили, замените ключ в{" "}
+                <Link href={`/bots/${photolessSelected(choice)}`} className="app-focus underline">
+                  настройках бота
+                </Link>
+                .
               </Alert>
             ) : null}
           </div>

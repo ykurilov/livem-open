@@ -56,7 +56,7 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
   const published = publication.snapshotId !== null;
   const draftChanged = published && publication.snapshotId !== lead.draftVersionId;
 
-  const channels = channelChoices(bots, publication.bots);
+  const channels = channelChoices(bots, publication.bots, lead.draft.imageIds.length > 0);
 
   return (
     <>

@@ -17,6 +17,8 @@ export interface BotCredentials {
   externalId: string;
   username: string;
   webhookSecret: string;
+  /** `false` — ключ бота без права на картинки (ВК без «Фотографии»): картинки не отправляем, сообщение уходит текстом. */
+  canSendPhotos?: boolean;
 }
 
 export interface WebhookRequest {
@@ -87,6 +89,8 @@ export type SendFailure = (
   | { reason: "permanent"; error: string }
   /** Отправлять нечего: ни текста, ни картинки, ни дополнительных сообщений. В мессенджер запрос не уходил. */
   | { reason: "empty" }
+  /** У ключа бота нет права на картинки (ВК: «Фотографии»). Ничего не ушло: сообщение можно отправить без картинки. */
+  | { reason: "photos_not_allowed" }
 ) & { ok: false; sentParts?: number };
 
 export type SendResult = { ok: true; externalMessageId: string } | SendFailure;
@@ -103,6 +107,8 @@ export interface BotIdentity {
   externalId: string;
   username: string;
   title: string;
+  /** `false` — ключ без права на картинки (ВК). Нет поля — мессенджер картинкам не мешает. */
+  canSendPhotos?: boolean;
 }
 
 export interface ChannelAdapter {

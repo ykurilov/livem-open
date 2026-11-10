@@ -21,6 +21,8 @@ export interface BotSummary {
   username: string;
   status: BotStatus;
   statusError: string | null;
+  /** Ключ разрешает картинки. `false` — бот ВК без права «Фотографии»: сообщения уходят текстом. */
+  canSendPhotos: boolean;
   /** Что бот делает, если человек пришёл без кода лидмагнита. */
   noCodeMode: NoCodeMode;
   defaultLeadMagnetId: string | null;
@@ -40,6 +42,8 @@ export interface BotService {
   /** Бот по id; удалённый или чужой id — `null`. */
   getBot(botId: string): Promise<BotSummary | null>;
   loadBotCredentials(botId: string): Promise<BotCredentials | null>;
+  /** Новый ключ того же бота (например, с правом «Фотографии»): приём настраивается заново, права ключа запоминаются. */
+  replaceBotToken(botId: string, token: string): Promise<BotActionResult>;
   /** Поведение без кода. Лидмагнит по умолчанию — один из привязанных к этому боту. */
   updateNoCodeSettings(botId: string, settings: NoCodeSettings): Promise<BotActionResult>;
   /** Сколько разговоров сейчас идёт на боте: при удалении они закроются. */
@@ -83,6 +87,7 @@ export function toBotCredentials(row: BotRow, cipher: TokenCipher): BotCredentia
     externalId: row.externalId,
     username: row.username,
     webhookSecret: row.webhookSecret,
+    canSendPhotos: row.canSendPhotos,
   };
 }
 
@@ -109,6 +114,7 @@ function toSummary(row: BotRow): BotSummary {
     username: row.username,
     status: row.status,
     statusError: row.statusError,
+    canSendPhotos: row.canSendPhotos,
     noCodeMode: row.noCodeMode,
     defaultLeadMagnetId: row.defaultLeadMagnetId,
     createdAt: row.createdAt,
@@ -159,7 +165,10 @@ export function createBotService(deps: BotServiceDependencies): BotService {
         .from(bots)
         .where(and(eq(bots.channel, channel), eq(bots.externalId, identity.externalId)));
 
-      if (existing && existing.status === "ok" && !existing.deletedAt) return { ok: false, error: "Этот бот уже подключён" };
+      // Тот же ключ работающего бота — подключать нечего. Новый ключ — замена: так добавляют права, например «Фотографии»
+      if (existing && existing.status === "ok" && !existing.deletedAt && cipher.decrypt(existing.tokenEncrypted) === token) {
+        return { ok: false, error: "Этот бот уже подключён" };
+      }
 
       // Подключение перебьёт чужой приём сообщений: сначала спрашиваем эксперта
       if (!force && adapter.findConflict) {
@@ -189,6 +198,7 @@ export function createBotService(deps: BotServiceDependencies): BotService {
             username: identity.username,
             tokenEncrypted: cipher.encrypt(token),
             webhookSecret,
+            canSendPhotos: identity.canSendPhotos ?? true,
           })
           .returning();
       } catch (error) {
@@ -225,6 +235,28 @@ export function createBotService(deps: BotServiceDependencies): BotService {
     async loadBotCredentials(botId) {
       const [row] = await db.select().from(bots).where(eq(bots.id, botId));
       return row ? toBotCredentials(row, cipher) : null;
+    },
+
+    async replaceBotToken(botId, rawToken) {
+      const found = await findBotWithCredentials(db, cipher, botId);
+      if (!found || found.bot.channel === "web") return { ok: false, error: BOT_NOT_FOUND };
+      const adapter = adapters[found.bot.channel];
+      if (!adapter) return { ok: false, error: "Подключение этого мессенджера ещё не готово" };
+      const token = rawToken.trim();
+      if (!token) return { ok: false, error: "Вставьте новый ключ" };
+      const formatError = adapter.validateTokenFormat?.(token);
+      if (formatError) return { ok: false, error: formatError };
+      let identity;
+      try {
+        identity = await adapter.verifyToken(token);
+      } catch (error) {
+        return { ok: false, error: messageOf(error) };
+      }
+      if (identity.externalId !== found.bot.externalId) {
+        return { ok: false, error: "Это ключ другого сообщества: создайте ключ в сообществе этого бота" };
+      }
+      const result = await reconnect(found.bot, token, identity);
+      return result.ok ? { ok: true } : result;
     },
 
     async updateNoCodeSettings(botId, settings) {
@@ -307,7 +339,7 @@ export function createBotService(deps: BotServiceDependencies): BotService {
   async function reconnect(
     existing: BotRow,
     token: string,
-    identity: { title: string; username: string },
+    identity: { title: string; username: string; canSendPhotos?: boolean },
   ): Promise<ConnectBotResult> {
     const adapter = adapters[existing.channel];
     if (!adapter) return { ok: false, error: "Подключение этого мессенджера ещё не готово" };
@@ -325,6 +357,7 @@ export function createBotService(deps: BotServiceDependencies): BotService {
         tokenEncrypted: cipher.encrypt(token),
         title: identity.title,
         username: identity.username,
+        canSendPhotos: identity.canSendPhotos ?? true,
         status: "ok",
         statusError: null,
         deletedAt: null,

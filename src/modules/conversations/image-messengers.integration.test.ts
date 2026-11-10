@@ -9,11 +9,11 @@ import { createTestDatabase, type TestDatabase } from "../../../tests/integratio
 import type { BotCredentials, ChannelAdapter } from "../channels/channel";
 import { FakeMaxApi, maxError } from "../channels/max/fake-max-api";
 import { createMaxAdapter } from "../channels/max/adapter";
-import { outboundMessages } from "../channels/schema";
-import { enqueueOutbound, sendOutbound, type OutboundDependencies } from "../channels/outbound";
+import { bots, outboundMessages } from "../channels/schema";
+import { enqueueOutbound, PHOTOS_NOT_ALLOWED_WARNING, sendOutbound, type OutboundDependencies } from "../channels/outbound";
 import { FakeTelegramApi, telegramError } from "../channels/telegram/fake-telegram-api";
 import { createTelegramAdapter } from "../channels/telegram/adapter";
-import { FakeVkApi } from "../channels/vk/fake-vk-api";
+import { FakeVkApi, vkError } from "../channels/vk/fake-vk-api";
 import { createVkAdapter } from "../channels/vk/adapter";
 import { createImage, imageUrl, sentImagePath, shownImagesOf, type ExpertImage } from "../images";
 import { pngOf } from "../images/test-images";
@@ -45,14 +45,14 @@ const shownPart = () => ({
 });
 
 /** Ответ консультанта с показанной картинкой — в очередь и в мессенджер через адаптер. */
-async function deliver(adapter: ChannelAdapter) {
+async function deliver(adapter: ChannelAdapter, credentials: BotCredentials = bot) {
   const [shown] = shownImagesOf([shownPart()]);
   const dependencies: OutboundDependencies = {
     db: database.db,
     queue: { async enqueue() {} },
     clock: createFakeClock(new Date("2026-10-28T09:00:00Z")),
     async resolveTarget() {
-      return { adapter, bot, to: "5550001" };
+      return { adapter, bot: credentials, to: "5550001" };
     },
     async onBlocked() {},
     async onPermanentFailure() {
@@ -60,7 +60,7 @@ async function deliver(adapter: ChannelAdapter) {
     },
   };
   const { id } = await enqueueOutbound(dependencies, {
-    botId: bot.id,
+    botId: credentials.id,
     personId: randomUUID(),
     kind: "consultant",
     text: CAPTION,
@@ -129,3 +129,51 @@ describe("мессенджер не принял картинку — ответ
     expect(row.status).toBe("sent");
   });
 });
+
+describe("ВКонтакте: у ключа нет права «Фотографии» — ответ уходит текстом, эксперт видит предупреждение", () => {
+  it("бот уже помечен как без картинок: картинку не загружаем, текст уходит, сбоя нет", async () => {
+    const api = new FakeVkApi();
+    const row = await deliver(createVkAdapter({ apiBaseUrl: "https://vk-api.test", fetch: api.fetch }), { ...bot, canSendPhotos: false });
+    expect(api.uploads).toHaveLength(0);
+    expect(api.callsTo("photos.getMessagesUploadServer")).toHaveLength(0);
+    expect(api.callsTo("messages.send")).toHaveLength(1);
+    expect(api.callsTo("messages.send")[0]!.params).toMatchObject({ message: CAPTION });
+    expect(api.callsTo("messages.send")[0]!.params).not.toHaveProperty("attachment");
+    expect(row).toMatchObject({ status: "sent", error: null, imagePath: null, imageNotSent: PHOTOS_NOT_ALLOWED_WARNING });
+  });
+
+  it("признак устарел: ВК отказал в фото — текст уходит, бот запоминает, что картинок у него нет", async () => {
+    const stale = await insertVkBot();
+    const api = new FakeVkApi();
+    api.replyOnce("photos.getMessagesUploadServer", vkError(15, "Access denied: no access to call this method"));
+    const row = await deliver(createVkAdapter({ apiBaseUrl: "https://vk-api.test", fetch: api.fetch }), stale);
+    expect(api.callsTo("messages.send")).toHaveLength(1);
+    expect(api.callsTo("messages.send")[0]!.params).toMatchObject({ message: CAPTION });
+    expect(api.callsTo("messages.send")[0]!.params).not.toHaveProperty("attachment");
+    expect(row).toMatchObject({ status: "sent", imagePath: null, imageNotSent: PHOTOS_NOT_ALLOWED_WARNING });
+    const [saved] = await database.db.select({ canSendPhotos: bots.canSendPhotos }).from(bots).where(eq(bots.id, stale.id));
+    expect(saved?.canSendPhotos).toBe(false);
+  });
+
+  it("ключ с правом: картинка уходит как раньше, предупреждения нет", async () => {
+    const api = new FakeVkApi();
+    const row = await deliver(createVkAdapter({ apiBaseUrl: "https://vk-api.test", fetch: api.fetch }), { ...bot, canSendPhotos: true });
+    expect(api.callsTo("messages.send")[0]!.params).toMatchObject({ message: CAPTION, attachment: expect.stringMatching(/^photo/) });
+    expect(row).toMatchObject({ status: "sent", imageNotSent: null });
+    expect(row.imagePath).not.toBeNull();
+  });
+});
+
+async function insertVkBot(): Promise<BotCredentials> {
+  const id = randomUUID();
+  await database.db.insert(bots).values({
+    id,
+    channel: "vk",
+    title: "Сообщество",
+    externalId: String(Math.floor(Math.random() * 1e9)),
+    username: `club_${id.slice(0, 8)}`,
+    tokenEncrypted: "sealed",
+    webhookSecret: "hook",
+  });
+  return { ...bot, id, canSendPhotos: true };
+}

@@ -556,6 +556,25 @@ describe("сценарий", () => {
     expect((await currentDraft()).flow.schedule?.nudges).toEqual(own);
   });
 
+  it("put_flow: касания разговора при «Днях и времени» без своих касаний — ошибка с местом, ничего не изменено", async () => {
+    const before = (await currentDraft()).flow;
+    const nudges = { afterSilence: [{ amount: 2, unit: "h" }], dailyAt: ["11:30"] };
+    const result = await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_flow", flow: { ...twoStates(), schedule, nudges } }] });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/flow\.schedule\.nudges/);
+    expect((await currentDraft()).flow).toEqual(before);
+
+    // Касания в «Днях и времени» — там, где их видит эксперт и откуда их берёт агент
+    expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_flow", flow: { ...twoStates(), schedule: { ...schedule, nudges } } }] })).toMatchObject({ ok: true });
+    expect((await currentDraft()).flow.schedule?.nudges).toEqual(nudges);
+  });
+
+  it("put_flow без «Дней и времени»: касания разговора записываются в nudges сценария", async () => {
+    const nudges = { afterSilence: [{ amount: 2, unit: "h" }], dailyAt: ["11:30"], giveUpAfter: { amount: 5, unit: "d" } };
+    expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_flow", flow: { ...twoStates(), nudges } }] })).toMatchObject({ ok: true });
+    expect((await currentDraft()).flow.nudges).toEqual(nudges);
+  });
+
   it("put_schedule: срок вне 2–14 — ошибка с путём", async () => {
     const result = await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_schedule", schedule: { ...schedule, lengthDays: 20 } }] });
     expect(result.ok).toBe(false);

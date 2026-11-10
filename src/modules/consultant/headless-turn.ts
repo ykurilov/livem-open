@@ -36,6 +36,7 @@ import { personLinkFromEnv } from "./person-link";
 import { createTurnTails } from "../platform/turn-tails";
 import { consultantStepContext } from "./step-context";
 import { nameUsedRecently, profileNameForTail } from "./profile-name";
+import { botSendsNoPhotos } from "./bot-photos";
 import { PURCHASE_USAGE_SOURCE } from "../purchases/outreach-keys";
 import type { FirstMessageWriter } from "../purchases/reactions";
 
@@ -231,6 +232,7 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
     // Пока человек не сказал, как к нему обращаться; у тестового разговора эксперта имени из профиля нет
     personNameOf: (ownerId) => profileNameForTail(options.db, ownerId),
     nameUsedRecently: (ownerId, chatId) => nameUsedRecently({ db: options.db, chatStorage: options.chatStorage }, ownerId, chatId),
+    sendsNoPhotos: (ownerId) => botSendsNoPhotos(options.db, ownerId),
   });
   const dayOf = async ({ ownerId, chatId }: { ownerId: string; chatId: string }) => (await options.flow.readRun(ownerId, chatId))?.day?.day ?? 1;
   // Промах кэша — с днём программы и нодой чата: так промахи раскладываются по дням и нодам

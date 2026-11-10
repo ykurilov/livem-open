@@ -42,6 +42,8 @@ export const flowLabels = {
       fit: "Вся схема",
       nudgesUntilProgramDay: (day: number) => `до дня ${day} воронки`,
       noSideQuestions: "Без попутных вопросов",
+      nudges: "напоминания",
+      noNudges: "без напоминаний",
     },
     overview: {
       ...editor.overview,
@@ -56,6 +58,14 @@ export const flowLabels = {
     schedule: {
       ...editor.schedule,
       maxPerDayByDay: "Не больше в день по дням воронки",
+      nudges: "Напоминания по умолчанию",
+    },
+    nudges: { ...editor.nudges, on: "Общие напоминания" },
+    nudgesSection: {
+      ...editor.nudgesSection,
+      title: "Напоминания",
+      hint: "Агент пишет сам, когда человек молчит. Так на всех этапах, где не заданы свои напоминания.",
+      hintWithSchedule: "Агент пишет сам, когда человек молчит. Так на всех этапах, где не заданы свои напоминания. Ночью напоминания ждут начала дня.",
     },
     statePanel: {
       ...editor.statePanel,
@@ -78,7 +88,10 @@ export const flowLabels = {
         untilProgramDay: "до дня воронки включительно",
       },
       nudgesUntilProgramDayHint: "Дни воронки считаются от начала участия человека в лидмагните. На этом этапе напоминания работают только до указанного дня.",
-      nudgesDaysHint: "Затем используются общие напоминания из раздела «Дни и время».",
+      nudgesDaysHint: "Затем действуют общие напоминания: утреннее сообщение и общий ряд с начала.",
+      nudgesDaysHintNoSchedule: "Затем действуют общие напоминания, их ряд с начала.",
+      inheritedNudges: "Общие напоминания:",
+      inheritedNone: "Общих напоминаний нет: на этом этапе агент первым не пишет.",
     },
   },
   migrate: {
@@ -90,5 +103,6 @@ export const flowLabels = {
   notices: {
     ...notices,
     farewell: "прощание: срок воронки вышел",
+    silence: "напоминание после молчания",
   },
 };

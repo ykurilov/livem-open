@@ -36,7 +36,7 @@ export { createTelegramAdapter } from "./telegram/adapter";
 export { createVkAdapter } from "./vk/adapter";
 export { createWebChatAdapter } from "./web/adapter";
 export type { WebChatNotifier } from "./web/adapter";
-export { attemptSend, enqueueOutbound, outboundPartsOf, recordOutbound, requeueAfterBotRepair, requeueStuckOutbound, scheduleOutboundSend, sendOutbound } from "./outbound";
+export { attemptSend, enqueueOutbound, IMAGE_REFUSED_WARNING, notePhotosNotAllowed, PHOTOS_NOT_ALLOWED_WARNING, outboundPartsOf, recordOutbound, requeueAfterBotRepair, requeueStuckOutbound, scheduleOutboundSend, sendOutbound } from "./outbound";
 export type { OutboundDependencies, OutboundDraft, OutboundMessageRecord, SendFailureCause, SendTarget } from "./outbound";
 export { createRateLimiter } from "./rate-limiter";
 export type { RateLimiter } from "./rate-limiter";

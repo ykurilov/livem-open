@@ -29,6 +29,8 @@ export const bots = appSchema.table(
     failureKind: text("failure_kind").$type<ConnectionFailureKind>(),
     /** Подряд неудачных проверок по временной причине (сеть, прокси). Сбрасывается при успешной проверке. */
     checkFailures: integer("check_failures").notNull().default(0),
+    /** Ключ бота разрешает картинки. ВК без права «Фотографии» — нет: сообщения уходят текстом. Обновляется при замене ключа. */
+    canSendPhotos: boolean("can_send_photos").notNull().default(true),
     noCodeMode: text("no_code_mode").$type<NoCodeMode>().notNull().default("nothing"),
     defaultLeadMagnetId: uuid("default_lead_magnet_id").references(() => leadMagnets.id),
     /** Бот удалён экспертом: не принимает сообщений и не виден. Запись остаётся — на неё ссылаются люди и переписка. */
@@ -85,6 +87,8 @@ export const outboundMessages = appSchema.table(
     passageId: uuid("passage_id"),
     text: text("text").notNull(),
     imagePath: text("image_path"),
+    /** Почему картинка не ушла, хотя сообщение ушло (нет права на картинки у бота): предупреждение эксперту во «Входящих», не сбой. */
+    imageNotSent: text("image_not_sent"),
     buttons: jsonb("buttons").$type<Array<{ label: string; payload: string }>>(),
     /** Готовые ответы человека под ответом консультанта; пустой список убирает прежние там, где мессенджер держит их сам. */
     quickReplies: jsonb("quick_replies").$type<string[]>(),
