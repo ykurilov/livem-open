@@ -1,5 +1,6 @@
 "use client";
 
+import { chatLabelsWithToolTitles } from "@/modules/agent-log/tool-titles";
 import { ChatLabelsProvider, russianLabels, type ChatSkin, type ComposerHelper } from "@ykurilov/agent-chat-react";
 import { oduvanchikSkin } from "@ykurilov/agent-chat-skin-oduvanchik";
 import { useCallback, useRef, useState, type ComponentProps, type FormEvent } from "react";
@@ -15,7 +16,7 @@ const BRIEF_MAX_CHARS = 1000;
 
 // Эксперт пишет за консультанта, правит реплики клиента
 const roleSwapLabels = {
-  ...russianLabels,
+  ...chatLabelsWithToolTitles(russianLabels),
   composerPlaceholder: "Ответьте как консультант…",
   editAnswer: "Поправить",
   answerEdited: "Исправлено",

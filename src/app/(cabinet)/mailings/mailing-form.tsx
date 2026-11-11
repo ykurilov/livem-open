@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
+import { Dialog } from "@ykurilov/ds-react";
 import { Alert, Button, Field, Input, Textarea } from "@/ui/primitives";
 import { Checkbox } from "@/ui/checkbox";
 import { isFileTooLarge, keepingFormOnSendFailure } from "@/ui/form-upload";
@@ -8,7 +9,7 @@ import { submitKeepingFields } from "@/ui/submit-keeping-fields";
 import { IMAGE_MAX_BYTES } from "@/modules/images/image-limits";
 import { findTestRecipientsAction, saveMailingAction, type MailingFormState } from "./actions";
 import { useRecipientFilterApplied } from "./recipient-filter-applied";
-import { recipientsPhrase } from "./recipients-phrase";
+import { peopleCountPhrase, recipientsPhrase } from "./recipients-phrase";
 import type { TestRecipientOption } from "./test-recipient-option";
 import { TestRecipientPicker } from "./test-recipient-picker";
 
@@ -46,6 +47,10 @@ export function MailingForm(props: MailingFormProps) {
   const scheduleButton = useRef<HTMLButtonElement>(null);
   const textInput = useRef<HTMLTextAreaElement>(null);
   const [textError, setTextError] = useState<string | null>(null);
+  const formId = useId();
+  // «Отправить сейчас» не вернуть: сначала окно с числом получателей и текстом; в нём — тот текст, что был при открытии
+  const [confirmText, setConfirmText] = useState<string | null>(null);
+  useEffect(() => setConfirmText(null), [state]);
   const [tester, setTester] = useState(props.testRecipients.find((option) => option.id === props.testPersonId) ?? null);
   const [search, setSearch] = useState("");
   const [found, setFound] = useState(props.testRecipients);
@@ -83,15 +88,21 @@ export function MailingForm(props: MailingFormProps) {
   const options = tester && !found.some((option) => option.id === tester.id) ? [tester, ...found] : found;
   const testPersonId = tester?.id ?? "";
 
+  /** Без текста не уходит ни проба, ни рассылка, ни черновик: сказать об этом у самого поля, а не подсказкой браузера. */
+  function textMissing(): boolean {
+    if (textInput.current?.value.trim()) return false;
+    setTextError("Напишите текст рассылки");
+    textInput.current?.focus();
+    return true;
+  }
+
   return (
     <form
+      id={formId}
       noValidate
       onSubmit={(event) => {
-        // Без текста не уходит ни проба, ни рассылка, ни черновик: сказать об этом у самого поля, а не подсказкой браузера
-        if (!textInput.current?.value.trim()) {
+        if (textMissing()) {
           event.preventDefault();
-          setTextError("Напишите текст рассылки");
-          textInput.current?.focus();
           return;
         }
         submitKeepingFields(save)(event);
@@ -194,13 +205,42 @@ export function MailingForm(props: MailingFormProps) {
         <span className="basis-full font-semibold" data-testid="recipients-phrase">
           {recipientsPhrase(props.recipientCount)}
         </span>
-        <Button type="submit" name="intent" value="now" disabled={pending || !filterApplied || props.recipientCount === 0}>
+        <Button
+          type="button"
+          disabled={pending || !filterApplied || props.recipientCount === 0}
+          onClick={() => {
+            if (!textMissing()) setConfirmText(textInput.current!.value);
+          }}
+        >
           Отправить сейчас
         </Button>
         <Button type="submit" name="intent" value="save" variant="secondary" disabled={pending || !filterApplied}>
           Сохранить черновик
         </Button>
       </div>
+
+      <Dialog
+        open={confirmText !== null}
+        onClose={() => setConfirmText(null)}
+        title={`Отправить рассылку ${peopleCountPhrase(props.recipientCount)}?`}
+      >
+        <p className="app-muted mb-4">Сообщение уйдёт сразу. Отменить отправку будет нельзя.</p>
+        <p className="max-h-60 overflow-auto whitespace-pre-wrap rounded-[var(--yk-radius-md)] bg-[var(--yk-surface-2)] p-3" data-testid="confirm-mailing-text">
+          {confirmText}
+        </p>
+        {props.imageName || imageFile ? (
+          <p className="mt-2 text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">{removeImage && !imageFile ? "Без картинки" : "С картинкой"}</p>
+        ) : null}
+        <div className="app-dialog-actions">
+          <Button type="button" variant="secondary" onClick={() => setConfirmText(null)}>
+            Отмена
+          </Button>
+          {/* Кнопка в окне вне формы: `form` привязывает её к форме, и намерение «now» уходит вместе с полями */}
+          <Button type="submit" form={formId} name="intent" value="now" loading={pending}>
+            Отправить
+          </Button>
+        </div>
+      </Dialog>
     </form>
   );
 }

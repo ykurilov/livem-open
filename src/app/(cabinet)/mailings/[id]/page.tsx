@@ -9,7 +9,7 @@ import { ArrowLink, DataTable, PageHeader, type DataTableColumn } from "@/ui";
 import type { SearchParams } from "../../people/filter-params";
 import { pageFromSearchParams } from "../../people/filter-params";
 import { MailingEditor } from "../mailing-editor";
-import { CancelMailingButton } from "./cancel-mailing-button";
+import { CancelMailingButton, RestoreMailingButton } from "./cancel-mailing-button";
 import { mailingHeadline } from "../status-labels";
 import { RefreshWhileSending } from "./refresh-while-sending";
 
@@ -22,6 +22,7 @@ const DONE_NOTICES: Record<string, string> = {
   test: "Проба отправлена — проверьте мессенджер.",
   save: "Черновик сохранён.",
   schedule: "Рассылка запланирована.",
+  restore: "Рассылка снова в черновиках.",
 };
 
 const OUTCOMES: Record<RecipientOutcome, { label: string; variant: "cool" | "neutral" | "success" | "warm" | "danger" }> = {
@@ -122,6 +123,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
             <p className="whitespace-pre-wrap">{mailing.text}</p>
             {mailing.imagePath ? <p className="text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">С картинкой</p> : null}
             {headline.canCancel ? <CancelMailingButton mailingId={mailing.id} /> : null}
+            {mailing.status === "cancelled" ? <RestoreMailingButton mailingId={mailing.id} /> : null}
           </CardContent>
         </Card>
 

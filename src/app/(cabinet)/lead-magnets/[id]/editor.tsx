@@ -15,7 +15,7 @@ import { imageLibraryClient } from "@ykurilov/agent-chat-image-library/react";
 import { videosClient } from "@ykurilov/agent-chat-videos/react";
 import { attachmentsClient } from "@ykurilov/agent-chat-attachments/react";
 import { createVoiceInput } from "@ykurilov/agent-chat-voice";
-import { withWebToolTitles } from "@ykurilov/agent-chat-web-tools/labels";
+import { chatLabelsWithToolTitles } from "@/modules/agent-log/tool-titles";
 import { useRouter } from "next/navigation";
 import {
   createContext,
@@ -92,19 +92,20 @@ function useFlowTab(needed: boolean): FlowTabComponent | null {
   return FlowTab;
 }
 
+// Плашки инструментов во всех чатах редактора — с названиями для эксперта, а не со служебными именами
+const editorLabels = chatLabelsWithToolTitles(russianLabels);
 // Модель выбирает эксперт во вкладке «Настройки», поэтому в поле ввода меню моделей нет
 const constructorLabels = {
-  ...russianLabels,
+  ...editorLabels,
   composerPlaceholder: "Опишите, что поменять…",
 };
 // Черновика ещё нет: менять нечего, конструктор ждёт описание лидмагнита
 const emptyConstructorLabels = {
-  ...russianLabels,
+  ...editorLabels,
   composerPlaceholder: "Опишите лидмагнит, который нужен…",
 };
-// Консультант может смотреть ссылки клиента: вызов снимка подписан по-русски
 const previewLabels = {
-  ...withWebToolTitles(russianLabels),
+  ...editorLabels,
   composerPlaceholder: "Напишите как клиент…",
   editAnswer: "Поправить",
   answerEdited: "Исправлено",

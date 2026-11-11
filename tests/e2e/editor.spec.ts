@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { seal } from "../../src/auth/core/cookie-seal";
 import { E2E_SCRIPT } from "../../src/modules/platform/e2e-script";
 import { E2E_BASE_URL, E2E_COOKIE_SECRET, E2E_EMAIL } from "./e2e-env";
@@ -19,7 +19,7 @@ test("эксперт создаёт лидмагнит, правит его че
   test.setTimeout(180_000);
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Новый лидмагнит" }).click();
+  await openCreateForm(page);
   await page.getByLabel("Название").fill("Сквозной лидмагнит");
   await page.getByRole("button", { name: "Создать" }).click();
   await expect(page).toHaveURL(/\/lead-magnets\/[0-9a-f-]{36}$/, { timeout: 60_000 });
@@ -128,11 +128,33 @@ test("эксперт создаёт лидмагнит, правит его че
   await expect(preview.getByText(E2E_SCRIPT.farewell)).toHaveCount(1);
 });
 
+test("«Отмена» в «Новом лидмагните» прячет форму, но не стирает набранное", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto("/");
+  await openCreateForm(page);
+  if (await page.getByRole("button", { name: "Отмена" }).isHidden()) {
+    // Пустой кабинет открывает форму сразу и без «Отмены» — нужен хотя бы один лидмагнит
+    await page.getByLabel("Название").fill("Лидмагнит для отмены");
+    await page.getByRole("button", { name: "Создать" }).click();
+    await expect(page).toHaveURL(/\/lead-magnets\/[0-9a-f-]{36}$/, { timeout: 60_000 });
+    await page.goto("/");
+    await openCreateForm(page);
+  }
+  await page.getByLabel("Название").fill("Разбор воронки");
+  await page.getByLabel("Описание").fill("Коротко о воронке");
+  await page.getByRole("button", { name: "Отмена" }).click();
+  await expect(page.getByLabel("Название")).toBeHidden();
+
+  await page.getByRole("button", { name: "Новый лидмагнит" }).click();
+  await expect(page.getByLabel("Название")).toHaveValue("Разбор воронки");
+  await expect(page.getByLabel("Описание")).toHaveValue("Коротко о воронке");
+});
+
 test("в проверке лента едет за длинным ответом, даже если сообщение набрано с клавиатуры", async ({ page }) => {
   test.setTimeout(180_000);
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Новый лидмагнит" }).click();
+  await openCreateForm(page);
   await page.getByLabel("Название").fill("Лидмагнит с длинными ответами");
   await page.getByRole("button", { name: "Создать" }).click();
   await expect(page).toHaveURL(/\/lead-magnets\/[0-9a-f-]{36}$/, { timeout: 60_000 });
@@ -187,7 +209,7 @@ test("после хода конструктора: кнопка перезап�
   test.setTimeout(180_000);
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Новый лидмагнит" }).click();
+  await openCreateForm(page);
   await page.getByLabel("Название").fill("Лидмагнит с журналом");
   await page.getByRole("button", { name: "Создать" }).click();
   await expect(page).toHaveURL(/\/lead-magnets\/[0-9a-f-]{36}$/, { timeout: 60_000 });
@@ -202,6 +224,9 @@ test("после хода конструктора: кнопка перезап�
   }).toPass({ timeout: 30_000 });
   await constructorInput.press("Enter");
   await expect(constructor.getByRole("paragraph").filter({ hasText: E2E_SCRIPT.constructorDone })).toBeVisible({ timeout: 30_000 });
+  // Плашка инструмента — названием для эксперта, без служебного имени
+  await expect(constructor.getByText(/Правка лидмагнита/).first()).toBeVisible();
+  await expect(constructor.getByText(/edit_lead_magnet/)).toHaveCount(0);
 
   // «Начать заново» — над перепиской «Разговора», на других вкладках ему не к чему относиться
   const restart = page.getByRole("button", { name: "Начать заново" });
@@ -214,8 +239,13 @@ test("после хода конструктора: кнопка перезап�
   // Лог: ход конструктора — вызов модели с вызовом инструмента и сам вызов инструмента
   const log = page.getByRole("tabpanel", { name: "Лог" });
   const turn = log.getByRole("list", { name: "Ходы агентов" }).getByRole("listitem").filter({ hasText: "Конструктор" }).first();
-  await expect(turn.getByText("вызывает edit_lead_magnet")).toBeVisible({ timeout: 10_000 });
-  const toolCall = turn.locator("summary").filter({ hasText: "Инструмент · edit_lead_magnet" });
+  // Слова эксперта, а не разработчика: название инструмента и модели из «Настроек», объём вместо «токенов»
+  await expect(turn.getByText("вызывает инструмент «Правка лидмагнита»")).toBeVisible({ timeout: 10_000 });
+  await expect(turn.locator("summary").filter({ hasText: "Модель · Тестовая модель" }).first()).toBeVisible();
+  await expect(turn.getByText(/Объём: прочитано/)).toBeVisible();
+  await expect(turn.locator("summary").filter({ hasText: /edit_lead_magnet|stub-v1/ })).toHaveCount(0);
+  await expect(turn.getByText(/^токены/)).toHaveCount(0);
+  const toolCall = turn.locator("summary").filter({ hasText: "Инструмент · Правка лидмагнита" });
   await expect(toolCall).toBeVisible();
   await toolCall.click();
   await expect(turn.getByText("Аргументы")).toBeVisible();
@@ -238,3 +268,10 @@ test("после хода конструктора: кнопка перезап�
   await expect(versions).toHaveCount(3);
   await expect(versions.first().getByText("Откат")).toBeVisible();
 });
+
+/** Открывает форму «Новый лидмагнит»; в пустом кабинете она уже открыта и кнопки нет. */
+async function openCreateForm(page: Page) {
+  const button = page.getByRole("button", { name: "Новый лидмагнит" });
+  await expect(button.or(page.getByLabel("Название"))).toBeVisible({ timeout: 60_000 });
+  if (await button.isVisible()) await button.click();
+}

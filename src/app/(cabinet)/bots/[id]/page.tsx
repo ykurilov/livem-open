@@ -21,7 +21,7 @@ export default async function BotPage({ params }: { params: Promise<{ id: string
   if (!bot) notFound();
   const activeConversations = await botService.countActiveConversations(id);
   const leadMagnets = await listBotLeadMagnets(getDatabase().db, id);
-  const publishedCount = leadMagnets.filter((lead) => lead.published).length;
+  const published = leadMagnets.filter((lead) => lead.published).map((lead) => ({ id: lead.id, name: lead.name }));
 
   return (
     <>
@@ -65,7 +65,7 @@ export default async function BotPage({ params }: { params: Promise<{ id: string
             <CardTitle>Удаление бота</CardTitle>
           </CardHeader>
           <CardContent>
-            <DeleteBotForm botId={bot.id} publishedCount={publishedCount} activeConversations={activeConversations} />
+            <DeleteBotForm botId={bot.id} published={published} activeConversations={activeConversations} />
           </CardContent>
         </Card>
       </div>

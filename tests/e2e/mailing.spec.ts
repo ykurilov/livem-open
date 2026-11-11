@@ -36,7 +36,7 @@ function tomorrowAt18Msk(): string {
   return `${msk.toISOString().slice(0, 10)}T18:00`;
 }
 
-test("эксперт создаёт рассылку, присылает себе пробу, планирует и отменяет", async ({ page }) => {
+test("эксперт создаёт рассылку, присылает себе пробу, планирует, отменяет и возвращает в черновики", async ({ page }) => {
   test.setTimeout(90_000);
   const { db } = connection;
   // Свой ярлык у каждого прогона: при повторах и параллельных воркерах данные не пересекаются
@@ -187,6 +187,62 @@ test("эксперт создаёт рассылку, присылает себ�
   expect((await db.select().from(mailings).where(eq(mailings.id, mailingId)))[0]?.status).toBe("cancelled");
   expect(await db.select().from(outboundMessages).where(eq(outboundMessages.mailingId, mailingId))).toEqual([]);
 
+  // Случайную отмену можно исправить: рассылка возвращается черновиком с тем же текстом
+  await page.getByRole("button", { name: "Вернуть в черновики" }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "test-results/uxfix-mailing-restore.png", animations: "disabled" });
+  await page.getByRole("button", { name: "Вернуть в черновики" }).click();
+  await expect(page.getByText("Рассылка снова в черновиках.")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByLabel("Текст")).toHaveValue(text);
+  expect((await db.select().from(mailings).where(eq(mailings.id, mailingId)))[0]).toMatchObject({ status: "draft", scheduledAt: null });
+
   await page.goto("/mailings");
   await expect(page.getByRole("link", { name: new RegExp(`Завтра эфир ${tag}`) })).toBeVisible();
+});
+
+test("«Отправить сейчас» сначала спрашивает: окно с числом получателей и текстом, «Отмена» ничего не отправляет", async ({ page }) => {
+  test.setTimeout(90_000);
+  const { db } = connection;
+  const tag = randomUUID().slice(0, 8);
+  const token = `fake-now${tag}`;
+  const [bot] = await db
+    .insert(bots)
+    .values({
+      channel: "telegram",
+      title: `Бот подтверждения ${tag}`,
+      externalId: `ext-${token}`,
+      username: `bot_now${tag}`,
+      tokenEncrypted: createTokenCipher(e2eServerEnv().BOT_TOKEN_KEY!).encrypt(token),
+      webhookSecret: `secret-${token}`,
+    })
+    .returning();
+  const [reader] = await db.insert(people).values({ channel: "telegram", botId: bot!.id, externalUserId: `now-${tag}`, displayName: `Читатель ${tag}` }).returning();
+
+  await page.goto("/mailings/new");
+  await page.getByRole("combobox", { name: "Бот" }).selectOption({ label: bot!.title });
+  await page.getByRole("button", { name: "Показать" }).click();
+  await expect(page.getByTestId("recipient-count")).toHaveText("Получателей: 1");
+  const text = `Срочно ${tag}`;
+  await page.getByLabel("Текст").fill(text);
+
+  await page.getByRole("button", { name: "Отправить сейчас" }).click();
+  const confirm = page.getByRole("dialog", { name: "Отправить рассылку 1 человеку?" });
+  await expect(confirm).toBeVisible();
+  await expect(confirm.getByTestId("confirm-mailing-text")).toHaveText(text);
+  await expect(confirm.getByText("Отменить отправку будет нельзя")).toBeVisible();
+  await page.screenshot({ path: "test-results/uxfix-mailing-confirm.png", animations: "disabled" });
+  await confirm.getByRole("button", { name: "Отмена" }).click();
+  await expect(confirm).toBeHidden();
+  await expect(page).toHaveURL(/\/mailings\/new/);
+  await expect(page.getByLabel("Текст")).toHaveValue(text);
+  expect(await db.select().from(mailings).where(eq(mailings.text, text))).toEqual([]);
+
+  await page.getByRole("button", { name: "Отправить сейчас" }).click();
+  await confirm.getByRole("button", { name: "Отправить", exact: true }).click();
+  await expect(page).toHaveURL(/\/mailings\/[0-9a-f-]{36}/, { timeout: 30_000 });
+  await expect(page.getByTestId("mailing-status")).toHaveText(/Отправляется|Отправлена/);
+  await expect
+    .poll(async () => (await db.select({ status: outboundMessages.status }).from(outboundMessages).where(eq(outboundMessages.personId, reader!.id)))[0]?.status, {
+      timeout: 30_000,
+    })
+    .toBe("sent");
 });

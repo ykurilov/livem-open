@@ -7,6 +7,7 @@ import { Banner, Button, ChatHeader, Textarea } from "@ykurilov/ds-react";
 import dynamic from "next/dynamic";
 import { forwardRef, Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { WebChatElsewhere, WebChatItem } from "@/modules/web-chat/web-chat";
+import { useRememberedDraft } from "@/ui/remembered-draft";
 import { webChatVoiceChatId } from "@/modules/voice/access";
 
 /** Как часто открытая страница спрашивает новые сообщения. */
@@ -20,6 +21,7 @@ const MESSAGE_MAX_LENGTH = 2000;
 const PUSH_DISMISSED_KEY = "web-chat-push-dismissed";
 /** Код входа веб-приложения, пока вход по нему не подтвердился: переживает обновление страницы и перезапуск. */
 const PENDING_RESUME_KEY = "web-chat-resume:";
+const DRAFT_KEY = "web-chat-draft:";
 /** Сколько показывать «печатает» после сообщения человека: дольше ответ, скорее всего, придёт от эксперта, не сразу. */
 const TYPING_MS = 90_000;
 /** Столько неудачных опросов подряд (около 10 с) — уже не случайный сбой: человеку говорим, что новые сообщения не приходят. */
@@ -65,7 +67,8 @@ export function WebChat({
 
   const [status, setStatus] = useState<Status>(closed ? { kind: "closed", current: closed } : { kind: "loading" });
   const [items, setItems] = useState<WebChatItem[]>(initialItems);
-  const [draft, setDraft] = useState("");
+  // Набранное переживает перезагрузку страницы: черновик лежит в браузере, пока сообщение не уйдёт
+  const [draft, setDraft] = useRememberedDraft(`${DRAFT_KEY}${code}`);
   // Сказанное дописывается к набранному; после «стоп» сервер чистит его моделью, заменяется только надиктованный кусок
   const dictation = useVoiceDictation({ voice: voice ? webChatVoice : undefined, value: draft, setValue: setDraft, chatId: webChatVoiceChatId(code) });
   const [sending, setSending] = useState(false);

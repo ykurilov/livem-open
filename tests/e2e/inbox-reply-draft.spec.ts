@@ -64,7 +64,7 @@ async function seedThreads(names: (tag: string) => string[]) {
   return persons;
 }
 
-test("черновик ответа не переходит к другому собеседнику, даже если их сообщения пришли в одну и ту же секунду", async ({ page }) => {
+test("черновик ответа свой у каждого собеседника: не переходит к другому, даже если их сообщения пришли в одну секунду, и ждёт возвращения", async ({ page }) => {
   const persons = await seedThreads((tag) => [`Аня ${tag}`, `Боря ${tag}`]);
   const names = persons.map((person) => person.displayName!);
 
@@ -76,6 +76,21 @@ test("черновик ответа не переходит к другому с
 
   await threads.getByRole("link", { name: new RegExp(names[1]!) }).click();
   await expect(page.getByTestId("inbox-messages")).toContainText(`Вопрос от ${names[1]}`);
+  await expect(page.getByLabel("Ваш ответ")).toHaveValue("");
+
+  // Вернулся к Ане — набранное ей на месте, и после перезагрузки тоже
+  await threads.getByRole("link", { name: new RegExp(names[0]!) }).click();
+  await expect(page.getByTestId("inbox-messages")).toContainText(`Вопрос от ${names[0]}`);
+  await expect(page.getByLabel("Ваш ответ")).toHaveValue("Черновик для Ани");
+  await page.reload();
+  await expect(page.getByLabel("Ваш ответ")).toHaveValue("Черновик для Ани");
+
+  // Отправленный черновик больше не возвращается
+  await page.getByRole("button", { name: "Отправить" }).click();
+  await expect(page.getByTestId("inbox-messages")).toContainText("Черновик для Ани");
+  await expect(page.getByLabel("Ваш ответ")).toHaveValue("");
+  await page.reload();
+  await expect(page.getByTestId("inbox-messages")).toContainText("Черновик для Ани");
   await expect(page.getByLabel("Ваш ответ")).toHaveValue("");
 });
 

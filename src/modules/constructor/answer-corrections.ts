@@ -8,6 +8,7 @@ import type { Database } from "../platform/db";
 import { AGENT_TIME_ZONE } from "../platform/models-catalog";
 import { conversationOfChat } from "../role-swap";
 import type { ToolResult } from "./tools";
+import { TOOL_TITLES } from "../agent-log/tool-titles";
 
 export const ANSWER_CORRECTION_TOOL_NAMES = ["read_answer_corrections", "resolve_answer_corrections"] as const;
 
@@ -165,7 +166,7 @@ export async function resolveAnswerCorrections(
 export function createAnswerCorrectionTools(db: Database, leadMagnetId: () => Promise<string>, onChange: () => void): ToolSet {
   return {
     read_answer_corrections: tool({
-      title: "Чтение правок ответов",
+      title: TOOL_TITLES.read_answer_corrections,
       description:
         "Прочитать правки, которыми эксперт исправил ответы консультанта в «Проверке», и записи разговоров «Поменяемся ролями»: " +
           "ответы эксперта за консультанта и правки реплик агента-клиента. Рядом — разговор перед ответом. " +
@@ -174,7 +175,7 @@ export function createAnswerCorrectionTools(db: Database, leadMagnetId: () => Pr
       execute: async (input) => readAnswerCorrections(db, await leadMagnetId(), input),
     }),
     resolve_answer_corrections: tool({
-      title: "Разбор правок ответов",
+      title: TOOL_TITLES.resolve_answer_corrections,
       description:
         "Отметить правки разобранными с итогом решения эксперта: applied — изменение записано, rejected — эксперт отказался, " +
         "already_covered — настройки уже это учитывают.",

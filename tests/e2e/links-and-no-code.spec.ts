@@ -115,10 +115,13 @@ test("ссылка с меткой попадает в отчёт; бот в р�
   await page.getByRole("combobox", { name: "Что делает бот без кода" }).selectOption({ label: "Ничего" });
   await expect(page.getByText("Сохранено"), "новый выбор ещё не сохранён").toBeHidden();
   await page.getByRole("combobox", { name: "Что делает бот без кода" }).selectOption({ label: "Меню" });
-  await page.getByRole("button", { name: "Удалить бота" }).click();
-  await page.getByRole("dialog", { name: "Удалить бота?" }).getByRole("button", { name: "Удалить", exact: true }).click();
-  await expect(page.getByRole("dialog").getByText(/снимите с публикации/)).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("dialog").getByRole("button", { name: "Отмена" }).click();
+  // Удалить нельзя — видно сразу: кнопка выключена, рядом причина и какие лидмагниты снять с публикации
+  const deleteBot = page.getByRole("button", { name: "Удалить бота" });
+  await expect(deleteBot).toBeDisabled();
+  await expect(deleteBot).toHaveAccessibleDescription(/Снимите их с публикации/);
+  await expect(page.getByRole("link", { name: `Основной ${tag}` })).toHaveAttribute("href", `/lead-magnets/${main.id}/publish`);
+  await deleteBot.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "test-results/uxfix-delete-bot-blocked.png", animations: "disabled" });
 
   // Снятие с публикации: ссылка ведёт в меню бота, где остался только второй лидмагнит
   await page.goto(`/lead-magnets/${main.id}/publish`);

@@ -75,7 +75,7 @@ test("эксперт добавляет ролик, разрешает его л
   await openTab(page, "Лог");
   const log = page.getByRole("tabpanel", { name: "Лог" });
   const turn = log.getByRole("list", { name: "Ходы агентов" }).getByRole("listitem").filter({ hasText: "Проверка" }).first();
-  const toolCall = turn.locator("summary").filter({ hasText: "Инструмент · show_video" });
+  const toolCall = turn.locator("summary").filter({ hasText: "Инструмент · Показ ролика" });
   await expect(toolCall).toBeVisible({ timeout: 10_000 });
   await toolCall.click();
   await expect(turn.getByRole("link", { name: title })).toBeVisible();

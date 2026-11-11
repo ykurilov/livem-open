@@ -11,6 +11,7 @@ import {
   launchMailing,
   listTestRecipients,
   parseMskDateTime,
+  restoreCancelledMailing,
   saveMailingDraft,
   sendMailingTest,
 } from "@/modules/mailings";
@@ -125,6 +126,20 @@ export async function cancelMailingAction(id: string, _previous: MailingFormStat
   }
   revalidatePath("/mailings");
   redirect(`/mailings/${id}`);
+}
+
+/** Отменённая рассылка обратно в черновики: случайную «Отменить» можно исправить. */
+export async function restoreCancelledMailingAction(id: string, _previous: MailingFormState): Promise<MailingFormState> {
+  await requireUser();
+  if (!isUuid(id)) redirect("/mailings");
+  try {
+    await restoreCancelledMailing({ db: getDatabase().db }, id);
+  } catch (error) {
+    if (!(error instanceof MailingError)) throw error;
+    // Уже не отменённая (вернули в соседней вкладке): страница покажет её настоящее состояние
+  }
+  revalidatePath("/mailings");
+  redirect(`/mailings/${id}?done=restore`);
 }
 
 /** Сколько знаков имени принимает поиск «Кому прислать пробу». */

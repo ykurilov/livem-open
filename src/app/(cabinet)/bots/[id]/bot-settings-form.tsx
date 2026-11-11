@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { startTransition, useActionState, useState } from "react";
 import { Dialog } from "@ykurilov/ds-react";
 import { Alert, Button } from "@/ui/primitives";
@@ -98,13 +99,17 @@ function conversationsWord(count: number): string {
   return "разговоров";
 }
 
-/** «Удалить бота» — через подтверждение: удаление закрывает идущие разговоры, отменить его нельзя. */
-export function DeleteBotForm(props: { botId: string; publishedCount: number; activeConversations: number }) {
+/**
+ * «Удалить бота» — через подтверждение: удаление закрывает идущие разговоры, отменить его нельзя.
+ * Пока на боте есть опубликованные лидмагниты, кнопка выключена, а рядом — какие снять с публикации.
+ */
+export function DeleteBotForm(props: { botId: string; published: Array<{ id: string; name: string }>; activeConversations: number }) {
   const [state, formAction, pending] = useActionState<BotSettingsState, FormData>(
     keepingFormOnSendFailure(deleteBotAction.bind(null, props.botId), ACTION_SEND_FAILED),
     {},
   );
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const blocked = props.published.length > 0;
   const activeWarning =
     props.activeConversations > 0 ? (
       <Alert variant="warm" title={`Сейчас идёт ${props.activeConversations} ${conversationsWord(props.activeConversations)}`}>
@@ -114,14 +119,31 @@ export function DeleteBotForm(props: { botId: string; publishedCount: number; ac
 
   return (
     <div className="flex max-w-xl flex-col gap-[var(--yk-space-4)]">
-      <span className="text-[length:var(--yk-text-small-size)]">
-        {props.publishedCount > 0
-          ? "На этом боте есть опубликованные лидмагниты. Чтобы удалить бота, сначала снимите их с публикации."
-          : "Бот перестанет принимать сообщения. Люди и переписка в базе останутся."}
-      </span>
+      {blocked ? (
+        <div id="delete-bot-blocked" className="flex flex-col gap-1 text-[length:var(--yk-text-small-size)]">
+          <span>Сейчас удалить нельзя: бот ведёт опубликованные лидмагниты. Снимите их с публикации — и кнопка заработает.</span>
+          <ul className="list-disc pl-5">
+            {props.published.map((lead) => (
+              <li key={lead.id}>
+                <Link href={`/lead-magnets/${lead.id}/publish`} className="app-focus underline underline-offset-2">
+                  {lead.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <span className="text-[length:var(--yk-text-small-size)]">Бот перестанет принимать сообщения. Люди и переписка в базе останутся.</span>
+      )}
       {activeWarning}
       <div>
-        <Button type="button" variant="destructive" onClick={() => setConfirmOpen(true)}>
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={blocked}
+          aria-describedby={blocked ? "delete-bot-blocked" : undefined}
+          onClick={() => setConfirmOpen(true)}
+        >
           Удалить бота
         </Button>
       </div>

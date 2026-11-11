@@ -1,3 +1,4 @@
+import { withToolTitles } from "./tool-titles";
 import type { ChatMigrationEntry, FirstMessageReason, FlowTransitionEntry } from "./types";
 
 const DECIDER_LABEL: Record<FlowTransitionEntry["decidedBy"], string> = {
@@ -32,7 +33,7 @@ export function transitionText(entry: FlowTransitionEntry): TransitionText {
   return {
     route: `${entry.from} → ${entry.to}${entry.returned ? " (возврат)" : ""}`,
     decider,
-    reason: entry.reason?.trim() || null,
+    reason: withToolTitles(entry.reason?.trim() ?? "") || null,
     day: entry.day === undefined ? null : entry.totalDays === undefined ? `День ${entry.day}` : `День ${entry.day} из ${entry.totalDays}`,
   };
 }

@@ -32,6 +32,7 @@ import { describeEditInputIssues } from "./edit-input-hints";
 import { withoutDeletedFields } from "./manual-edits";
 import { ANSWER_CORRECTION_TOOL_NAMES, createAnswerCorrectionTools } from "./answer-corrections";
 import type { Database, DatabaseExecutor } from "../platform/db";
+import { TOOL_TITLES } from "../agent-log/tool-titles";
 
 export const CONSTRUCTOR_TOOL_NAMES = [
   "view_lead_magnet",
@@ -575,7 +576,7 @@ export function createConstructorTools(
   const leadMagnetId = typeof leadMagnet === "string" ? async () => leadMagnet : leadMagnet;
   return {
     view_lead_magnet: tool({
-      title: "Просмотр лидмагнита",
+      title: TOOL_TITLES.view_lead_magnet,
       description:
         "Посмотреть текущий черновик лидмагнита. Выбирай только нужные разделы. " +
         "appRules — правила, которые приложение само добавляет консультанту поверх настроек эксперта; их не меняет никто.",
@@ -583,7 +584,7 @@ export function createConstructorTools(
       execute: async (input) => viewLeadMagnet(deps, await leadMagnetId(), input),
     }),
     edit_lead_magnet: tool({
-      title: "Правка лидмагнита",
+      title: TOOL_TITLES.edit_lead_magnet,
       description:
         "Изменить черновик лидмагнита. Все изменения одного вызова применяются вместе и дают одну версию; " +
         "если хоть одно не подошло, не применяется ничего. Модель и провайдера здесь не поменять.",
@@ -597,13 +598,13 @@ export function createConstructorTools(
       },
     }),
     read_test_conversation: tool({
-      title: "Чтение тестового разговора",
+      title: TOOL_TITLES.read_test_conversation,
       description: "Прочитать тестовый разговор эксперта с консультантом: реплики и этапы.",
       inputSchema: z.strictObject({ lastMessages: z.number().int().min(1).optional() }),
       execute: async (input) => readTestConversation(deps, await leadMagnetId(), input),
     }),
     reopen_test_conversation: tool({
-      title: "Продолжение тестового разговора",
+      title: TOOL_TITLES.reopen_test_conversation,
       description:
         "Снять блокировку с завершённого тестового разговора: эксперт сможет писать консультанту дальше с того места, где разговор кончился.",
       inputSchema: z.strictObject({}),

@@ -15,6 +15,7 @@ export {
   listTestRecipients,
   loadMailingReport,
   parseMskDateTime,
+  restoreCancelledMailing,
   sendMailingTest,
   updateMailingDraft,
 } from "./mailings";

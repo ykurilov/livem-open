@@ -21,6 +21,10 @@ describe("переход в «Логе» словами", () => {
     expect(transitionText({ ...base, decidedBy: "event" }).decider).toBe("событие");
   });
 
+  it("причина «вызван инструмент» — с названием инструмента, а не служебным именем", () => {
+    expect(transitionText({ ...base, decidedBy: "event", reason: "вызван инструмент «finish_dialog»" }).reason).toBe("вызван инструмент «Завершение разговора»");
+  });
+
   it("без причины и без дня — пустые поля, а не выдумка", () => {
     const text = transitionText(base);
     expect(text.reason).toBeNull();

@@ -18,6 +18,7 @@ import {
   listMailings,
   loadMailingReport,
   parseMskDateTime,
+  restoreCancelledMailing,
   sendMailingTest,
 } from "./index";
 
@@ -97,6 +98,30 @@ describe("расписание", () => {
     expect(kit.textsTo(anna.userId)).toEqual([]);
     expect((await getMailing(kit.db, mailing.id))?.status).toBe("cancelled");
     expect(await kit.db.select().from(outboundMessages).where(eq(outboundMessages.mailingId, mailing.id))).toEqual([]);
+  });
+
+  it("отменённую можно вернуть в черновики: текст цел, время снято, снова запускается и уходит один раз", async () => {
+    const anna = await kit.addPerson();
+    const mailing = await createMailing(kit.db, { text: "Передумал отменять", filter: { botIds: [kit.bot.id] } });
+    await launchMailing(kit, mailing.id, { at: new Date(kit.clock.now().getTime() + HOUR) });
+    await cancelMailing(kit, mailing.id);
+
+    await restoreCancelledMailing(kit, mailing.id);
+    const restored = await getMailing(kit.db, mailing.id);
+    expect(restored).toMatchObject({ status: "draft", text: "Передумал отменять", scheduledAt: null });
+
+    // Старая задача старта ещё в очереди: она не запускает черновик и не дублирует новый запуск
+    await launchMailing(kit, mailing.id, { at: new Date(kit.clock.now().getTime() + 2 * HOUR) });
+    await kit.drainAll();
+    expect(kit.textsTo(anna.userId)).toEqual(["Передумал отменять"]);
+  });
+
+  it("вернуть в черновики можно только отменённую", async () => {
+    const mailing = await createMailing(kit.db, { text: "Черновик", filter: {} });
+    await expect(restoreCancelledMailing(kit, mailing.id)).rejects.toThrow(MailingError);
+    await launchMailing(kit, mailing.id, { at: new Date(kit.clock.now().getTime() + HOUR) });
+    await expect(restoreCancelledMailing(kit, mailing.id)).rejects.toThrow(MailingError);
+    expect((await getMailing(kit.db, mailing.id))?.status).toBe("scheduled");
   });
 
   it("начавшуюся рассылку отменить нельзя", async () => {

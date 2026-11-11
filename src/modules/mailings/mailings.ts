@@ -167,6 +167,21 @@ export async function cancelMailing(deps: Pick<MailingServiceDependencies, "db">
 }
 
 /**
+ * Отменённая рассылка обратно в черновики — исправить случайную «Отменить». Она не начиналась: получателей не было,
+ * время снимается. Задача старта от прошлого запуска, если ещё в очереди, черновик не запускает.
+ */
+export async function restoreCancelledMailing(deps: Pick<MailingServiceDependencies, "db">, id: string): Promise<void> {
+  const [row] = isUuid(id)
+    ? await deps.db
+        .update(mailings)
+        .set({ status: "draft", scheduledAt: null })
+        .where(and(eq(mailings.id, id), eq(mailings.status, "cancelled")))
+        .returning({ id: mailings.id })
+    : [];
+  if (!row) throw new MailingError("Вернуть в черновики можно только отменённую рассылку");
+}
+
+/**
  * «Отправить себе»: проба уходит выбранному человеку из базы — эксперту в его мессенджере.
  * В отчёт рассылки проба не входит и рассылкой человеку не считается (`mailingId` пуст). Выбор запоминается для следующего раза.
  */

@@ -5,6 +5,8 @@ import { ArrowRightIcon, PlayIcon } from "@phosphor-icons/react";
 import { Badge, Button } from "@/ui/primitives";
 import type { AgentLogTurn, ChatMigrationEntry, FirstMessageEntry, FlowTransitionEntry, LoggedMessage, ModelCallEntry, ToolCallEntry } from "@/modules/agent-log";
 import { firstMessageLines, migrationText, transitionText } from "@/modules/agent-log/flow-text";
+import { modelNameKey } from "@/modules/agent-log/model-names";
+import { toolTitle } from "@/modules/agent-log/tool-titles";
 import { shownVideoOf } from "@/modules/videos/shown-video";
 import { VideoLink } from "@/ui/video-link";
 import { loadAgentLogAction } from "./log-actions";
@@ -42,11 +44,22 @@ function shorten(text: string, length = 80): string {
   return line.length > length ? `${line.slice(0, length)}…` : line;
 }
 
+/** Объём текста в токенах — кусочках слов, по ним модель берёт плату. Служебное слово «токены» эксперту не показываем. */
+const VOLUME_HINT = "Считается в кусочках слов (токенах): по ним модель берёт плату. Повторный текст из памяти модели дешевле.";
+
+function volumeLabel(input: number | undefined, output: number | undefined, cacheRead: number | undefined): string {
+  const repeated = cacheRead ? ` (из них повтор ${cacheRead})` : "";
+  return `прочитано ${input ?? "?"}${repeated} · написано ${output ?? "?"}`;
+}
+
 function tokensLabel(entry: ModelCallEntry): string | null {
   const usage = entry.usage;
-  if (!usage) return null;
-  const cache = usage.cacheRead ? ` (из кэша ${usage.cacheRead})` : "";
-  return `вход ${usage.input ?? "?"}${cache} · выход ${usage.output ?? "?"}`;
+  return usage ? volumeLabel(usage.input, usage.output, usage.cacheRead) : null;
+}
+
+/** «инструмент «Правка лидмагнита»», «инструменты «Поиск ролика», «Показ ролика»». */
+function toolsPhrase(names: string[]): string {
+  return `${names.length > 1 ? "инструменты" : "инструмент"} ${names.map((name) => `«${toolTitle(name)}»`).join(", ")}`;
 }
 
 function turnTotals(turn: AgentLogTurn) {
@@ -88,9 +101,9 @@ function Messages({ messages }: { messages: LoggedMessage[] }) {
             case "file":
               return <Block key={key} title={role}>{`Файл ${part.mediaType}`}</Block>;
             case "tool-call":
-              return <Block key={key} title={`${role} · вызов ${part.name}`}>{json(part.input)}</Block>;
+              return <Block key={key} title={`${role} · вызов «${toolTitle(part.name)}»`}>{json(part.input)}</Block>;
             case "tool-result":
-              return <Block key={key} title={`Результат ${part.name}`}>{json(part.output)}</Block>;
+              return <Block key={key} title={`Результат «${toolTitle(part.name)}»`}>{json(part.output)}</Block>;
           }
         }),
       )}
@@ -98,24 +111,25 @@ function Messages({ messages }: { messages: LoggedMessage[] }) {
   );
 }
 
-function ModelCall({ entry }: { entry: ModelCallEntry }) {
+function ModelCall({ entry, modelName }: { entry: ModelCallEntry; modelName: string | undefined }) {
   const tokens = tokensLabel(entry);
   const outcome = entry.error
     ? `ошибка: ${shorten(entry.error)}`
     : entry.response.toolCalls.length
-      ? `вызывает ${entry.response.toolCalls.map((call) => call.name).join(", ")}`
+      ? `вызывает ${toolsPhrase(entry.response.toolCalls.map((call) => call.name))}`
       : shorten(entry.response.text) || "пустой ответ";
   return (
     <details className="rounded-[var(--yk-radius-md)] border border-[var(--yk-border)] p-2">
       <summary className="cursor-pointer text-[length:var(--yk-text-small-size)]">
-        <span className="font-semibold">Модель</span> · {entry.modelId} · {entry.durationMs} мс{tokens ? ` · ${tokens}` : ""}
+        <span className="font-semibold">Модель</span> · {modelName ?? entry.modelId} · {entry.durationMs} мс
+        {tokens ? <span title={VOLUME_HINT}> · {tokens}</span> : null}
         <span className="flex items-center gap-1 text-[var(--yk-muted)]"><ArrowRightIcon aria-hidden className="shrink-0" /> {outcome}</span>
       </summary>
       <div className="mt-2 flex flex-col gap-2">
         <span className="text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">
           {clockFormat.format(new Date(entry.at))} · {entry.providerId}
           {entry.response.finishReason ? ` · конец: ${entry.response.finishReason}` : ""}
-          {entry.usage?.cacheWrite ? ` · записано в кэш ${entry.usage.cacheWrite}` : ""}
+          {entry.usage?.cacheWrite ? ` · запомнено для повтора ${entry.usage.cacheWrite}` : ""}
           {entry.usage?.reasoning ? ` · рассуждения ${entry.usage.reasoning}` : ""}
         </span>
         {entry.request.instructions !== undefined ? (
@@ -132,7 +146,7 @@ function ModelCall({ entry }: { entry: ModelCallEntry }) {
         {entry.response.reasoning ? <Block title="Рассуждения">{entry.response.reasoning}</Block> : null}
         {entry.response.text ? <Block title="Текст">{entry.response.text}</Block> : null}
         {entry.response.toolCalls.map((call) => (
-          <Block key={call.id} title={`Вызов ${call.name}`}>{json(call.input)}</Block>
+          <Block key={call.id} title={`Вызов «${toolTitle(call.name)}»`}>{json(call.input)}</Block>
         ))}
         {entry.error ? <Block title="Ошибка">{entry.error}</Block> : null}
       </div>
@@ -186,7 +200,7 @@ function ToolCall({ entry }: { entry: ToolCallEntry }) {
   return (
     <details className="rounded-[var(--yk-radius-md)] border border-[var(--yk-border)] p-2">
       <summary className="cursor-pointer text-[length:var(--yk-text-small-size)]">
-        <span className="font-semibold">Инструмент</span> · {entry.name} · {entry.durationMs} мс
+        <span className="font-semibold">Инструмент</span> · {toolTitle(entry.name)} · {entry.durationMs} мс
         {video ? <span className="flex items-center gap-1"><PlayIcon aria-hidden className="shrink-0" /> {video.title}</span> : null}
         {entry.error ? <span className="block text-[var(--yk-danger)]">ошибка: {shorten(entry.error)}</span> : null}
       </summary>
@@ -206,10 +220,10 @@ function ToolCall({ entry }: { entry: ToolCallEntry }) {
   );
 }
 
-function Entry({ entry }: { entry: AgentLogTurn["entries"][number] }) {
+function Entry({ entry, modelNames }: { entry: AgentLogTurn["entries"][number]; modelNames: Record<string, string> }) {
   switch (entry.kind) {
     case "model":
-      return <ModelCall entry={entry} />;
+      return <ModelCall entry={entry} modelName={modelNames[modelNameKey(entry.providerId, entry.modelId)]} />;
     case "tool":
       return <ToolCall entry={entry} />;
     case "transition":
@@ -221,7 +235,7 @@ function Entry({ entry }: { entry: AgentLogTurn["entries"][number] }) {
   }
 }
 
-function Turn({ turn }: { turn: AgentLogTurn }) {
+function Turn({ turn, modelNames }: { turn: AgentLogTurn; modelNames: Record<string, string> }) {
   const totals = turnTotals(turn);
   const failed = turn.entries.some((entry) => (entry.kind === "model" || entry.kind === "tool") && entry.error);
   return (
@@ -231,16 +245,15 @@ function Turn({ turn }: { turn: AgentLogTurn }) {
         <Badge variant={turn.agent === "constructor" ? "cool" : "warm"}>{whoLabel(turn)}</Badge>
         {failed ? <Badge variant="neutral">Ошибка</Badge> : null}
         {isFlowTurn(turn) ? null : (
-          <span className="text-[var(--yk-muted)]">
-            токены: вход {totals.input}
-            {totals.cacheRead ? ` (из кэша ${totals.cacheRead})` : ""} · выход {totals.output}
+          <span className="text-[var(--yk-muted)]" title={VOLUME_HINT}>
+            Объём: {volumeLabel(totals.input, totals.output, totals.cacheRead)}
           </span>
         )}
       </div>
       <ol className="flex flex-col gap-1" aria-label="Шаги хода">
         {turn.entries.map((entry, index) => (
           <li key={index}>
-            <Entry entry={entry} />
+            <Entry entry={entry} modelNames={modelNames} />
           </li>
         ))}
       </ol>
@@ -252,6 +265,7 @@ function Turn({ turn }: { turn: AgentLogTurn }) {
 export function LogTab({ leadMagnetId }: { leadMagnetId: string }) {
   const [turns, setTurns] = useState<AgentLogTurn[] | null>(null);
   const [nextBefore, setNextBefore] = useState<string | null>(null);
+  const [modelNames, setModelNames] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -262,6 +276,7 @@ export function LogTab({ leadMagnetId }: { leadMagnetId: string }) {
           const page = await loadAgentLogAction(leadMagnetId, before);
           setTurns((current) => (before && current ? [...current, ...page.turns] : page.turns));
           setNextBefore(page.nextBefore);
+          setModelNames((current) => ({ ...current, ...page.modelNames }));
           setError(null);
         } catch {
           setError("Не удалось загрузить журнал");
@@ -284,7 +299,7 @@ export function LogTab({ leadMagnetId }: { leadMagnetId: string }) {
       {turns && turns.length === 0 ? <p className="text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">Агенты ещё не работали.</p> : null}
       <ol className="flex flex-col divide-y divide-[var(--yk-border)]" aria-label="Ходы агентов">
         {(turns ?? []).map((turn) => (
-          <Turn key={turn.id} turn={turn} />
+          <Turn key={turn.id} turn={turn} modelNames={modelNames} />
         ))}
       </ol>
       {nextBefore ? (

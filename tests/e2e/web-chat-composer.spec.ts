@@ -202,3 +202,22 @@ for (const profile of SHOT_PROFILES) {
     await context.close();
   });
 }
+
+test("набранное в веб-чате переживает перезагрузку страницы и пропадает после отправки", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const path = await publishedWebChat(`draft${Date.now().toString(36)}`);
+  const { context, page, input, send } = await openChat(browser, path, DESKTOP);
+  await input.fill("Хочу спросить про цены");
+  await page.reload();
+  await expect(input).toHaveValue("Хочу спросить про цены", { timeout: 30_000 });
+
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect(page.getByRole("log", { name: "Переписка" }).getByText("Хочу спросить про цены")).toBeVisible({ timeout: 30_000 });
+  await expect(input).toHaveValue("");
+  await page.reload();
+  await expect(page.getByRole("log", { name: "Переписка" }).getByText("Хочу спросить про цены")).toBeVisible({ timeout: 30_000 });
+  await expect(input).toBeEnabled();
+  await expect(input).toHaveValue("");
+  await context.close();
+});

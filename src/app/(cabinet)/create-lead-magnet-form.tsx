@@ -17,6 +17,9 @@ export function LeadMagnetsHeaderWithCreate(props: { requestId: string; startOpe
   const [requestId] = useState(props.requestId);
   const [open, setOpen] = useState(props.startOpen);
   const [nameError, setNameError] = useState<string | null>(null);
+  // Набранное живёт до «Создать»: случайная «Отмена» прячет форму, но не стирает ввод
+  const [name, setName] = useState("");
+  const [cardDescription, setCardDescription] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
 
   return (
@@ -50,12 +53,16 @@ export function LeadMagnetsHeaderWithCreate(props: { requestId: string; startOpe
               name="name"
               autoFocus={!props.startOpen}
               placeholder="Например, разбор воронки"
+              value={name}
               error={nameError ?? undefined}
-              onChange={() => nameError && setNameError(null)}
+              onChange={(event) => {
+                setName(event.target.value);
+                if (nameError) setNameError(null);
+              }}
             />
           </Field>
           <Field label="Описание" className="w-full sm:w-80">
-            <Input name="cardDescription" placeholder="Коротко для карточки" />
+            <Input name="cardDescription" placeholder="Коротко для карточки" value={cardDescription} onChange={(event) => setCardDescription(event.target.value)} />
           </Field>
           {/* Кнопки на одной высоте с полями: отступ под подпись поля */}
           <div className="flex gap-[var(--yk-space-2)] sm:mt-[1.6rem]">
