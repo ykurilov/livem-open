@@ -22,7 +22,7 @@ export function ConversationBar({
   return (
     <div className="flex items-center gap-2 pl-3">
       <p className="min-w-0 flex-1 truncate text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">{children}</p>
-      <DesignButton variant="ghost" size="sm" icon={ArrowCounterClockwiseIcon} className="shrink-0" loading={restarting} disabled={restartDisabled} onClick={onRestart}>
+      <DesignButton variant="secondary" size="sm" icon={ArrowCounterClockwiseIcon} className="shrink-0" loading={restarting} disabled={restartDisabled} onClick={onRestart}>
         Начать заново
       </DesignButton>
     </div>

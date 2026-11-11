@@ -52,7 +52,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             </Button>
           )}
           {denied ? (
-            <Button asChild variant="ghost">
+            <Button asChild variant="secondary">
               <a href="/api/auth/logout">Выйти из текущего аккаунта</a>
             </Button>
           ) : null}

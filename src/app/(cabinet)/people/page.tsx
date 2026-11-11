@@ -5,7 +5,7 @@ import { requireUser } from "@/modules/access";
 import { CHANNEL_LABELS, CONTACT_SOURCE_LABELS } from "@/modules/channels";
 import { countPeople, listFields, listPeople, listPeopleFilterOptions, type PersonListItem } from "@/modules/people";
 import { getDatabase } from "@/modules/platform/db";
-import { DataTable, PageHeader, PEOPLE_TABS, SectionTabs, type DataTableColumn } from "@/ui";
+import { ArrowLink, DataTable, PageHeader, PEOPLE_TABS, SectionTabs, type DataTableColumn } from "@/ui";
 import { filterFromSearchParams, pageFromSearchParams, searchParamsFromFilter, type SearchParams } from "./filter-params";
 import { PeopleFilterForm } from "./people-filter-form";
 import { PASSAGE_STATUS_BADGES, PASSAGE_STATUS_LABELS } from "./status-labels";
@@ -89,17 +89,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
         {pages > 1 ? (
           <nav aria-label="Страницы" className="flex items-center gap-[var(--yk-space-4)] text-[length:var(--yk-text-small-size)]">
             {page > 1 ? (
-              <Link href={pageLink(page - 1)} className="app-focus underline">
-                ← Назад
-              </Link>
+              <ArrowLink href={pageLink(page - 1)}>Назад</ArrowLink>
             ) : null}
             <span className="text-[var(--yk-muted)]">
               Страница {page} из {pages}
             </span>
             {page < pages ? (
-              <Link href={pageLink(page + 1)} className="app-focus underline">
-                Дальше →
-              </Link>
+              <ArrowLink href={pageLink(page + 1)} direction="forward">Дальше</ArrowLink>
             ) : null}
           </nav>
         ) : null}

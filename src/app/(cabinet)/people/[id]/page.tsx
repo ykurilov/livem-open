@@ -10,7 +10,7 @@ import { getDatabase } from "@/modules/platform/db";
 import { requireEnv } from "@/modules/platform/env";
 import { isUuid } from "@/modules/platform/uuid";
 import { formatUsd } from "@/modules/spending";
-import { EmptyState, ImageLink, PageHeader, VideoLink } from "@/ui";
+import { ArrowLink, EmptyState, ImageLink, PageHeader, VideoLink } from "@/ui";
 import { AgentMessage } from "@/ui/agent-message";
 import { PASSAGE_STATUS_BADGES, PASSAGE_STATUS_LABELS } from "../status-labels";
 import { StartOverButton } from "./start-over-button";
@@ -41,7 +41,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         description={`${CHANNEL_LABELS[card.channel]}, бот «${card.botTitle}». Пришёл ${dateTimeFormat.format(card.createdAt)}.${card.source ? ` Источник: ${CONTACT_SOURCE_LABELS[card.source]}.` : ""}`}
         action={
           <div className="flex flex-wrap items-start gap-[var(--yk-space-4)]">
-            {card.blockedAt ? <Badge variant="warm">Заблокировал бота</Badge> : null}
+            {card.blockedAt ? <Badge variant="danger">Заблокировал бота</Badge> : null}
             <StartOverButton personId={id} name={card.displayName ?? "Без имени"} />
             {/* На телефоне главное действие — первым */}
             <div className="max-sm:order-first">
@@ -53,9 +53,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         }
       />
       <div className="flex flex-col gap-[var(--yk-space-6)]">
-        <Link href="/people" className="app-focus w-fit text-[length:var(--yk-text-small-size)] underline">
-          ← Ко всем людям
-        </Link>
+        <ArrowLink href="/people">Ко всем людям</ArrowLink>
         <div className="grid gap-[var(--yk-space-6)] md:grid-cols-2">
           <Card>
             <CardHeader>

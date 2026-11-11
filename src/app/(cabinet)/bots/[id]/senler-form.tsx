@@ -81,7 +81,7 @@ export function SenlerGroupsForm(props: {
         <input key={leadMagnetId} type="hidden" name={`leadMagnetGroup:${leadMagnetId}`} value={groupId} />
       ))}
       <div className="flex flex-col gap-1">
-        <span className="text-[length:var(--yk-text-small-size)] font-semibold">Группа подписчиков</span>
+        <span className="yk-mono-label">Группа подписчиков</span>
         <Select
           aria-label="Группа Senler по умолчанию"
           options={[{ value: NO_GROUP, label: "Не добавлять" }, ...withMissing(defaultGroupId), ...props.groups]}

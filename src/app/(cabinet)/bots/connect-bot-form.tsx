@@ -66,7 +66,7 @@ export function ConnectBotForm({ channels, onConnected }: { channels: SelectOpti
     >
       <input type="hidden" name="channel" value={channel} />
       {channels.length > 1 ? <div className="flex flex-col gap-1">
-        <span className="text-[length:var(--yk-text-small-size)] font-semibold">Мессенджер</span>
+        <span className="yk-mono-label">Мессенджер</span>
         <Select
           options={channels}
           value={channel}

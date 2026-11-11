@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { ArrowRightIcon, PlayIcon } from "@phosphor-icons/react";
 import { Badge, Button } from "@/ui/primitives";
 import type { AgentLogTurn, ChatMigrationEntry, FirstMessageEntry, FlowTransitionEntry, LoggedMessage, ModelCallEntry, ToolCallEntry } from "@/modules/agent-log";
 import { firstMessageLines, migrationText, transitionText } from "@/modules/agent-log/flow-text";
@@ -108,7 +109,7 @@ function ModelCall({ entry }: { entry: ModelCallEntry }) {
     <details className="rounded-[var(--yk-radius-md)] border border-[var(--yk-border)] p-2">
       <summary className="cursor-pointer text-[length:var(--yk-text-small-size)]">
         <span className="font-semibold">Модель</span> · {entry.modelId} · {entry.durationMs} мс{tokens ? ` · ${tokens}` : ""}
-        <span className="block text-[var(--yk-muted)]">→ {outcome}</span>
+        <span className="flex items-center gap-1 text-[var(--yk-muted)]"><ArrowRightIcon aria-hidden className="shrink-0" /> {outcome}</span>
       </summary>
       <div className="mt-2 flex flex-col gap-2">
         <span className="text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">
@@ -186,7 +187,7 @@ function ToolCall({ entry }: { entry: ToolCallEntry }) {
     <details className="rounded-[var(--yk-radius-md)] border border-[var(--yk-border)] p-2">
       <summary className="cursor-pointer text-[length:var(--yk-text-small-size)]">
         <span className="font-semibold">Инструмент</span> · {entry.name} · {entry.durationMs} мс
-        {video ? <span className="block">▶ {video.title}</span> : null}
+        {video ? <span className="flex items-center gap-1"><PlayIcon aria-hidden className="shrink-0" /> {video.title}</span> : null}
         {entry.error ? <span className="block text-[var(--yk-danger)]">ошибка: {shorten(entry.error)}</span> : null}
       </summary>
       <div className="mt-2 flex flex-col gap-2">
@@ -287,7 +288,7 @@ export function LogTab({ leadMagnetId }: { leadMagnetId: string }) {
         ))}
       </ol>
       {nextBefore ? (
-        <Button variant="ghost" size="sm" loading={pending} onClick={() => load(nextBefore)}>
+        <Button variant="secondary" size="sm" loading={pending} onClick={() => load(nextBefore)}>
           Показать ещё
         </Button>
       ) : null}

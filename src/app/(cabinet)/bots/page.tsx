@@ -1,8 +1,7 @@
 import { RobotIcon as Bot } from "@phosphor-icons/react/dist/ssr";
-import Link from "next/link";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/ui/primitives";
 import { CHANNEL_LABELS, createBotServiceFromEnv, type BotSummary, type NoCodeMode } from "@/modules/channels";
-import { DataTable, PageHeader, SectionTabs, SETTINGS_TABS, type DataTableColumn } from "@/ui";
+import { ArrowLink, DataTable, PageHeader, SectionTabs, SETTINGS_TABS, type DataTableColumn } from "@/ui";
 import { ConnectBotForm } from "./connect-bot-form";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +27,7 @@ const columns: DataTableColumn<BotSummary>[] = [
     header: "Статус",
     render: (bot) => (
       <div className="flex flex-col items-start gap-1">
-        {bot.status === "ok" ? <Badge variant="success">Работает</Badge> : <Badge variant="warm">Ошибка</Badge>}
+        {bot.status === "ok" ? <Badge variant="success">Работает</Badge> : <Badge variant="danger">Ошибка</Badge>}
         {bot.status !== "ok" && bot.statusError ? <span className="text-[var(--yk-muted)]">{bot.statusError}</span> : null}
         {bot.canSendPhotos ? null : (
           <>
@@ -45,9 +44,9 @@ const columns: DataTableColumn<BotSummary>[] = [
     header: "",
     align: "right",
     render: (bot) => (
-      <Link href={`/bots/${bot.id}`} className="app-focus underline">
+      <ArrowLink href={`/bots/${bot.id}`} direction="forward">
         Настроить
-      </Link>
+      </ArrowLink>
     ),
   },
 ];

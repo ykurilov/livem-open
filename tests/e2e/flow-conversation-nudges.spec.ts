@@ -78,7 +78,7 @@ test("касания разговора от конструктора видны
   // Правка человека ложится в те же касания, по которым работает агент
   await nudges.getByRole("spinbutton", { name: "Молчит — написать через 1", exact: true }).fill("3");
   await saveBoard(page, board);
-  await expect(board.getByRole("button", { name: "Сохранено" })).toBeVisible();
+  await expect(board.getByRole("status").filter({ hasText: "Сохранено" })).toBeVisible();
   const { flow } = (await getLeadMagnet(connection.db, id))!.draft;
   expect(flow.nudges).toEqual({ afterSilence: [{ amount: 3, unit: "h" }], dailyAt: ["11:30"], giveUpAfter: { amount: 5, unit: "d" } });
   // Правка касаний не включает «Дни и время»

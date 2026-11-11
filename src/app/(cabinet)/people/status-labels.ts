@@ -8,10 +8,10 @@ export const PASSAGE_STATUS_LABELS: Record<PassageStatus, string> = {
   term_ended: "Срок вышел",
 };
 
-export const PASSAGE_STATUS_BADGES: Record<PassageStatus, "cool" | "success" | "neutral" | "warm"> = {
+export const PASSAGE_STATUS_BADGES: Record<PassageStatus, "cool" | "success" | "neutral" | "warm" | "danger"> = {
   active: "cool",
   completed: "success",
   not_completed: "neutral",
-  blocked: "warm",
+  blocked: "danger",
   term_ended: "neutral",
 };

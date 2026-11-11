@@ -1,5 +1,4 @@
 import { Suspense, type ReactNode } from "react";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Alert, Card, CardContent, CardHeader, CardTitle } from "@/ui/primitives";
 import { requireUser } from "@/modules/access";
@@ -7,7 +6,7 @@ import { CHANNEL_LABELS, createBotServiceFromEnv } from "@/modules/channels";
 import { listBotLeadMagnets } from "@/modules/lead-magnets";
 import { getDatabase } from "@/modules/platform/db";
 import { createSenlerSettingsFromEnv } from "@/modules/senler";
-import { PageHeader } from "@/ui";
+import { ArrowLink, PageHeader } from "@/ui";
 import { BotSettingsForm, DeleteBotForm } from "./bot-settings-form";
 import { PhotosKeyForm } from "./photos-key-form";
 import { SenlerDisconnectForm, SenlerGroupsForm, SenlerKeyForm } from "./senler-form";
@@ -28,9 +27,7 @@ export default async function BotPage({ params }: { params: Promise<{ id: string
     <>
       <PageHeader title={`Бот ${bot.title}`} description={`${CHANNEL_LABELS[bot.channel]} · @${bot.username}`} />
       <div className="flex flex-col gap-[var(--yk-space-6)]">
-        <Link href="/bots" className="app-focus w-fit text-[length:var(--yk-text-small-size)] underline">
-          ← Ко всем ботам
-        </Link>
+        <ArrowLink href="/bots">Ко всем ботам</ArrowLink>
         {bot.canSendPhotos ? null : (
           <Card>
             <CardHeader>

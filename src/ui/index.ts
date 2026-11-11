@@ -14,4 +14,5 @@ export { Tabs, TabsContent, TabsList, TabsTrigger } from "./tabs";
 export { ImageLink } from "./image-link";
 export { VideoLink } from "./video-link";
 export { CopyableLink } from "./copyable-link";
+export { ArrowLink } from "./arrow-link";
 export { MaxBrandIcon, TelegramBrandIcon, VkBrandIcon } from "./messenger-brand-icons";

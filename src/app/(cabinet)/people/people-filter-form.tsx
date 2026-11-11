@@ -246,7 +246,7 @@ export function PeopleFilterForm(props: {
             ) : null}
             <Button
               type="button"
-              variant="ghost"
+              variant="secondary"
               size="sm"
               onClick={() => setConditions((current) => current.filter((candidate) => candidate.key !== condition.key))}
             >
@@ -270,7 +270,7 @@ export function PeopleFilterForm(props: {
             Условие по полю
           </Button>
         ) : null}
-        <Button type="button" variant="ghost" onClick={reset}>
+        <Button type="button" variant="secondary" onClick={reset}>
           Сбросить
         </Button>
         {/* В рассылке о неприменённом выборе говорит её форма; здесь — рядом с кнопкой */}

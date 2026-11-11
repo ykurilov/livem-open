@@ -5,7 +5,7 @@ import { requireUser } from "@/modules/access";
 import { CHANNEL_LABELS } from "@/modules/channels";
 import { REPLY_WINDOW_DAYS, getMailing, loadMailingReport, type MailingReportRow, type RecipientOutcome } from "@/modules/mailings";
 import { getDatabase } from "@/modules/platform/db";
-import { DataTable, PageHeader, type DataTableColumn } from "@/ui";
+import { ArrowLink, DataTable, PageHeader, type DataTableColumn } from "@/ui";
 import type { SearchParams } from "../../people/filter-params";
 import { pageFromSearchParams } from "../../people/filter-params";
 import { MailingEditor } from "../mailing-editor";
@@ -24,10 +24,10 @@ const DONE_NOTICES: Record<string, string> = {
   schedule: "Рассылка запланирована.",
 };
 
-const OUTCOMES: Record<RecipientOutcome, { label: string; variant: "cool" | "neutral" | "success" | "warm" }> = {
+const OUTCOMES: Record<RecipientOutcome, { label: string; variant: "cool" | "neutral" | "success" | "warm" | "danger" }> = {
   sent: { label: "Ушло", variant: "success" },
-  failed: { label: "Не доставлено", variant: "warm" },
-  blocked: { label: "Заблокировал", variant: "warm" },
+  failed: { label: "Не доставлено", variant: "danger" },
+  blocked: { label: "Заблокировал", variant: "danger" },
   waiting: { label: "В очереди", variant: "neutral" },
   skipped: { label: "Пропущен", variant: "neutral" },
 };
@@ -51,13 +51,13 @@ const columns: DataTableColumn<MailingReportRow>[] = [
     key: "outcome",
     header: "Итог",
     render: (row) => (
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col items-start gap-1">
         <Badge variant={OUTCOMES[row.outcome].variant}>{OUTCOMES[row.outcome].label}</Badge>
         {row.error ? <span className="text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">{row.error}</span> : null}
       </div>
     ),
   },
-  { key: "replied", header: "Ответил", align: "right", render: (row) => (row.replied ? "да" : "") },
+  { key: "replied", header: "Ответил", render: (row) => (row.replied ? "да" : "") },
 ];
 
 const single = (value: string | string[] | undefined) => (typeof value === "string" ? value : undefined);
@@ -72,9 +72,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     return (
       <>
         <PageHeader title="Рассылка не найдена" />
-        <Link href="/mailings" className="app-focus underline">
-          ← Ко всем рассылкам
-        </Link>
+        <ArrowLink href="/mailings">Ко всем рассылкам</ArrowLink>
       </>
     );
   }
@@ -145,17 +143,13 @@ export default async function Page({ params, searchParams }: { params: Promise<{
             {pages > 1 ? (
               <nav aria-label="Страницы отчёта" className="flex items-center gap-[var(--yk-space-4)] text-[length:var(--yk-text-small-size)]">
                 {page > 1 ? (
-                  <Link href={pageLink(page - 1)} className="app-focus underline">
-                    ← Назад
-                  </Link>
+                  <ArrowLink href={pageLink(page - 1)}>Назад</ArrowLink>
                 ) : null}
                 <span className="text-[var(--yk-muted)]">
                   Страница {page} из {pages}
                 </span>
                 {page < pages ? (
-                  <Link href={pageLink(page + 1)} className="app-focus underline">
-                    Дальше →
-                  </Link>
+                  <ArrowLink href={pageLink(page + 1)} direction="forward">Дальше</ArrowLink>
                 ) : null}
               </nav>
             ) : null}

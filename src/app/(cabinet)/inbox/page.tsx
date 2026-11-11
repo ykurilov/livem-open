@@ -8,7 +8,7 @@ import { listUnansweredThreads, loadInboxThread, type InboxMessage, type InboxTh
 import { getDatabase } from "@/modules/platform/db";
 import { isUuid } from "@/modules/platform/uuid";
 import { TrayIcon as Tray } from "@phosphor-icons/react/dist/ssr";
-import { EmptyState, PageHeader, VideoLink } from "@/ui";
+import { ArrowLink, EmptyState, PageHeader, VideoLink } from "@/ui";
 import { AgentMessage } from "@/ui/agent-message";
 import { InboxAutoRefresh } from "./auto-refresh";
 import { MessageImage } from "./message-image";
@@ -51,7 +51,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   return (
     <>
       <InboxAutoRefresh />
-      <PageHeader title="Входящие" description="Сообщения, на которые консультант не отвечает. Ответ уходит человеку от имени бота." />
+      {/* На телефоне открытая переписка занимает экран целиком: заголовок раздела убираем, назад ведёт «Все переписки» */}
+      <div className={selectedId ? "max-lg:hidden" : undefined}>
+        <PageHeader title="Входящие" description="Сообщения, на которые консультант не отвечает. Ответ уходит человеку от имени бота." />
+      </div>
       {/* На узком экране колонка одна: выбрана переписка — она вместо списка, иначе только список */}
       <div className={`grid gap-[var(--yk-space-6)] ${threads.length === 0 && !selectedId ? "" : "lg:grid-cols-[22rem_1fr]"}`}>
         <nav aria-label="Неотвеченные" className={`${selectedId ? "hidden lg:flex" : "flex"} flex-col gap-2`}>
@@ -64,9 +67,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         </nav>
         <section aria-label="Переписка" className={selectedId ? "flex flex-col gap-[var(--yk-space-4)]" : threads.length === 0 ? "hidden" : "hidden lg:block"}>
           {selectedId ? (
-            <Link href="/inbox" className="app-focus w-fit text-[length:var(--yk-text-small-size)] underline lg:hidden">
-              ← Все переписки
-            </Link>
+            <ArrowLink href="/inbox" className="lg:hidden">Все переписки</ArrowLink>
           ) : null}
           {selected ? (
             <Card data-inbox-thread>

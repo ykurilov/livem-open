@@ -43,7 +43,7 @@ export function BotSettingsForm(props: {
       <input type="hidden" name="mode" value={mode} />
       <input type="hidden" name="defaultLeadMagnetId" value={mode === "default" ? defaultLeadMagnetId : ""} />
       <div className="flex flex-col gap-1">
-        <span className="text-[length:var(--yk-text-small-size)] font-semibold">Что делает бот</span>
+        <span className="yk-mono-label">Что делает бот</span>
         <Select
           aria-label="Что делает бот без кода"
           options={MODES}
@@ -57,7 +57,7 @@ export function BotSettingsForm(props: {
       </div>
       {mode === "default" ? (
         <div className="flex flex-col gap-1">
-          <span className="text-[length:var(--yk-text-small-size)] font-semibold">Лидмагнит по умолчанию</span>
+          <span className="yk-mono-label">Лидмагнит по умолчанию</span>
           {props.leadMagnets.length === 0 ? (
             <span className="text-[length:var(--yk-text-small-size)]">К этому боту ещё не привязан ни один лидмагнит. Привяжите его на экране публикации.</span>
           ) : (

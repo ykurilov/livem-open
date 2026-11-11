@@ -91,7 +91,7 @@ test("эксперт переименовывает ноду на доске —
   await openState(board, "Знакомство");
   await board.getByRole("textbox", { name: "Название", exact: true }).fill("Знакомство с человеком");
   await saveBoard(page, board);
-  await expect(board.getByRole("button", { name: "Сохранено" })).toBeVisible();
+  await expect(board.getByRole("status").filter({ hasText: "Сохранено" })).toBeVisible();
 
   const { flow } = (await getLeadMagnet(connection.db, id))!.draft;
   expect(flow.states.map((state) => state.title)).toContain("Знакомство с человеком");
@@ -242,7 +242,7 @@ test("правка на доске, ушёл на «Разговор» и вер
   await openTab(page, "Сценарий");
   await expect(board.getByRole("button", { name: "Сохранить", exact: true })).toBeEnabled();
   await saveBoard(page, board);
-  await expect(board.getByRole("button", { name: "Сохранено" })).toBeVisible();
+  await expect(board.getByRole("status").filter({ hasText: "Сохранено" })).toBeVisible();
   await openTab(page, "Разговор");
   await expect(page.getByText("Сначала сохраните правку на вкладке «Сценарий»")).toBeHidden();
 });
@@ -262,7 +262,7 @@ test("правки в «Настройках» и на доске: сохран�
   await openState(board, "Знакомство");
   await board.getByRole("textbox", { name: "Название", exact: true }).fill("Знакомство поближе");
   await saveBoard(page, board);
-  await expect(board.getByRole("button", { name: "Сохранено" })).toBeVisible();
+  await expect(board.getByRole("status").filter({ hasText: "Сохранено" })).toBeVisible();
   await expect.poll(async () => (await draft()).firstMessage).toBe("Привет из настроек");
   expect(JSON.stringify((await draft()).flow)).toContain("Знакомство поближе");
 

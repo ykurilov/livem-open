@@ -80,7 +80,7 @@ export function HistoryTab({ leadMagnetId, versions, currentVersionId, locked, b
           {version.id === currentVersionId ? (
             <span className="text-[var(--yk-muted)]">Сейчас в черновике</span>
           ) : (
-            <Button variant="ghost" size="sm" disabled={pending || locked || blockedBecause !== null} onClick={() => setConfirming(version)}>
+            <Button variant="secondary" size="sm" disabled={pending || locked || blockedBecause !== null} onClick={() => setConfirming(version)}>
               Вернуть эту
             </Button>
           )}

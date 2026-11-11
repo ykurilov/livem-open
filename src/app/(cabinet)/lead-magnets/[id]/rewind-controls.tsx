@@ -72,7 +72,7 @@ export function RewindControls({ onRewind, onNextReminder, onNextDay, disabled }
         <Button type="submit" variant="secondary" size="sm" disabled={disabled || text.trim() === ""}>
           Промотать
         </Button>
-        <Button variant="ghost" size="sm" onClick={closeCustom}>
+        <Button variant="secondary" size="sm" onClick={closeCustom}>
           Отмена
         </Button>
         {hint ? (

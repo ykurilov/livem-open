@@ -27,6 +27,12 @@ body { margin: 0; }
 .app-content { height: 100%; min-height: 0; overflow: auto; padding: 0 var(--yk-studio-scrollbar-gap) 0 0; scrollbar-gutter: stable; }
 .app-content:has([data-fill-window]) { display: flex; flex-direction: column; }
 .app-content--board { padding: 0; overflow: hidden; }
+/* Лента переписки во «Входящих» прокручена: верхний край тает — видно, что выше есть ещё сообщения.
+   Полоса узкая: шире — и верхняя строка целиком сереет, будто выключена. */
+.inbox-messages[data-scrolled] { mask-image: linear-gradient(to bottom, transparent 0, #000 18px); }
+/* Вкладки редактора на телефоне: все пять в один ряд без обрезанной последней. Классы Tailwind здесь проигрывают
+   стилям дизайн-системы, поэтому поля вкладок сужаем обычным правилом. */
+@media (max-width: 1023px) { .editor-tabs > .yk-tab { flex: 1 1 auto; padding-inline: 4px; } }
 .app-card-header { display: flex; flex-direction: column; gap: var(--yk-space-2); margin-bottom: var(--yk-space-4); }
 .app-muted { color: var(--yk-muted); font-size: var(--yk-text-small-size); }
 .app-field { display: flex; flex-direction: column; gap: var(--yk-space-2); min-width: 0; }

@@ -197,7 +197,7 @@ export function MailingForm(props: MailingFormProps) {
         <Button type="submit" name="intent" value="now" disabled={pending || !filterApplied || props.recipientCount === 0}>
           Отправить сейчас
         </Button>
-        <Button type="submit" name="intent" value="save" variant="ghost" disabled={pending || !filterApplied}>
+        <Button type="submit" name="intent" value="save" variant="secondary" disabled={pending || !filterApplied}>
           Сохранить черновик
         </Button>
       </div>

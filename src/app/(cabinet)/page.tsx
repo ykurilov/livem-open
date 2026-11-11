@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { ArrowRightIcon, MagnetIcon as Magnet } from "@phosphor-icons/react/dist/ssr";
-import { Card, CardTitle } from "@/ui/primitives";
+import { Badge, Card, CardTitle } from "@/ui/primitives";
 import { requireUser } from "@/modules/access";
 import { CHANNEL_LABELS, createBotServiceFromEnv, createChannelAdapters } from "@/modules/channels";
 import { listAttachedBotsByLeadMagnet, listLeadMagnetCards, listWebLinksByLeadMagnet } from "@/modules/lead-magnets";
@@ -45,10 +45,9 @@ export default async function LeadMagnetsPage() {
                         {card.name}
                       </PendingLink>
                     </CardTitle>
-                    <span className="mt-0.5 flex shrink-0 items-center gap-1.5 text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">
-                      <span aria-hidden className={`size-2 rounded-full ${card.published ? "bg-[var(--yk-success)]" : "bg-[var(--yk-border-strong)]"}`} />
+                    <Badge variant={card.published ? "success" : "neutral"} className="shrink-0">
                       {card.published ? "Опубликован" : "Черновик"}
-                    </span>
+                    </Badge>
                   </div>
                   {card.cardDescription ? <p className="app-muted line-clamp-2">{card.cardDescription}</p> : null}
                   {/* Нижняя строка прижата к низу: у карточек одного ряда она на одной высоте */}

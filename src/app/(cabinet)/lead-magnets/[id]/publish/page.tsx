@@ -20,7 +20,7 @@ import { getDatabase } from "@/modules/platform/db";
 import { requireEnv } from "@/modules/platform/env";
 import { isUuid } from "@/modules/platform/uuid";
 import { formatUsd } from "@/modules/spending";
-import { CopyableLink, DataTable, PageHeader, type DataTableColumn } from "@/ui";
+import { ArrowLink, CopyableLink, DataTable, PageHeader, type DataTableColumn } from "@/ui";
 import { ChatMigrationCard } from "./chat-migration";
 import { ENTRY_LABEL_SEPARATOR } from "@/modules/lead-magnets/start-payload";
 import { AdvertisingLinks } from "./advertising-links";
@@ -62,9 +62,7 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
     <>
       <PageHeader title={`Публикация: ${lead.draft.name}`} />
       <div className="flex flex-col gap-[var(--yk-space-6)]">
-        <Link href={`/lead-magnets/${id}`} className="app-focus w-fit text-[length:var(--yk-text-small-size)] underline">
-          ← К редактору
-        </Link>
+        <ArrowLink href={`/lead-magnets/${id}`}>К редактору</ArrowLink>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

@@ -3,8 +3,8 @@
 import { startTransition, useActionState, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { RobotIcon as Bot } from "@phosphor-icons/react";
-import { Dialog } from "@ykurilov/ds-react";
+import { ArrowLeftIcon, RobotIcon as Bot } from "@phosphor-icons/react";
+import { Button as DesignButton, Dialog } from "@ykurilov/ds-react";
 import { Alert, Button } from "@/ui/primitives";
 import { EmptyState, Select, type SelectOption } from "@/ui";
 import { ConnectBotForm } from "../../../bots/connect-bot-form";
@@ -91,9 +91,9 @@ export function PublishForm(props: { leadMagnetId: string; draftVersionId: strin
           <span className="font-semibold">Подключить нового бота</span>
           {/* Без ботов возвращаться некуда: пустое состояние само ведёт сюда */}
           {noBots ? null : (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setConnectTarget(null)}>
-              ← К выбору бота
-            </Button>
+            <DesignButton type="button" variant="secondary" size="sm" icon={ArrowLeftIcon} onClick={() => setConnectTarget(null)}>
+              К выбору бота
+            </DesignButton>
           )}
         </div>
         {connectForm}
@@ -122,7 +122,7 @@ export function PublishForm(props: { leadMagnetId: string; draftVersionId: strin
   return (
     <>
       <form
-        className="flex max-w-xl flex-col gap-[var(--yk-space-4)]"
+        className="flex max-w-3xl flex-col gap-[var(--yk-space-4)]"
         onSubmit={(event) => {
           // Через action React после отправки сбрасывает форму, и списки ботов показывали бы «Не выбран»
           event.preventDefault();
@@ -137,7 +137,7 @@ export function PublishForm(props: { leadMagnetId: string; draftVersionId: strin
         {props.channels.map((choice) => (
           <div key={choice.channel} className="flex flex-col gap-1">
             <input type="hidden" name={`bot-${choice.channel}`} value={selected[choice.channel]} />
-            <span className="text-[length:var(--yk-text-small-size)] font-semibold">Бот {choice.label}</span>
+            <span className="yk-mono-label">Бот {choice.label}</span>
             {/* На узком экране список не сжимается до «Бот ш…»: кнопка подключения уходит строкой ниже */}
             <div className="flex flex-wrap items-center gap-2">
               <div className="min-w-[min(100%,16rem)] flex-1">

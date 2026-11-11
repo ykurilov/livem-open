@@ -642,7 +642,7 @@ export function Editor({
       value={tab}
       onValueChange={switchTab}
       data-fill-window=""
-      className={cn("flex min-h-0 flex-1 flex-col", boardFull ? "gap-0" : "gap-[var(--yk-space-4)]")}
+      className={cn("flex min-h-0 flex-1 flex-col", boardFull ? "gap-0" : "gap-[var(--yk-space-2)] lg:gap-[var(--yk-space-4)]")}
     >
       <header
         className={cn(
@@ -650,7 +650,8 @@ export function Editor({
           boardFull ? "px-3 py-1.5" : "",
         )}
       >
-        <h1 className="min-w-0 truncate text-[length:var(--yk-text-body-size)] font-semibold" title={draft.name}>
+        {/* На телефоне название — своя строка, под ним «Публикация» и «Конструктор» по краям одного ряда, ниже вкладки */}
+        <h1 className="min-w-0 truncate text-[length:var(--yk-text-body-size)] font-semibold max-lg:basis-full" title={draft.name}>
           {draft.name}
         </h1>
         <DesignButton href={`/lead-magnets/${leadMagnetId}/publish`} variant="secondary" size="sm" className="shrink-0">

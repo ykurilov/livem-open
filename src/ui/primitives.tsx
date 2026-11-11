@@ -9,7 +9,7 @@ import { Banner, Button as DesignButton, Card as DesignCard, Chip, TextField, Te
 /** Application composition only. All controls and their visual styles belong to Oduvanchik. */
 
 type ButtonProps = Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "size"> & {
-  variant?: "primary" | "secondary" | "ghost" | "destructive" | "outline" | "link";
+  variant?: "primary" | "secondary" | "destructive" | "outline" | "link";
   size?: "sm" | "md" | "lg" | "icon";
   loading?: boolean;
   asChild?: boolean;
@@ -24,7 +24,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 });
 
 export function Badge({ variant = "neutral", ...rest }: HTMLAttributes<HTMLSpanElement> & { variant?: "neutral" | "success" | "warm" | "cool" | "danger" }) {
-  return <Chip tone={variant === "success" ? "success" : variant === "danger" || variant === "warm" ? "danger" : "neutral"} {...rest} />;
+  // warm — «обратите внимание» (оранжевая метка), danger — настоящий сбой (красная)
+  return <Chip tone={variant === "success" ? "success" : variant === "danger" ? "danger" : variant === "warm" ? "live" : "neutral"} {...rest} />;
 }
 export function Alert({ variant, action, children, ...rest }: Omit<ComponentProps<typeof Banner>, "tone"> & { variant?: "neutral" | "info" | "warm" | "danger" | "success"; action?: ReactNode }) {
   return <Banner tone={variant === "danger" ? "danger" : "neutral"} role={variant === "danger" ? "alert" : "status"} {...rest}>{children}{action ? <div className="mt-2">{action}</div> : null}</Banner>;

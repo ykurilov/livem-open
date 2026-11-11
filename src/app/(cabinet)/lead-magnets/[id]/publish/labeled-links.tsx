@@ -85,7 +85,7 @@ function LabeledLinkRow({ leadMagnetId, link }: { leadMagnetId: string; link: La
         <span className="font-semibold">{link.label}</span>
         {confirming ? null : (
           // Архив ничего не ломает (ссылка работает и считается в отчёте) — сразу; удаление не вернуть — сначала спросить
-          <Button type="button" size="sm" variant="ghost" loading={pending} onClick={() => (link.hasPeople ? remove() : setConfirming(true))}>
+          <Button type="button" size="sm" variant="secondary" loading={pending} onClick={() => (link.hasPeople ? remove() : setConfirming(true))}>
             {link.hasPeople ? <Archive aria-hidden /> : <Trash aria-hidden />}
             {link.hasPeople ? "В архив" : "Удалить"}
           </Button>
@@ -97,7 +97,7 @@ function LabeledLinkRow({ leadMagnetId, link }: { leadMagnetId: string; link: La
           <Button type="button" size="sm" variant="destructive" loading={pending} onClick={remove}>
             Удалить
           </Button>
-          <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => setConfirming(false)}>
+          <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => setConfirming(false)}>
             Отмена
           </Button>
         </div>

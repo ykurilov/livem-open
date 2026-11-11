@@ -62,7 +62,7 @@ export function LeadMagnetsHeaderWithCreate(props: { requestId: string; startOpe
             <CreateButton />
             {props.startOpen ? null : (
               <Button
-                variant="ghost"
+                variant="secondary"
                 onClick={() => {
                   setOpen(false);
                   setNameError(null);
