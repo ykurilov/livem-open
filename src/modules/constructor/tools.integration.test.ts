@@ -3,7 +3,7 @@ import { FLOW_STATE_KEY } from "@ykurilov/agent-chat-flows";
 import { asSchema } from "ai";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../../../tests/integration/db-helper";
-import { createLeadMagnet, getLeadMagnet, listVersions, saveDraft, setPreviewChat, type LeadMagnet } from "../lead-magnets";
+import { createLeadMagnet, DEFAULT_LEAD_MAGNET_NAME, getLeadMagnet, listVersions, saveDraft, setPreviewChat, type LeadMagnet } from "../lead-magnets";
 import { FINAL_STATE_ID, LEAD_MAGNET_TOOLS, PROGRAM_NUDGES, SALE_TAG } from "../flows";
 import { buildConsultantInstruction } from "../consultant/instruction";
 import { createField, listFields } from "../people";
@@ -139,6 +139,26 @@ describe("edit_lead_magnet", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/ровно 1 раз/);
     expect((await currentDraft()).farewellMessage).toBe("aaa");
+  });
+
+  it("удачная правка называет обязательные настройки, которые ещё пусты; название по умолчанию — тоже пусто", async () => {
+    const fresh = await createLeadMagnet(database.db, { name: DEFAULT_LEAD_MAGNET_NAME });
+    const first = await editLeadMagnet(deps, fresh.id, { changes: [{ op: "set", field: "firstMessage", value: "Здравствуйте!" }] });
+    expect(first).toMatchObject({ ok: true, unfilled: ["name", "cardDescription", "instruction", "endCondition", "farewellMessage"] });
+    const view = (await viewLeadMagnet(deps, fresh.id, { sections: ["overview"] })) as { overview: Record<string, unknown> };
+    expect(view.overview.unfilled).toEqual(["name", "cardDescription", "instruction", "endCondition", "farewellMessage"]);
+
+    const all = await editLeadMagnet(deps, fresh.id, {
+      changes: [
+        { op: "set", field: "name", value: "Запись на пробное" },
+        { op: "set", field: "cardDescription", value: "Ведёт к пробному занятию" },
+        { op: "set", field: "instruction", value: "Ты помощник Анны." },
+        { op: "set", field: "endCondition", value: "Человек записался" },
+        { op: "set", field: "farewellMessage", value: "До встречи!" },
+      ],
+    });
+    expect(all.ok).toBe(true);
+    expect(all).not.toHaveProperty("unfilled");
   });
 
   it("«Описание клиентов»: set записывает поле, обзор черновика его показывает", async () => {

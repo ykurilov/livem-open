@@ -206,6 +206,16 @@ export async function listCorrections(
   return rows.map(toAnswerCorrection);
 }
 
+/** Правка лидмагнита по id; чужая или удалённая — `null`. */
+export async function getCorrection(db: DatabaseExecutor, leadMagnetId: string, id: string): Promise<AnswerCorrection | null> {
+  if (!UUID.test(id)) return null;
+  const [row] = await db
+    .select()
+    .from(answerCorrections)
+    .where(and(eq(answerCorrections.id, id), eq(answerCorrections.leadMagnetId, leadMagnetId)));
+  return row ? toAnswerCorrection(row) : null;
+}
+
 export async function countPending(db: DatabaseExecutor, leadMagnetId: string): Promise<number> {
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })

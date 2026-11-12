@@ -4,7 +4,9 @@ import { createLabeledLink, createLeadMagnet, publishWithBots, saveDraft } from 
 import { createTokenCipher } from "../../src/modules/platform/crypto";
 import { connectDatabase, type DatabaseConnection } from "../../src/modules/platform/db";
 import { E2E_SCRIPT } from "../../src/modules/platform/e2e-script";
-import { e2eDatabaseUrl, e2eServerEnv } from "./e2e-env";
+import { seal } from "../../src/auth/core/cookie-seal";
+import { E2E_BASE_URL, E2E_COOKIE_SECRET, E2E_EMAIL, e2eDatabaseUrl, e2eServerEnv } from "./e2e-env";
+import { openTab } from "./open-tab";
 
 let connection: DatabaseConnection;
 
@@ -47,6 +49,7 @@ async function askForOptions(chat: Page) {
   await expect(feed.getByText(E2E_SCRIPT.quickRepliesQuestion)).toBeVisible({ timeout: 30_000 });
   const buttons = chat.getByRole("group", { name: "Быстрые ответы" });
   await expect(buttons.getByRole("button")).toHaveText([...E2E_SCRIPT.quickReplies]);
+  await expect(feed.getByText(E2E_SCRIPT.quickRepliesAfterthought)).toHaveCount(0);
   return { feed, buttons };
 }
 
@@ -83,4 +86,38 @@ test("кнопки на телефоне: переносятся, не выле�
   }
   await chat.screenshot({ path: "test-results/qr-phone.png", animations: "disabled", caret: "hide" });
   await context.close();
+});
+
+test("«Проверка»: вопрос с кнопками остаётся на месте, дописка после кнопок не появляется", async ({ page, context }) => {
+  test.setTimeout(120_000);
+  const session = { user: { id: "e2e-expert", email: E2E_EMAIL, roles: [] }, accessToken: "e2e", refreshToken: "e2e", accessTokenExpiresAt: Date.now() + 86_400_000 };
+  await context.addCookies([{ name: "auth_session", value: await seal(session, E2E_COOKIE_SECRET), url: E2E_BASE_URL }]);
+  const lead = await createLeadMagnet(connection.db, { name: "Кнопки в «Проверке»" });
+  await saveDraft(connection.db, lead.id, { ...lead.draft, instruction: "Ты консультант.", firstMessage: E2E_SCRIPT.firstMessage }, "manual");
+
+  await page.goto(`/lead-magnets/${lead.id}`);
+  await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
+  await openTab(page, "Разговор");
+  const preview = page.getByRole("tabpanel", { name: "Разговор" });
+  const input = preview.getByRole("textbox", { name: "Сообщение", exact: true });
+  await expect(async () => {
+    await input.fill(`Какие есть ${E2E_SCRIPT.quickRepliesTrigger}?`);
+    await expect(preview.getByRole("button", { name: "Отправить", exact: true })).toBeEnabled({ timeout: 2000 });
+  }).toPass({ timeout: 30_000 });
+  await input.press("Enter");
+  // Текст ответа ещё и в скрытой строке для экранного диктора: берём видимый абзац
+  const question = preview.getByRole("paragraph").filter({ hasText: E2E_SCRIPT.quickRepliesQuestion });
+
+  await expect(question).toBeVisible({ timeout: 30_000 });
+  // Дописка пришла бы после кнопок тем же ходом: проверяем, когда ход закончен
+  await expect(preview.getByRole("button", { name: "Остановить", exact: true })).toBeHidden({ timeout: 30_000 });
+  for (const reply of E2E_SCRIPT.quickReplies) await expect(preview.getByRole("button", { name: reply, exact: true })).toBeVisible();
+  await expect(question).toBeVisible();
+  await expect(preview.getByText(E2E_SCRIPT.quickRepliesAfterthought)).toHaveCount(0);
+  await page.screenshot({ path: test.info().outputPath("vanish-preview.png"), animations: "disabled", caret: "hide" });
+
+  await page.reload();
+  await openTab(page, "Разговор");
+  await expect(question).toBeVisible({ timeout: 30_000 });
+  await expect(preview.getByText(E2E_SCRIPT.quickRepliesAfterthought)).toHaveCount(0);
 });

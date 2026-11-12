@@ -20,14 +20,18 @@ import {
   LeadMagnetNotFoundError,
   lockLeadMagnet,
   saveDraft,
+  unfilledSettings,
   validateLeadMagnetSettings,
   type LeadMagnetSettings,
+  type RequiredTextSetting,
 } from "../lead-magnets";
 import { createField, getFields, InvalidFieldError, listFields, FIELD_TYPES } from "../people";
 import { buildConsultantInstruction } from "../consultant/instruction";
 import { isOutreachRequest } from "../consultant/outreach-request";
 import { assistantHandoffIn, botDirectionIn, greetingDirectionIn } from "./bot-directed-text";
 import { textLinkSchema } from "../text-links/text-link";
+import { getKnowledgeBases } from "../knowledge";
+import { withoutSalesCard, withSalesCard } from "../sales-cards";
 import { describeEditInputIssues } from "./edit-input-hints";
 import { withoutDeletedFields } from "./manual-edits";
 import { ANSWER_CORRECTION_TOOL_NAMES, createAnswerCorrectionTools } from "./answer-corrections";
@@ -68,6 +72,19 @@ function fieldName<const T extends readonly [string, ...string[]]>(allowed: T) {
   });
 }
 
+/**
+ * Формат выхода ноды по схеме agent-flow SDK. Модель видит в черновике только выходы-события и без него переносит
+ * их поле name в условие словами — правка отклоняется целиком.
+ */
+const EXIT_FORMAT =
+  "Выход ноды (exits у ноды и у anyState): {id, when, to}. when — ровно одно из: " +
+  '{type:"judge", text} — условие словами, его проверяет судья; ' +
+  '{type:"event", event:"tool"|"message"|"button"|"app", name} — событие, для tool name — имя инструмента; ' +
+  '{type:"data", field, op:"filled"|"eq"|"ne"|"gt"|"lt"|"contains", value} — значение поля карточки клиента; ' +
+  '{type:"timer", from:"in_state"|"silence"|"since_start", amount, unit:"min"|"h"|"d"}, ' +
+  '{type:"timer", from:"time_of_day", at:"ЧЧ:ММ"}, {type:"timer", from:"state_days", days}, {type:"timer", from:"program_day", day} — срок. ' +
+  "Других полей в when нет.";
+
 /** Кусок сценария в формате SDK: объект или строка JSON. Значения по умолчанию можно не писать. */
 const flowJson = (what: string) => z.union([z.record(z.string(), z.unknown()), z.string()]).describe(what);
 
@@ -83,7 +100,7 @@ const change = z.union([
   z
     .strictObject({
       op: z.literal("put_flow"),
-      flow: flowJson("Сценарий agent-flow версии 2 целиком: start, anyState, states, schedule, nudges, sideTasks, clientCard. «Общее» — это основная инструкция, его можно не писать. Без clientCard и chatNotes карточка клиента и заметки чата остаются как есть"),
+      flow: flowJson("Сценарий agent-flow версии 2 целиком, все его ключи — внутри flow: start, anyState, states, schedule, nudges, sideTasks, clientCard. «Общее» — это основная инструкция, его можно не писать. Без clientCard и chatNotes карточка клиента и заметки чата остаются как есть"),
     })
     .describe("Заменить весь сценарий: для первой сборки или большой переделки"),
   z
@@ -121,12 +138,26 @@ const change = z.union([
         .describe("null — убрать"),
     })
     .describe("Ссылка с подставленным текстом: сервис эксперта открывается с уже вписанным текстом; консультант собирает её инструментом"),
+  z
+    .strictObject({
+      op: z.literal("put_sales_card"),
+      card: z.strictObject({
+        id: z.string().optional().describe("Есть — правится эта заготовка; нет — новая"),
+        stateId: z.string().nullable().describe("Нода, где заготовка уместна; null — общая шпаргалка возражений на любом этапе"),
+        title: z.string(),
+        when: z.string().describe("Когда уместна: ситуация в разговоре, по которой консультант её выбирает"),
+        text: z.string(),
+        verbatim: z.boolean().describe("true — текст уходит человеку дословно (цена, условия, ссылка); false — консультант передаёт суть своими словами"),
+      }),
+    })
+    .describe("Добавить или заменить заготовку эксперта"),
+  z.strictObject({ op: z.literal("remove_sales_card"), id: z.string() }).describe("Убрать заготовку эксперта"),
   z.strictObject({ op: z.literal("attach_field"), fieldId: z.string() }).describe("Подключить поле словаря к карточке клиента"),
   z.strictObject({ op: z.literal("detach_field"), fieldId: z.string() }),
   z
     .strictObject({
       op: z.literal("create_field"),
-      name: z.string().min(1),
+      name: z.string().min(1).describe("Название поля"),
       type: z.enum(FIELD_TYPES),
       options: z.array(z.string()).optional().describe("Варианты — только для type=choice"),
       description: z.string(),
@@ -316,6 +347,14 @@ async function applyChange(tx: DatabaseExecutor, settings: LeadMagnetSettings, i
       const field = await createField(tx, item);
       return { ...settings, flow: { ...flow, clientCard: [...flow.clientCard, clientCardFieldOf(field)] } };
     }
+    case "put_sales_card":
+    case "remove_sales_card": {
+      const cards = settings.salesCards ?? [];
+      const result =
+        item.op === "put_sales_card" ? withSalesCard(cards, new Set(flow.states.map((state) => state.id)), item.card) : withoutSalesCard(cards, item.id);
+      if (!result.ok) throw new ChangeRejected(result.error);
+      return { ...settings, salesCards: result.cards };
+    }
     default:
       return { ...settings, flow: applyFlowChange(flow, item) };
   }
@@ -349,6 +388,9 @@ function textsForPerson(settings: LeadMagnetSettings): TextForPerson[] {
     { where: "прощании", text: settings.farewellMessage, firstMessage: false },
     { where: "прощании при «срок вышел»", text: flow.schedule?.farewellText ?? "", firstMessage: false },
     { where: "фразе жёсткой рамки дня", text: flow.schedule?.dayFrame?.hardText ?? "", firstMessage: false },
+    ...(settings.salesCards ?? [])
+      .filter((card) => card.verbatim)
+      .map((card) => ({ where: `заготовке «${card.title}» (id ${card.id})`, text: card.text, firstMessage: false })),
   ];
 }
 
@@ -396,7 +438,7 @@ export async function editLeadMagnet(
   deps: ConstructorToolDependencies,
   leadMagnetId: string,
   input: EditLeadMagnetInput,
-): Promise<ToolResult<{ versionId: string }>> {
+): Promise<ToolResult<{ versionId: string; unfilled?: RequiredTextSetting[] }>> {
   try {
     const version = await deps.db.transaction(async (tx) => {
       const lead = await lockLeadMagnet(tx, leadMagnetId);
@@ -417,7 +459,9 @@ export async function editLeadMagnet(
       settings = await withCardFromDictionary(tx, await withoutDeletedFields(tx, keepCreatedFields(settings, created)));
       return saveDraft(tx, leadMagnetId, validateLeadMagnetSettings(settings), "constructor");
     });
-    return { ok: true, versionId: version.id };
+    // Обязательные тексты, которые ещё пусты: без них лидмагнит не готов, а сама модель пустоту не замечает
+    const unfilled = unfilledSettings(version.settings);
+    return unfilled.length > 0 ? { ok: true, versionId: version.id, unfilled } : { ok: true, versionId: version.id };
   } catch (error) {
     if (
       error instanceof ChangeRejected ||
@@ -440,6 +484,8 @@ export const VIEW_SECTIONS = [
   "fieldDictionary",
   "modelInfo",
   "appRules",
+  "salesCards",
+  "knowledge",
 ] as const;
 export type ViewSection = (typeof VIEW_SECTIONS)[number];
 
@@ -476,6 +522,7 @@ export async function viewLeadMagnet(
           fieldCount: draft.flow.clientCard.length,
           published: lead.publishedSnapshotId !== null,
           textLink: draft.textLink ?? null,
+          unfilled: unfilledSettings(draft),
         };
         break;
       case "instruction":
@@ -502,6 +549,16 @@ export async function viewLeadMagnet(
       // Правила, которые приложение добавляет консультанту само: эксперт их не меняет, новое правило с ними сверяется
       case "appRules":
         view.appRules = buildConsultantInstruction(draft);
+        break;
+      case "salesCards":
+        view.salesCards = (draft.salesCards ?? []).map((card) => ({
+          ...card,
+          stateTitle: card.stateId === null ? null : (draft.flow.states.find((state) => state.id === card.stateId)?.title ?? null),
+        }));
+        break;
+      // Материалы эксперта, из которых конструктор составляет заготовки
+      case "knowledge":
+        view.knowledge = (await getKnowledgeBases(deps.db, draft.knowledgeIds)).map((base) => ({ title: base.title, text: base.content }));
         break;
     }
   }
@@ -587,7 +644,9 @@ export function createConstructorTools(
       title: TOOL_TITLES.edit_lead_magnet,
       description:
         "Изменить черновик лидмагнита. Все изменения одного вызова применяются вместе и дают одну версию; " +
-        "если хоть одно не подошло, не применяется ничего. Модель и провайдера здесь не поменять.",
+        "если хоть одно не подошло, не применяется ничего. Модель и провайдера здесь не поменять. " +
+        "unfilled в ответе — обязательные настройки, которые ещё пусты (название по умолчанию тоже). " +
+        EXIT_FORMAT,
       inputSchema: editLeadMagnetToolInput,
       execute: async (input) => {
         const parsed = editLeadMagnetInput.safeParse(input);

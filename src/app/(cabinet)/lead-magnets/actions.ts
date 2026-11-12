@@ -3,11 +3,13 @@
 import { redirect } from "next/navigation";
 import type { AgentFlow } from "@ykurilov/agent-chat-flows/format";
 import { requireUser } from "@/modules/access";
-import { rollbackByExpert, saveExpertEdit, saveExpertFlowEdit } from "@/modules/constructor";
+import { removeExpertSalesCard, rollbackByExpert, saveExpertEdit, saveExpertFlowEdit, saveExpertSalesCard } from "@/modules/constructor";
+import type { SalesCard, SalesCardInput } from "@/modules/sales-cards";
 import { getEditorServices } from "@/modules/editor";
 import { withLeadMagnetFlow } from "@/modules/flows/flow-settings";
 import {
   createLeadMagnet,
+  DEFAULT_LEAD_MAGNET_NAME,
   InvalidLeadMagnetSettingsError,
   LeadMagnetNotFoundError,
   type LeadMagnetSettings,
@@ -35,7 +37,7 @@ function expectedFailure(error: unknown): { ok: false; error: string } {
 
 export async function createLeadMagnetAction(formData: FormData): Promise<void> {
   await requireUser();
-  const name = String(formData.get("name") ?? "").trim() || "Новый лидмагнит";
+  const name = String(formData.get("name") ?? "").trim() || DEFAULT_LEAD_MAGNET_NAME;
   const cardDescription = String(formData.get("cardDescription") ?? "").trim();
   const requestId = formData.get("requestId");
   const id = typeof requestId === "string" && isUuid(requestId) ? requestId : undefined;
@@ -101,6 +103,28 @@ export async function saveSettingsAndFlowAction(
   }
 }
 
+/** Заготовка эксперта с доски или из правки ответа: в свежий черновик, остальное не трогается. */
+export async function saveSalesCardAction(
+  leadMagnetId: string,
+  card: SalesCardInput,
+): Promise<{ ok: true; card: SalesCard; versionId: string } | { ok: false; error: string }> {
+  await requireUser();
+  try {
+    return await saveExpertSalesCard(getDatabase().db, leadMagnetId, card);
+  } catch (error) {
+    return expectedFailure(error);
+  }
+}
+
+export async function removeSalesCardAction(leadMagnetId: string, id: string): Promise<{ ok: true; versionId: string } | { ok: false; error: string }> {
+  await requireUser();
+  try {
+    return await removeExpertSalesCard(getDatabase().db, leadMagnetId, id);
+  } catch (error) {
+    return expectedFailure(error);
+  }
+}
+
 export async function rollbackAction(leadMagnetId: string, versionId: string, expectedVersionId: string): Promise<DraftEditResult> {
   await requireUser();
   try {
@@ -159,6 +183,17 @@ export async function suggestPreviewReplyAction(chatId: string): Promise<{ text:
   } catch (error) {
     console.error(`Автоответ для ${chatId} не получился:`, error instanceof Error ? error.message : error);
     return { error: "Не получилось придумать ответ. Попробуйте ещё раз." };
+  }
+}
+
+/** Заготовка из исправленного ответа для окна эксперта; название и повод — подсказка модели. */
+export async function salesCardFromCorrectionAction(leadMagnetId: string, correctionId: string): Promise<{ card: SalesCardInput } | { error: string }> {
+  await requireUser();
+  try {
+    return { card: await (await getEditorServices()).preview.suggestSalesCard(leadMagnetId, correctionId) };
+  } catch (error) {
+    console.error(`Заготовка из правки ${correctionId} не получилась:`, error instanceof Error ? error.message : error);
+    return { error: "Не получилось подготовить заготовку. Попробуйте ещё раз." };
   }
 }
 

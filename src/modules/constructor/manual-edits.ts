@@ -16,6 +16,7 @@ import { deletedFieldIds, getFields } from "../people";
 import { getImages } from "../images";
 import { getVideos } from "../videos";
 import { getKnowledgeBases, knowledgeOverLimit } from "../knowledge";
+import { withoutSalesCard, withSalesCard, type SalesCard, type SalesCardInput } from "../sales-cards";
 import type { Database, DatabaseExecutor } from "../platform/db";
 import { AGENT_TIME_ZONE } from "../platform/models-catalog";
 
@@ -213,6 +214,30 @@ export function describeManualEdits(
     ids.flatMap((id) => (others.includes(id) || !knowledgeTitles.has(id) ? [] : [`Базы знаний: ${verb} «${knowledgeTitles.get(id)}»`]));
   const [afterKnowledge, beforeKnowledge] = [after.knowledgeIds ?? [], before.knowledgeIds ?? []];
   notes.push(...knowledge(afterKnowledge, beforeKnowledge, "прикреплена"), ...knowledge(beforeKnowledge, afterKnowledge, "откреплена"));
+  notes.push(...describeSalesCards(before.salesCards ?? [], after.salesCards ?? [], after.flow));
+  return notes;
+}
+
+/** Заготовки эксперта: добавленные, удалённые и что поменялось в оставшихся. */
+function describeSalesCards(before: readonly SalesCard[], after: readonly SalesCard[], flow: AgentFlow): string[] {
+  const notes: string[] = [];
+  const stage = (id: string) => flow.states.find((state) => state.id === id)?.title ?? id;
+  for (const card of after) {
+    const old = before.find((one) => one.id === card.id);
+    if (!old) {
+      notes.push(`Заготовка «${card.title}» (id ${card.id}): добавлена`);
+      continue;
+    }
+    const changes = [
+      ...(old.title !== card.title ? [`название ${quoteChange(old.title, card.title)}`] : []),
+      ...(old.when !== card.when ? [`«когда уместна» ${quoteChange(old.when, card.when)}`] : []),
+      ...(old.text !== card.text ? [`текст ${quoteChange(old.text, card.text)}`] : []),
+      ...(old.verbatim !== card.verbatim ? [card.verbatim ? "теперь дословно" : "теперь своими словами"] : []),
+      ...(old.stateId !== card.stateId ? [`перенесена ${card.stateId === null ? "в общую шпаргалку" : `на этап «${stage(card.stateId)}»`}`] : []),
+    ];
+    if (changes.length > 0) notes.push(`Заготовка «${card.title}» (id ${card.id}): ${changes.join("; ")}`);
+  }
+  for (const card of before) if (!after.some((one) => one.id === card.id)) notes.push(`Заготовка «${card.title}» (id ${card.id}): удалена`);
   return notes;
 }
 
@@ -339,6 +364,49 @@ export async function saveExpertCardDescription(db: Database, leadMagnetId: stri
     if (lead.draft.cardDescription === text) return (await getVersion(tx, lead.draftVersionId))!;
     return saveEditBesideConstructor(tx, lead, { ...lead.draft, cardDescription: text }, "manual");
   });
+}
+
+type CardsEdit = { ok: true; cards: SalesCard[] } | { ok: false; error: string };
+
+/**
+ * Заготовка с доски или из правки ответа: ложится в черновик, прочитанный под блокировкой, — другие заготовки и
+ * настройки не трогаются, даже если конструктор или «Настройки» успели их обновить. Отказ — словами для окна заготовки.
+ */
+export async function saveExpertSalesCard(
+  db: Database,
+  leadMagnetId: string,
+  input: SalesCardInput,
+): Promise<{ ok: true; card: SalesCard; versionId: string } | { ok: false; error: string }> {
+  let card: SalesCard | undefined;
+  const result = await editExpertSalesCards(db, leadMagnetId, (cards, settings) => {
+    const put = withSalesCard(cards, new Set(settings.flow.states.map((state) => state.id)), input);
+    if (put.ok) card = put.card;
+    return put;
+  });
+  return result.ok ? { ...result, card: card! } : result;
+}
+
+export async function removeExpertSalesCard(db: Database, leadMagnetId: string, id: string): Promise<{ ok: true; versionId: string } | { ok: false; error: string }> {
+  return editExpertSalesCards(db, leadMagnetId, (cards) => withoutSalesCard(cards, id));
+}
+
+async function editExpertSalesCards(
+  db: Database,
+  leadMagnetId: string,
+  edit: (cards: SalesCard[], settings: LeadMagnetSettings) => CardsEdit,
+): Promise<{ ok: true; versionId: string } | { ok: false; error: string }> {
+  try {
+    return await db.transaction(async (tx) => {
+      const lead = await lockLeadMagnet(tx, leadMagnetId);
+      const result = edit(lead.draft.salesCards ?? [], lead.draft);
+      if (!result.ok) return result;
+      const version = await saveEditBesideConstructor(tx, lead, { ...lead.draft, salesCards: result.cards }, "manual");
+      return { ok: true, versionId: version.id };
+    });
+  } catch (error) {
+    if (error instanceof InvalidLeadMagnetSettingsError) return { ok: false, error: error.message };
+    throw error;
+  }
 }
 
 /**

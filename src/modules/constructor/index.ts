@@ -3,11 +3,13 @@ export type { ConstructorToolDependencies } from "./tools";
 export {
   constructorTail,
   describeManualEdits,
+  removeExpertSalesCard,
   rollbackByExpert,
   saveEditBesideConstructor,
   saveExpertCardDescription,
   saveExpertEdit,
   saveExpertFlowEdit,
+  saveExpertSalesCard,
   type ExpertEditResult,
 } from "./manual-edits";
 export {

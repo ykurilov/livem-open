@@ -5,6 +5,7 @@ import { validateLeadMagnetFlow, type FlowSettingsIssue } from "../flows/validat
 import { DEFAULT_MODEL_CHOICE } from "../platform/models-catalog";
 import { productLinkSchema, productPage, type ProductLink } from "../purchases/product-links";
 import { textLinkSchema } from "../text-links/text-link";
+import { checkedSalesCards, salesCardsSchema } from "../sales-cards/sales-cards";
 
 export const DEFAULT_MAX_PERSON_MESSAGES = 60;
 export const STAGE_INSTRUCTION_MAX_LENGTH = 1500;
@@ -133,6 +134,11 @@ export const leadMagnetSettingsSchema = z.object({
   productLinks: z.array(productLinkSchema).max(10, "Ссылок продуктов — не больше 10").optional(),
   /** Ссылка с подставленным текстом (например, идея уже в поле): её собирает инструмент `text_link`. Нет — инструмента нет. */
   textLink: textLinkSchema.optional(),
+  /**
+   * Заготовки эксперта («ящик с карточками»): тексты этапов и общая шпаргалка возражений. Консультант видит список
+   * (название и «когда уместна»), текст берёт инструментом. В настройках, записанных до поля, — пусто.
+   */
+  salesCards: salesCardsSchema.default([]),
 });
 
 export type Stage = z.infer<typeof stageSchema>;
@@ -167,6 +173,18 @@ export function newProgramSettings(days: number): ProgramSettings {
   };
 }
 
+/** Название, которое ставится, если эксперт не дал своего: настоящим названием оно не считается. */
+export const DEFAULT_LEAD_MAGNET_NAME = "Новый лидмагнит";
+
+const REQUIRED_TEXT_SETTINGS = ["name", "cardDescription", "instruction", "firstMessage", "endCondition", "farewellMessage"] as const;
+export type RequiredTextSetting = (typeof REQUIRED_TEXT_SETTINGS)[number];
+
+/** Обязательные тексты, которые ещё пусты; основная инструкция — «Общее» сценария, название по умолчанию — пусто. */
+export function unfilledSettings(settings: LeadMagnetSettings): RequiredTextSetting[] {
+  const text = (key: RequiredTextSetting) => (key === "instruction" ? settings.flow.common : settings[key]) ?? "";
+  return REQUIRED_TEXT_SETTINGS.filter((key) => !text(key).trim() || (key === "name" && settings.name.trim() === DEFAULT_LEAD_MAGNET_NAME));
+}
+
 export function newLeadMagnetSettings(name: string, cardDescription = ""): LeadMagnetSettings {
   return {
     name,
@@ -189,6 +207,7 @@ export function newLeadMagnetSettings(name: string, cardDescription = ""): LeadM
     knowledgeIds: [],
     viewsLinks: false,
     program: null,
+    salesCards: [],
     flow: leadMagnetToFlow({ name, instruction: "", stages: [], program: null, fieldIds: [], viewsLinks: false }, []),
   };
 }
@@ -263,7 +282,9 @@ export function validateLeadMagnetSettings(settings: unknown): LeadMagnetSetting
     const checked = { ...parsed.data, videoIds: [...new Set(parsed.data.videoIds)], imageIds: [...new Set(parsed.data.imageIds)], knowledgeIds: [...new Set(parsed.data.knowledgeIds)], flow: checkedFlow(parsed.data.flow) };
     checkProgram(checked);
     checkProductPages(checked.productLinks ?? []);
-    return checked;
+    const salesCards = checkedSalesCards(checked.salesCards, new Set(checked.flow.states.map((state) => state.id)));
+    if ("error" in salesCards) throw new InvalidLeadMagnetSettingsError(salesCards.error);
+    return { ...checked, salesCards };
   }
   throw new InvalidLeadMagnetSettingsError(parsed.error.issues.map((issue) => issue.message).join("; "));
 }

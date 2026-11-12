@@ -17,6 +17,8 @@ import { QUICK_REPLIES_TOOL } from "./quick-replies";
 import { appDomainsIn } from "./app-address";
 import { leadMagnetKnownTexts } from "./known-texts";
 import { viewsLinks } from "./instruction";
+import { FLOW_STATE_KEY } from "@ykurilov/agent-chat-flows";
+import { stageCardsBlock } from "../sales-cards/sales-cards";
 
 /** Общие на процесс: настройки пересоздаются каждый ход, а помнить показанный ролик и картинку надо весь ответ. */
 const limitVideosPerReply = oneVideoPerReply();
@@ -56,6 +58,7 @@ export function consultantAgentSettings(input: {
             chatId: model.chatId,
             settings: input.settings,
             saleDay: async () => (input.dayOf ? input.dayOf({ ownerId: model.ownerId, chatId: model.chatId }) : 1),
+            state: model.state,
           }),
           ...(videoLibrary && limitVideosPerReply(videoLibrary.tools(model), model)),
           ...(imageLibrary && limitImagesPerReply(imageLibrary.tools(model), model)),
@@ -63,14 +66,29 @@ export function consultantAgentSettings(input: {
         },
         model.chatId,
       ),
+    // Заготовки текущего этапа — блоком рядом с карточкой этапа: ядро шлёт его заново, только когда этап сменился
+    ...((input.settings.salesCards ?? []).some((card) => card.stateId !== null) && {
+      contextBlocks: ({ state }) => {
+        const block = stageCardsBlock(input.settings, currentStateId(state));
+        return block ? [block] : [];
+      },
+    }),
     // Готовые ответы человека кнопками: инструмент SDK с неизменным описанием, начало запроса из кэша не выпадает
     widgets: { basic: [QUICK_REPLIES_TOOL] },
+    // Только запись, результат «ok» ответу не нужен: вызов рядом с кнопками не мешает им закрыть ответ
+    serviceTools: ["sale_answer", "payment_promised"],
     // Итог и ответ на продажу — по очереди, в порядке вызовов
     sequentialTools: true,
     ...(input.stepContext && { stepContext: input.stepContext }),
     timeZone: AGENT_TIME_ZONE,
     providerFallback: PROVIDER_FALLBACK,
   };
+}
+
+/** Этап чата на начало хода: сценарий SDK хранит место чата в состоянии ветки под `FLOW_STATE_KEY` (`FlowRun.state`). */
+function currentStateId(state: Record<string, unknown> | undefined): string | null {
+  const run = state?.[FLOW_STATE_KEY] as { state?: unknown } | undefined;
+  return typeof run?.state === "string" ? run.state : null;
 }
 
 /** Версия лидмагнита на этот ход: только живые ролики, картинки и базы знаний, тексты баз и ключ службы. */

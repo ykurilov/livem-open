@@ -1,4 +1,4 @@
-import { createInMemoryChatStorage, type ChatStorage } from "@ykurilov/agent-chat-core";
+import { createInMemoryChatStorage, SUGGESTIONS_SHOWN_AFTER_ANSWER, type ChatStorage } from "@ykurilov/agent-chat-core";
 import { createMemoryAttachmentStorage } from "@ykurilov/agent-chat-attachments";
 import { createChatImages } from "../platform/chat-attachments";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,6 +16,7 @@ import { createScriptedModel, type ScriptedCall, type ScriptedReply } from "../p
 import { createPreviewEndpoint, PreviewReopenRefused, type PreviewEndpoint } from "./preview-endpoint";
 import { createPreviewConversationStore, readPreviewConversation } from "./preview-store";
 import { previewConversations } from "./schema";
+import { recordCorrection } from "../corrections";
 
 let database: TestDatabase;
 let chatStorage: ChatStorage;
@@ -139,6 +140,50 @@ describe("тестовый разговор: порядок проверок", (
     const texts = answer.parts.flatMap((part) => (part.type === "text" ? [part.text] : []));
     expect(texts).toEqual(["Так что было в тот раз?"]);
     expect(answer.parts.some((part) => part.type === "tool-flow_note")).toBe(true);
+  });
+
+  it("ответ с кнопками закрыт: вопрос остаётся, дописки после кнопок нет ни в ленте, ни в истории", async () => {
+    const QUESTION = "Что соберём первым: игру или сайт?";
+    reply = (call) =>
+      call.lastToolResult !== undefined
+        ? { text: "Жду ваш выбор." }
+        : { text: QUESTION, toolCalls: [{ toolName: "suggest_replies", input: { replies: ["Игру", "Сайт"] } }] };
+    const chatId = await endpoint.ensurePreview(lead.id);
+    const stream = await (await send(chatId, "Привет! Дима.")).text();
+
+    expect(stream).not.toContain("Жду ваш выбор");
+    const answer = (await chatStorage.listMessages(chatId)).filter((message) => message.role === "assistant").at(-1)!;
+    expect(answer.status).toBe("complete");
+    expect(answer.parts.flatMap((part) => (part.type === "text" ? [part.text] : []))).toEqual([QUESTION]);
+    expect(answer.parts.some((part) => part.type === "tool-suggest_replies")).toBe(true);
+  });
+
+  it("запись о человеке после кнопок выполняется, в ленте и истории — только вопрос", async () => {
+    const QUESTION = "Что соберём первым: игру или сайт?";
+    reply = (call) => {
+      if (call.lastToolResult === undefined) return { text: QUESTION, toolCalls: [{ toolName: "suggest_replies", input: { replies: ["Игру", "Сайт"] } }] };
+      if (JSON.stringify(call.lastToolResult).includes(SUGGESTIONS_SHOWN_AFTER_ANSWER)) return { toolCalls: [{ toolName: "flow_note", input: { fact: "Его зовут Дима" } }] };
+      return { text: "Чтобы легче было выбрать, расскажу подробнее." };
+    };
+    const chatId = await endpoint.ensurePreview(lead.id);
+    const stream = await (await send(chatId, "Привет! Дима.")).text();
+
+    expect(stream).not.toContain("Чтобы легче было выбрать");
+    const answer = (await chatStorage.listMessages(chatId)).filter((message) => message.role === "assistant").at(-1)!;
+    expect(answer.parts.flatMap((part) => (part.type === "text" ? [part.text] : []))).toEqual([QUESTION]);
+    expect(answer.parts.find((part) => part.type === "tool-flow_note")).toMatchObject({ state: "output-available" });
+  });
+
+  it("кнопки раньше текста: ход идёт дальше, и вопрос пишется после них", async () => {
+    const QUESTION = "Что соберём первым: игру или сайт?";
+    reply = (call) =>
+      call.lastToolResult !== undefined ? { text: QUESTION } : { toolCalls: [{ toolName: "suggest_replies", input: { replies: ["Игру", "Сайт"] } }] };
+    const chatId = await endpoint.ensurePreview(lead.id);
+    await (await send(chatId, "Привет! Дима.")).text();
+
+    const answer = (await chatStorage.listMessages(chatId)).filter((message) => message.role === "assistant").at(-1)!;
+    expect(answer.parts.flatMap((part) => (part.type === "text" ? [part.text] : []))).toEqual([QUESTION]);
+    expect(answer.parts.some((part) => part.type === "tool-suggest_replies")).toBe(true);
   });
 
   it("английская фраза перед инструментом не печатается эксперту даже на миг: ответ держится до проверки", async () => {
@@ -1008,5 +1053,50 @@ describe("пробный ход консультанта (consultantWouldAnswer)
     expect(created).toHaveLength(1);
     expect(await chatStorage.getChat(created[0]!)).toBeNull();
     expect(await database.db.select().from(previewConversations).where(eq(previewConversations.chatId, created[0]!))).toEqual([]);
+  });
+});
+
+describe("«Сохранить как заготовку» у исправленного ответа", () => {
+  const correctionOf = async (stageId: string | null, agentRole: "consultant" | "client" = "consultant") => {
+    const current = (await getLeadMagnet(database.db, lead.id))!;
+    const recorded = await recordCorrection(database.db, {
+      leadMagnetId: lead.id,
+      source: "preview",
+      agentRole,
+      chatId: "chat-card",
+      editedMessageId: `m-${Math.random()}`,
+      editedText: "Это недорого, соглашайтесь.",
+      correctedMessageId: `c-${Math.random()}`,
+      correctedText: "Понимаю. Есть рассрочка на 3 месяца без переплаты.",
+      reason: null,
+      answerKind: "reply",
+      context: [{ role: "user", text: "Дороговато для меня" }],
+      actions: [],
+      stageId,
+      draftVersionId: current.draftVersionId,
+    });
+    if (recorded.kind !== "created") throw new Error("правка не записалась");
+    return { id: recorded.correction.id, stage: current.draft.flow.states[0]! };
+  };
+
+  it("текст — вариант эксперта, этап — где прозвучал ответ, название и повод подсказывает модель", async () => {
+    const { stage } = await correctionOf(null);
+    const { id } = await correctionOf(stage.id);
+    reply = () => ({ text: '{"title":"Дорого","when":"Человек сомневается из-за цены"}' });
+    expect(await endpoint.suggestSalesCard(lead.id, id)).toEqual({
+      stateId: stage.id,
+      title: "Дорого",
+      when: "Человек сомневается из-за цены",
+      text: "Понимаю. Есть рассрочка на 3 месяца без переплаты.",
+      verbatim: false,
+    });
+    expect(JSON.stringify(calls.at(-1)!.options.prompt)).toContain("Дороговато для меня");
+    expect(calls.at(-1)!.toolNames).toEqual([]);
+  });
+
+  it("чужая правка или реплика клиента — нет заготовки", async () => {
+    const { id } = await correctionOf(null, "client");
+    await expect(endpoint.suggestSalesCard(lead.id, id)).rejects.toThrow();
+    await expect(endpoint.suggestSalesCard(lead.id, "00000000-0000-4000-8000-000000000000")).rejects.toThrow();
   });
 });

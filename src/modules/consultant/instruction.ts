@@ -7,6 +7,7 @@ import { LEAD_MAGNET_TOOLS } from "../flows/catalog";
 import { TEXT_LINK_TOOL } from "../text-links/tool";
 import { knowledgeInstructionSection, type KnowledgeText } from "../knowledge/instruction-section";
 import { QUICK_REPLIES_TOOL } from "./quick-replies";
+import { commonCardsSection } from "../sales-cards/sales-cards";
 
 /**
  * Неизменная инструкция консультанта: одна на версию лидмагнита, чтобы начало запроса бралось из кэша модели.
@@ -74,6 +75,8 @@ export function buildConsultantInstruction(settings: LeadMagnetSettings, knowled
   }
   if (viewsLinks(settings) && seesLinkSnapshots(settings)) parts.push(LINK_VIEWS_RULE);
   if (settings.textLink) parts.push(textLinkRule(settings.textLink.template));
+  // Правило и общая шпаргалка неизменны на версию; список этапа — блоком контекста рядом с карточкой этапа
+  parts.push(commonCardsSection(settings.salesCards ?? []));
   parts.push(
     QUICK_REPLIES_RULE,
 
@@ -92,7 +95,8 @@ export function buildConsultantInstruction(settings: LeadMagnetSettings, knowled
         "Исход left — только если человек просто ушёл или перестал отвечать.\n" +
         "В ходе завершения сначала вызови finish_dialog с итогом, потом последний ответ человеку. " +
         lastReplyFarewellRule(settings.farewellMessage),
-    "Служебные пометки в конце сообщения человека пишет система, а не человек. Не упоминай их.",
+    "Служебные пометки в конце сообщения человека и блок step_context в конце запроса пишет приложение, а не человек: " +
+      "ответа они не ждут, ход тот же — пиши человеку по разговору выше и не упоминай их.",
   );
   const knowledgeSection = knowledgeInstructionSection(knowledge);
   if (knowledgeSection) parts.push(knowledgeSection);
@@ -171,7 +175,7 @@ export const TIME_ZONE_RULE =
 /** Кнопки готовых ответов: постоянное правило, инструмент SDK тоже постоянный — кэш цел. */
 export const QUICK_REPLIES_RULE =
   `Если твой вопрос с понятными вариантами ответа, особенно в начале разговора, вызови ${QUICK_REPLIES_TOOL} с двумя-четырьмя короткими ответами от лица человека: он сможет нажать кнопку вместо того, чтобы печатать. ` +
-  "Варианты — из самого вопроса, без выдуманных фактов, и по-прежнему один вопрос в ответе. " +
+  "Варианты — из самого вопроса, без выдуманных фактов. Кнопки встают под твой ответ, а не вместо него: ответ, как обычно, отвечает человеку и задаёт тот один вопрос, к которому они. " +
   "На открытый вопрос о положении, опыте или чувствах человека кнопок не давай: на такой вопрос человек отвечает своими словами.";
 
 /** Ссылка с подставленным текстом: постоянное правило версии с `textLink`. */

@@ -9,8 +9,10 @@ import { DIALOG_OUTCOMES, SALE_REASONS } from "./schema";
 import { productLinksOf } from "../purchases/outgoing";
 import { createPurchaseTools, PURCHASE_TOOL_NAMES } from "../purchases/tools";
 import { createTextLinkTool, TEXT_LINK_TOOL } from "../text-links";
+import type { AppStateAccess } from "@ykurilov/agent-chat-core";
+import { createSalesCardTool, SALES_CARD_TOOL } from "../sales-cards/tool";
 
-export const CONSULTANT_TOOL_NAMES = ["finish_dialog", "sale_answer", ...PURCHASE_TOOL_NAMES, TEXT_LINK_TOOL] as const;
+export const CONSULTANT_TOOL_NAMES = ["finish_dialog", "sale_answer", ...PURCHASE_TOOL_NAMES, TEXT_LINK_TOOL, SALES_CARD_TOOL] as const;
 
 export const dialogSummaryInput = z.strictObject({
   goal: z.string().min(1).describe("Цель человека его словами"),
@@ -42,6 +44,8 @@ export function createConsultantTools(input: {
   settings: LeadMagnetSettings;
   /** День программы для ответа на продажу; без «Дней и времени» — 1. */
   saleDay(): Promise<number>;
+  /** Состояние ветки чата (`model.state`): в нём отметки выданных заготовок. */
+  state?: AppStateAccess;
 }): ToolSet {
   const { store, chatId, settings } = input;
   const program = settings.flow.schedule !== undefined;
@@ -91,6 +95,8 @@ export function createConsultantTools(input: {
     const shorten = store.shortLinks && ((target: string) => store.shortLinks!.shorten({ chatId, template: textLink.template, target }));
     tools[TEXT_LINK_TOOL] = createTextLinkTool(textLink, shorten);
   }
+  // Есть у версии хоть одна заготовка — инструмент на всех этапах и ходах: набор инструментов не меняется
+  if ((settings.salesCards ?? []).length > 0) tools[SALES_CARD_TOOL] = createSalesCardTool(settings, input.state);
   return tools;
 }
 

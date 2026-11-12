@@ -536,6 +536,16 @@ export function Editor({
 
   // Черновик правит конструктор (или страница ещё подтягивает его правку) — ручные правки и откат закрыты
   const draftLocked = constructorBusy || refreshing;
+  // «Сохранить как заготовку» у исправленных ответов «Проверки»: этапы — из сохранённого сценария
+  const previewSalesCards = useMemo(
+    () => ({
+      leadMagnetId,
+      states: draft.flow.states.map((state) => ({ id: state.id, title: state.title })),
+      locked: draftLocked,
+      onSaved: () => router.refresh(),
+    }),
+    [leadMagnetId, draft.flow.states, draftLocked, router],
+  );
 
   // Правка в «Настройках» или на доске, пока не сохранена, закрывает отправку конструктору и сохранение в другой вкладке
   const constructorSendBlock = settingsDirty
@@ -746,6 +756,7 @@ export function Editor({
                             noticeLines={flowNoticeLines(flowLabels.notices)}
                             onBusyChange={onPreviewBusy}
                             onCorrectionsChanged={reloadCorrectionsCount}
+                            salesCards={previewSalesCards}
                           />
                         </PreviewProductLinks.Provider>
                       </ChatLabelsProvider>
@@ -789,11 +800,12 @@ export function Editor({
                       <PreviewEnd.Provider value={previewEnd(chatId)}>
                         <ChatLabelsProvider labels={previewLabels}>
                           <PreviewProductLinks.Provider value={{ products: draft.productLinks ?? [], chatId }}>
-                            <CorrectablePreviewChat key={`${chatId}:${previewEnd(chatId) ? "finished" : "open"}`} api="/api/preview" chatId={chatId} skin={previewSkin} composerActions={previewComposerActions} videos={videosClient} images={imageLibraryClient} {...(draft.clientImages && { attachments: attachmentsClient })} {...(voiceAvailable && draft.voiceInput && { voice: previewVoice })} noticeLines={noticeLines} onBusyChange={onPreviewBusy} onCorrectionsChanged={reloadCorrectionsCount} />
+                            <CorrectablePreviewChat key={`${chatId}:${previewEnd(chatId) ? "finished" : "open"}`} api="/api/preview" chatId={chatId} skin={previewSkin} composerActions={previewComposerActions} videos={videosClient} images={imageLibraryClient} {...(draft.clientImages && { attachments: attachmentsClient })} {...(voiceAvailable && draft.voiceInput && { voice: previewVoice })} noticeLines={noticeLines} onBusyChange={onPreviewBusy} onCorrectionsChanged={reloadCorrectionsCount} salesCards={previewSalesCards} />
                           </PreviewProductLinks.Provider>
                         </ChatLabelsProvider>
                       </PreviewEnd.Provider>
                     )}
+                  onSalesCardsChanged={() => router.refresh()}
                   onPreviewRestarted={() => {
                     router.refresh();
                   }}

@@ -133,7 +133,23 @@ export function renderLeadMagnet(settings: LeadMagnetSettings | null, publishErr
     `## Сценарий (старт — «${flow.start ? titleOf(flow.start) : "?"}»)\n\n${states}`,
     field("Условие завершения", settings.endCondition),
     field("Прощание", settings.farewellMessage),
+    renderSalesCards(settings.salesCards, titleOf),
   ].join("\n");
+}
+
+/** Заготовки эксперта: где лежит, когда уместна, как отправлять и текст. */
+function renderSalesCards(cards: LeadMagnetSettings["salesCards"], titleOf: (id: string) => string): string {
+  if (!cards?.length) return "";
+  const card = (item: LeadMagnetSettings["salesCards"][number]) =>
+    [
+      `### ${item.title} — ${item.stateId === null ? "шпаргалка возражений" : `этап «${titleOf(item.stateId)}»`}, ${item.verbatim ? "дословно" : "своими словами"}`,
+      "",
+      `Когда уместна: ${item.when}`,
+      "",
+      quoteBlock(item.text),
+      "",
+    ].join("\n");
+  return `## Заготовки эксперта\n\n${cards.map(card).join("\n")}`;
 }
 
 const OUTCOME_LABEL: Record<DialogOutcome, string> = { agreed: "согласился", declined: "отказался", left: "ушёл" };

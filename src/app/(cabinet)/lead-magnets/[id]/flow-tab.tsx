@@ -4,17 +4,21 @@ import { FlowLabelsProvider, FlowTestChat, type FlowNoticeLines } from "@ykurilo
 import type { AgentFlow } from "@ykurilov/agent-chat-flows/format";
 import { oduvanchikFlowEditorSkin } from "@ykurilov/agent-chat-skin-oduvanchik/flows";
 import { flowLabels } from "@/ui/flow-labels";
-import { useMemo, useRef, type ComponentProps, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { leadMagnetFlowChecks } from "@/modules/flows/app-checks";
 import { leadMagnetFlowCatalog } from "@/modules/flows/catalog";
 import type { FieldDefinition } from "@/modules/people";
 import type { LeadMagnetSettings } from "@/modules/lead-magnets";
-import { saveFlowAction, saveSettingsAndFlowAction } from "../actions";
+import { removeSalesCardAction, saveFlowAction, saveSalesCardAction, saveSettingsAndFlowAction } from "../actions";
+import { SalesCardsProvider, withSalesCards, type SalesCardsBoard } from "./sales-cards-board";
 import { combineUnsavedEdits } from "./unsaved-edits";
 import { previewFlowTestConnection } from "./flow-test-connection";
 
 /** Перемотка часов тестового чата на доске: 15 минут, час, три часа (касания молчуну). */
 const ADVANCE_STEPS = [15 * 60_000, 60 * 60_000, 3 * 60 * 60_000];
+
+/** Доска с разделами заготовок эксперта: у этапа и общей шпаргалкой в обзоре. */
+const boardSkin = withSalesCards(oduvanchikFlowEditorSkin);
 
 export interface FlowTabProps {
   leadMagnetId: string;
@@ -38,6 +42,8 @@ export interface FlowTabProps {
   renderChat(chatId: string, options: { noticeLines: FlowNoticeLines }): ReactNode;
   /** «Начать заново» в тестовом чате заменило разговор «Проверки»: страница перечитывает его статус. */
   onPreviewRestarted(): void;
+  /** Заготовка сохранена или удалена новой версией черновика: страница перечитывает черновик. */
+  onSalesCardsChanged(): void;
 }
 
 /** Итог сохранения для доски: тип `FlowSaveResult` SDK 0.52 наружу не отдаёт. */
@@ -50,7 +56,7 @@ function boardPath(path: string): string | undefined {
 }
 
 /** Вкладка «Сценарий»: доска со ступенями разговора, переходами, днями и касаниями. Проверки те же, что на сервере. */
-export function FlowTab({ leadMagnetId, draftVersionId, value, savedValue, onChange, fields, locked, savedSettings, unsavedSettings, onSaved, renderChat, onPreviewRestarted }: FlowTabProps) {
+export function FlowTab({ leadMagnetId, draftVersionId, value, savedValue, onChange, fields, locked, savedSettings, unsavedSettings, onSaved, renderChat, onPreviewRestarted, onSalesCardsChanged }: FlowTabProps) {
   const catalog = useMemo(() => leadMagnetFlowCatalog(fields), [fields]);
   // Подключение живёт, пока открыт лидмагнит (оно помнит «первое открытие»), а экран чата и обновление берёт свежие
   const latest = useRef({ renderChat, onPreviewRestarted });
@@ -84,13 +90,43 @@ export function FlowTab({ leadMagnetId, draftVersionId, value, savedValue, onCha
     return { ok: true };
   };
 
+  // Заготовки сохраняются сразу, мимо сохранения доски: видны до того, как страница перечитает черновик
+  const [salesCards, setSalesCards] = useState({ from: savedSettings.salesCards, cards: savedSettings.salesCards ?? [] });
+  if (salesCards.from !== savedSettings.salesCards) setSalesCards({ from: savedSettings.salesCards, cards: savedSettings.salesCards ?? [] });
+  const salesCardsBoard: SalesCardsBoard = {
+    cards: salesCards.cards,
+    states: value.states.filter((state) => savedValue.states.some((saved) => saved.id === state.id)).map((state) => ({ id: state.id, title: state.title })),
+    locked,
+    save: async (input) => {
+      const result = await saveSalesCardAction(leadMagnetId, input);
+      if (result.ok) {
+        const { card } = result;
+        setSalesCards((current) => ({
+          ...current,
+          cards: current.cards.some((one) => one.id === card.id) ? current.cards.map((one) => (one.id === card.id ? card : one)) : [...current.cards, card],
+        }));
+        onSalesCardsChanged();
+      }
+      return result;
+    },
+    remove: async (id) => {
+      const result = await removeSalesCardAction(leadMagnetId, id);
+      if (result.ok) {
+        setSalesCards((current) => ({ ...current, cards: current.cards.filter((card) => card.id !== id) }));
+        onSalesCardsChanged();
+      }
+      return result;
+    },
+  };
+
   return (
     <FlowLabelsProvider labels={flowLabels}>
+      <SalesCardsProvider value={salesCardsBoard}>
       {/* Пока конструктор правит черновик, доска только для просмотра: открыть ноды, проверить и прогнать можно */}
       <FlowTestChat
         testChat={testChat}
         advanceSteps={ADVANCE_STEPS}
-        skin={oduvanchikFlowEditorSkin}
+        skin={boardSkin}
         value={value}
         savedValue={savedValue}
         onChange={onChange}
@@ -107,6 +143,7 @@ export function FlowTab({ leadMagnetId, draftVersionId, value, savedValue, onCha
         // Корень доски берёт высоту родителя (SDK 0.52+): вкладка отдаёт ей всё место, без рамки и скруглений
         className="h-full min-h-0 flex-1 rounded-none border-0"
       />
+      </SalesCardsProvider>
     </FlowLabelsProvider>
   );
 }

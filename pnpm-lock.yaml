@@ -36,44 +36,44 @@ importers:
         specifier: npm:@ykurilov/tandem-ui@^0.7.0
         version: '@ykurilov/tandem-ui@0.7.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)'
       '@ykurilov/agent-chat-attachments':
-        specifier: 0.107.1
-        version: 0.107.1(@types/node@22.20.5)(@ykurilov/agent-chat-react@0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+        specifier: 0.110.0
+        version: 0.110.0(@types/node@22.20.5)(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       '@ykurilov/agent-chat-core':
-        specifier: 0.107.1
-        version: 0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+        specifier: 0.110.0
+        version: 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       '@ykurilov/agent-chat-flows':
-        specifier: 0.107.1
-        version: 0.107.1(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+        specifier: 0.110.0
+        version: 0.110.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       '@ykurilov/agent-chat-image-library':
-        specifier: 0.107.1
-        version: 0.107.1(@ykurilov/agent-chat-react@0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)
+        specifier: 0.110.0
+        version: 0.110.0(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)
       '@ykurilov/agent-chat-limits':
-        specifier: 0.107.1
-        version: 0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+        specifier: 0.110.0
+        version: 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       '@ykurilov/agent-chat-react':
-        specifier: 0.107.1
-        version: 0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+        specifier: 0.110.0
+        version: 0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       '@ykurilov/agent-chat-reply-check':
-        specifier: 0.107.1
-        version: 0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+        specifier: 0.110.0
+        version: 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       '@ykurilov/agent-chat-server':
-        specifier: 0.107.1
-        version: 0.107.1(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(zod@4.6.5)
+        specifier: 0.110.0
+        version: 0.110.0(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(zod@4.6.5)
       '@ykurilov/agent-chat-skin-oduvanchik':
-        specifier: 0.107.1
-        version: 0.107.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-flows@0.107.1(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+        specifier: 0.110.0
+        version: 0.110.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-flows@0.110.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       '@ykurilov/agent-chat-storage-postgres':
-        specifier: 0.107.1
-        version: 0.107.1(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+        specifier: 0.110.0
+        version: 0.110.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       '@ykurilov/agent-chat-videos':
-        specifier: 0.107.1
-        version: 0.107.1(@ykurilov/agent-chat-react@0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)
+        specifier: 0.110.0
+        version: 0.110.0(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)
       '@ykurilov/agent-chat-voice':
-        specifier: 0.107.1
-        version: 0.107.1(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(ws@8.22.2)
+        specifier: 0.110.0
+        version: 0.110.0(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(ws@8.22.2)
       '@ykurilov/agent-chat-web-tools':
-        specifier: 0.107.1
-        version: 0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+        specifier: 0.110.0
+        version: 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       '@ykurilov/ds-react':
         specifier: 0.7.0
         version: 0.7.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -224,8 +224,17 @@ packages:
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
 
+  '@emnapi/core@2.0.0-beta.2':
+    resolution: {integrity: sha512-MzCVoWtcg4Pm2B3je5mMvYMvj3MmBKw+fU7vbsJc9/iT8ip6/eYIHo/Dsm/mr+wsHB6SEyJDuxB09Yy6r/8+4A==}
+
   '@emnapi/runtime@1.11.3':
     resolution: {integrity: sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==}
+
+  '@emnapi/runtime@2.0.0-beta.2':
+    resolution: {integrity: sha512-JcrSPzPvZuNZvJqPTF9Fw25LbOJ8avzFVlaf2grmH4Cku0oGP47tRgqPZadcfj3YoZMHkFVnCYFbQM8I+i5QEw==}
+
+  '@emnapi/wasi-threads@2.2.0':
+    resolution: {integrity: sha512-JP7OYH38Q7+pyTAe14raZHLQIK7BDKbdwji+Xi3pcd/6QkJYQH3SX4wu6EplGrGJWRepoNzedfm0G3B9Z4e9Rw==}
 
   '@esbuild-kit/core-utils@3.3.2':
     resolution: {integrity: sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ==}
@@ -872,6 +881,13 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
+  '@napi-rs/wasm-runtime@1.2.6':
+    resolution: {integrity: sha512-mRyDmEw9/fCDXCGfL1sbgIw/GUK0PVxRW4YwgPN61F3LQ+fSyoBFarJVzgGyhF6kRzEQZ0FejDqm4WLXSeqQmw==}
+    engines: {node: ^20.19.0 || ^22.13.0 || >=23.5.0}
+    peerDependencies:
+      '@emnapi/core': ^1.7.1 || 2.0.0-beta.2
+      '@emnapi/runtime': ^1.7.1 || 2.0.0-beta.2
+
   '@next/env@16.3.7':
     resolution: {integrity: sha512-/HuhBN1CorqNTmewTIh81yXOQri6B8Ye/c9D7+830XqwVaf8qMnJNrgNxDn6dLtihq8YzBbI6NSAuMKvpr+DvQ==}
 
@@ -1366,98 +1382,103 @@ packages:
   '@radix-ui/rect@1.1.3':
     resolution: {integrity: sha512-JtyZR+mqgBibTo8xea3B6ZRmzZiM/YeVBtUkas6zMuXjAlfIFIW2FgqeM9eLyvEaYX66vr6DJMK+4U6LV0KhNw==}
 
-  '@rolldown/binding-android-arm-eabi@1.2.18':
-    resolution: {integrity: sha512-ubTG+4KlidvioxjOFdsdEa2F6JVGZb8m2ByJUqQ7fYzUeT1cEn194POcsQ10PKH4p//q0YQn4SB3YpSuzcA1Yg==}
+  '@rolldown/binding-android-arm-eabi@1.2.19':
+    resolution: {integrity: sha512-e+Ebe0WT+9tbXmNKPIiC8YrWAHYwug3m6i4p3rZGGulfZri1jtI4HslT+OZnFf/OIHowWF71DTlHwXBP2SiA7A==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [arm]
     os: [android]
 
-  '@rolldown/binding-android-arm64@1.2.18':
-    resolution: {integrity: sha512-2Xa1t/JeFGTZn5TbzgPppcCftF8sCVnTNvrIvoSdcZhoFzAuVy1L3xxQUQ4sfWDtwVzg1u6Yi1R3SlJugRNV2Q==}
+  '@rolldown/binding-android-arm64@1.2.19':
+    resolution: {integrity: sha512-hOombrTJ+szt2ciEzS7oCA78lMPBgF5UMQWCJIyNfnrI7GLl8HYoFqCnpL2gcPOaXMqryGCU5ExdQKyDDcC+yA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [arm64]
     os: [android]
 
-  '@rolldown/binding-darwin-arm64@1.2.18':
-    resolution: {integrity: sha512-iUzw9HshVvrWci9gVXjxWS7/M/IcLvNo67vu2c/w9zKBz4hIvPRixdUpIW/iCfhldLaq9ER2hecsI9UY5z0/yA==}
+  '@rolldown/binding-darwin-arm64@1.2.19':
+    resolution: {integrity: sha512-XoMA2pwCKGTQzUjPgtRwkedH4WmXhdIPKT6l6oOxd1PUbNodGI6DcBekgN7EC//+x3pfBYX/qL1gNmZAqivw5g==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [arm64]
     os: [darwin]
 
-  '@rolldown/binding-darwin-x64@1.2.18':
-    resolution: {integrity: sha512-XuDHFzbFEtZl0QGJi92+fmG67tfnp1iZ9VOeDkwasGyTq2VG3/5PnJnvAr+MTzFh/rNScJ3VhN+XpZyyGsN7Jw==}
+  '@rolldown/binding-darwin-x64@1.2.19':
+    resolution: {integrity: sha512-zo8EsSSwMZCY/e+fRnGaX02YGgvJD0yvhNi/9hpGPA2MJ9ZF8dPCw75UGfpI6OpQ/myR/dIYmogRvqiZD0TrXg==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [darwin]
 
-  '@rolldown/binding-freebsd-x64@1.2.18':
-    resolution: {integrity: sha512-MM8opLfsLK15oEXDz6iBc0t3ahu+ew9jsAmha+ovZ33hSwYgqo7YmpRITqFTfW7xA71BLEQ3jJdTsaCmhB1c9w==}
+  '@rolldown/binding-freebsd-x64@1.2.19':
+    resolution: {integrity: sha512-O8ISAOfI1nj7AuBPd30FSF47z7f7lzlk5poQVGgiikvQuGEBFYvW8ki+UEnT+YJPnNGjQzn304klt4O9FUE7mA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [freebsd]
 
-  '@rolldown/binding-linux-arm-gnueabihf@1.2.18':
-    resolution: {integrity: sha512-J6EoCWiy5RnFQzHrKyHXXevZ9lukQfGpnchX/zG/k/WC2nc9O9XyS1JgA8kI9VxMFggMbCPjpv7LcikriXfehw==}
+  '@rolldown/binding-linux-arm-gnueabihf@1.2.19':
+    resolution: {integrity: sha512-/lYCba5NO0yq4S0jGMH8QTBtkvQxoXjoQWzF5BcWp9MjB9jxVRD1GQDNofkVjcOj30DWyhLIN/4Oe60JKzaONw==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [arm]
     os: [linux]
 
-  '@rolldown/binding-linux-arm64-gnu@1.2.18':
-    resolution: {integrity: sha512-HIkFuLF7CdDeki+1aCZLLbLq0hk/PHntb+z4/YCTo47JbksTD6jJEELIz92tYROmDmvMrNqUMqBi71BkJLDR+A==}
+  '@rolldown/binding-linux-arm64-gnu@1.2.19':
+    resolution: {integrity: sha512-pm/apFMBnSbFb3O6nG5pHO1iqHhZrjGDFEjSm+ot9J17XXPvH9L90y5h+jgfHCE+Qdlsvy8qKEcU4VKxgjD+vA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@rolldown/binding-linux-arm64-musl@1.2.18':
-    resolution: {integrity: sha512-4oqWItLLYt7IceOnElCct8T2ek5p7PmD7LN04TRJRXGo5f3HtKTgGH6PhYRFK4C2ICkq/LMUU0BVPvvlAKhm8g==}
+  '@rolldown/binding-linux-arm64-musl@1.2.19':
+    resolution: {integrity: sha512-K1SmQp3FFichn8oqrNIwvFoZ5wcvjC7goBzpaMNvLf9FZc+QB/QvLmnpJZgAAGHiD980tP8FZZnXk2K94rvlxg==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@rolldown/binding-linux-ppc64-gnu@1.2.18':
-    resolution: {integrity: sha512-+AkRly5SrCEgnPhGRfub7pucASYEC2fTsxZg7VCcnozpA2+Wn/gCYy1t7LuJS67/xyJu/7noYBJncDUkbwgw2A==}
+  '@rolldown/binding-linux-ppc64-gnu@1.2.19':
+    resolution: {integrity: sha512-I0xwD57jP/3A7+5UPZin2w8Y7XHEmEM5zqpYZOcQ45MlNW6tUJUziymV3yRr7rL4vwyfEcRsRksC4a7Kc08p5Q==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [ppc64]
     os: [linux]
     libc: [glibc]
 
-  '@rolldown/binding-linux-s390x-gnu@1.2.18':
-    resolution: {integrity: sha512-Ttg1r9vVykMnQrE/GwYO9icKtXiuiMfRe/w74xJkeoVuvhRG+WtT6LEMOf58Yl63yd77lhHzO8Y55R8CC3XALA==}
+  '@rolldown/binding-linux-s390x-gnu@1.2.19':
+    resolution: {integrity: sha512-BrtEHT24SNXj9HiXqy+s/kXiSiQGt6EKCPUlRirAoIioVxKGnbXBUEkbZASAei7iZJB0/Ynm+0JP00Ipx7AnSw==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [s390x]
     os: [linux]
     libc: [glibc]
 
-  '@rolldown/binding-linux-x64-gnu@1.2.18':
-    resolution: {integrity: sha512-xX1Tt4o5jUMma0vJsXp5eRZA9nOuyigb2dKJMMzZRmzMxLYGE9PaKKSqHPzPvSQgM8ZOEacSTQwDQcwWfh0xmQ==}
+  '@rolldown/binding-linux-x64-gnu@1.2.19':
+    resolution: {integrity: sha512-rm75/9DkHKeU2WnA8w4X94WGYgLlDCFCfkQC+4bguVJmC/jvDRv2B+2wLOYhyE0fVuv7//Ckk39OoOufyCu76Q==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@rolldown/binding-linux-x64-musl@1.2.18':
-    resolution: {integrity: sha512-4VVlGI5K2kociZlW3lSN8VjG3TW5yQIlAcfCdBXMgGjJxZll15Fa4ocRHXHvIVVnwlibCw/NQajJrNDiqqpiiw==}
+  '@rolldown/binding-linux-x64-musl@1.2.19':
+    resolution: {integrity: sha512-irh/4+iYFM4GAzpluDErgjz89bj6NDtqqMAG/6O1LG38Ed3NpyebzCpcVNkFW8uhy+/3/BocUvnXDR33CXWe9A==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@rolldown/binding-openharmony-arm64@1.2.18':
-    resolution: {integrity: sha512-PApTsgH1jLYuyy3tSCz9De82Gq5qXwi7vImVZhEzTgX1C4150Cp5M2ZfL3pLvbCvbEHL0oJeC6pd6podtv8Y5w==}
+  '@rolldown/binding-openharmony-arm64@1.2.19':
+    resolution: {integrity: sha512-+KWTWNoPt+CfSq94CiceWu3yPE+QzkaG+phPyz9G60tmZLwfQkcA4AeksafzvJAw4pvg1mcd5a1TkUqVv0s4JA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [arm64]
     os: [openharmony]
 
-  '@rolldown/binding-win32-arm64-msvc@1.2.18':
-    resolution: {integrity: sha512-J2XjWjx/SP+4x0H4r6dz3Vzb5WVkg7re40Do9K7HJ3sK2/xcmZrWwakXlSwaMvOkvruLJCD4CL/3wqsIR/thgg==}
+  '@rolldown/binding-wasm32-wasi@1.2.19':
+    resolution: {integrity: sha512-7EH+skOsl5qpWnK0vzamgJFhOv1cwxQpsxm8tI883K9fur5c27p8q87fzEO6BbBPabA2/+s/zR63/pLc137iOg==}
+    engines: {node: ^20.19.0 || ^22.13.0 || >=23.5.0}
+    cpu: [wasm32]
+
+  '@rolldown/binding-win32-arm64-msvc@1.2.19':
+    resolution: {integrity: sha512-3Q1Yg1Q7tEvBWoZf5rFvG/GKZQPgwfru+p4wBajDfJFBs0SHCpL++dfTjW9gyAKd1T7ZpIYvdaUax7Pa/IhFVQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [arm64]
     os: [win32]
 
-  '@rolldown/binding-win32-x64-msvc@1.2.18':
-    resolution: {integrity: sha512-XwRJxRQvkuEtS0hIIt29QrqPJ+JzMJSNYHJw4ae/mc6uEarfRG1ceyg4HmmWiBdL/YCb6g7N5BLbSvmRJRYZHw==}
+  '@rolldown/binding-win32-x64-msvc@1.2.19':
+    resolution: {integrity: sha512-y/sqRRc6d7hECzOFc5n3LSeqctmIp9mMjY1Kq4s14uLPd/LZ4z7i1zrW6fMtp2mPeuQIC4e6ULMcwQzMomqQag==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [win32]
@@ -1562,6 +1583,9 @@ packages:
 
   '@tailwindcss/postcss@4.3.3':
     resolution: {integrity: sha512-JTSZZGQi1AyKirbLN3azmjVzef92tcX7h+iSqPdaeStyFpGpDlKvvpxeOE8njhbUanbRwr3z8DyzhICWnMtQeg==}
+
+  '@tybys/wasm-util@0.10.4':
+    resolution: {integrity: sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A==}
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -1671,11 +1695,11 @@ packages:
   '@xyflow/system@0.0.84':
     resolution: {integrity: sha512-96zfGFjH3oZ3T0MRdH4gJ0SlXuCIxbBuHVevZ4xry5UTxqjzjt010+LRdholgepq7jhrcaz1JNtzrETscwnkEA==}
 
-  '@ykurilov/agent-chat-attachments@0.107.1':
-    resolution: {integrity: sha512-x+EvNZWpLJWbs8vCVZ+d+WF/heuyau8ZtUJItCVg+TIWQN+2hDJT7e2VomuavlxYBEmFMHeD9wzWQ0RPZn1NdQ==}
+  '@ykurilov/agent-chat-attachments@0.110.0':
+    resolution: {integrity: sha512-bhV9+MQGGnfeegIE/59CSswhx6Tubxw/TLp8RU+eLXAisdARELIx+qd17vs4P8O69RJECBgXSRLNmYgyJgwVHw==}
     engines: {node: '>=22'}
     peerDependencies:
-      '@ykurilov/agent-chat-react': ^0.107.1
+      '@ykurilov/agent-chat-react': ^0.110.0
       react: ~19.0.1 || ~19.1.2 || ^19.2.1
     peerDependenciesMeta:
       '@ykurilov/agent-chat-react':
@@ -1683,8 +1707,8 @@ packages:
       react:
         optional: true
 
-  '@ykurilov/agent-chat-core@0.107.1':
-    resolution: {integrity: sha512-0pi5I3bGjLV6axnzavDAWj9wIaG48EOQKS5pwRDp4Uzbx0HlIn5eh6xsvVclY2zR/JDDbKYwpIMM8LRG4xcPSw==}
+  '@ykurilov/agent-chat-core@0.110.0':
+    resolution: {integrity: sha512-OzCkNKLT/6Hc6IDSaRXLeNGcBxDMSjHGX4xQ7RvelgXehA6hd6gajdx0gWpNSXW0sqgu0KveELfWxDblfvvz3Q==}
     engines: {node: '>=22'}
     peerDependencies:
       vitest: ^3.2.0 || ^4.0.0 || ^5.0.0
@@ -1692,11 +1716,11 @@ packages:
       vitest:
         optional: true
 
-  '@ykurilov/agent-chat-flows@0.107.1':
-    resolution: {integrity: sha512-lQKlM4z3+pwfPHwhxvHm8ItcvEnqqmq4myEUUoDd7/RUQp2nt9ZLOGt8dv/Ic3ZIgHrukejjBMmJyRhh+NSDnA==}
+  '@ykurilov/agent-chat-flows@0.110.0':
+    resolution: {integrity: sha512-DBZhYSmOohu8pDLwP+5Ge8yYaRp8nVU3GsdrjK+FkQiiiKjT2FnE/udAoRVdUg3QNjc+DGw8GL6G4ElndW2Fuw==}
     engines: {node: '>=22'}
     peerDependencies:
-      '@ykurilov/agent-chat-react': ^0.107.1
+      '@ykurilov/agent-chat-react': ^0.110.0
       better-sqlite3: ^13.0.3
       pg: ^8.23.0
       react: ~19.0.1 || ~19.1.2 || ^19.2.1
@@ -1710,11 +1734,11 @@ packages:
       react:
         optional: true
 
-  '@ykurilov/agent-chat-image-library@0.107.1':
-    resolution: {integrity: sha512-YtELT7xNCkNsDWzYCZ2YSNLhhgzy+6tBIiGCHPWMJqGOPxoc8hNZFJHsi9p49W+shQzymsOY1bis7CyJD6lgQg==}
+  '@ykurilov/agent-chat-image-library@0.110.0':
+    resolution: {integrity: sha512-jQl0DBeLsANreRCqP2Cpv5v31qndieZ0fwHBCFA1HHUmtUMof2KDjahbhVOIRka2db9nK/h986tDFTapE2BFdQ==}
     engines: {node: '>=22'}
     peerDependencies:
-      '@ykurilov/agent-chat-react': ^0.107.1
+      '@ykurilov/agent-chat-react': ^0.110.0
       react: ~19.0.1 || ~19.1.2 || ^19.2.1
     peerDependenciesMeta:
       '@ykurilov/agent-chat-react':
@@ -1722,22 +1746,22 @@ packages:
       react:
         optional: true
 
-  '@ykurilov/agent-chat-limits@0.107.1':
-    resolution: {integrity: sha512-Er/mlpvExcyJAjGvSfYbJJNhcglZO0WOoS5yXsoRCtyrvuQ2wEGNAz7ikzNbV5u3rg+8K2fQkNEfFYjS5pYdgQ==}
+  '@ykurilov/agent-chat-limits@0.110.0':
+    resolution: {integrity: sha512-LqpfxBGlfM0/XJuP4IKLj61A4a3e5mB3NInlqkUrBgpVvbPIAMeH1BXl13QIvOT67PIcldsgb3TCVqJ7itkd9g==}
     engines: {node: '>=22'}
 
-  '@ykurilov/agent-chat-react@0.107.1':
-    resolution: {integrity: sha512-UUoxrfiFVfPjmC5OymnoDhihimGer6eM0F2RzsshzzI9kcIWUmoHm03+WWj7ylI8dZqezARFM0nObWwqGfWhNQ==}
+  '@ykurilov/agent-chat-react@0.110.0':
+    resolution: {integrity: sha512-BULiwX9zWl29ysTeuY1zyYbxgt9luIe3jLclJXDRyhRL7TqG0b4rbsCtuwCHnBf8Tt2hqoBvj+aoA3ouJtlvtw==}
     engines: {node: '>=22'}
     peerDependencies:
       react: ~19.0.1 || ~19.1.2 || ^19.2.1
 
-  '@ykurilov/agent-chat-reply-check@0.107.1':
-    resolution: {integrity: sha512-oZ4l3cLiR0rugc24DnDSkTEpFtCtCjKVJkVKcR6fvKI6Ny79+AugLGWzBAxufuLzoExvEgyYK122UYilonjv8A==}
+  '@ykurilov/agent-chat-reply-check@0.110.0':
+    resolution: {integrity: sha512-3B/KLuBSEQcdOVVUhukVmdCm33wo5Aclla60oZeitefFqttejciBIwm+tO3Y7uGanYWxaBNu1EfVtikXE/x+wQ==}
     engines: {node: '>=22'}
 
-  '@ykurilov/agent-chat-server@0.107.1':
-    resolution: {integrity: sha512-z0j/Ip8PlSv9VzDt4+qwoGGqb0HOvqhbXD7Na07czq2yyaXWYAOUnXR8Wa0qo0jmxiOSwWCLygFrEcMefXcG0w==}
+  '@ykurilov/agent-chat-server@0.110.0':
+    resolution: {integrity: sha512-863XPYw1Tt+18YsnWeCemkveaI+iPfveSNGv69LO/W1p8I/vidKw5D1A2RJSCP4Ul+DdcL9b2wYnsDVkJULy+g==}
     engines: {node: '>=22'}
     peerDependencies:
       hono: ^4.13.10
@@ -1745,12 +1769,12 @@ packages:
       hono:
         optional: true
 
-  '@ykurilov/agent-chat-skin-oduvanchik@0.107.1':
-    resolution: {integrity: sha512-rKHr3waH/yZLBNKL/R2tW406KYWvsU77N0m9bRGz9lgbQ6oIwQR2c6GfA5UVyx9LUkkIqnt51rC9+JshS89RiQ==}
+  '@ykurilov/agent-chat-skin-oduvanchik@0.110.0':
+    resolution: {integrity: sha512-jN2/oj6Jix6TLclcyDyFL8icqQ8TqZeOHGTISv3c94zExCg6MHTVcXk44r9zLlFMBFpJVl0lHvbmO1gW7rjpnA==}
     engines: {node: '>=22'}
     peerDependencies:
-      '@ykurilov/agent-chat-flows': ^0.107.1
-      '@ykurilov/agent-chat-sandbox': ^0.107.1
+      '@ykurilov/agent-chat-flows': ^0.110.0
+      '@ykurilov/agent-chat-sandbox': ^0.110.0
       react: ~19.0.1 || ~19.1.2 || ^19.2.1
       react-dom: ~19.0.1 || ~19.1.2 || ^19.2.1
     peerDependenciesMeta:
@@ -1759,15 +1783,15 @@ packages:
       '@ykurilov/agent-chat-sandbox':
         optional: true
 
-  '@ykurilov/agent-chat-storage-postgres@0.107.1':
-    resolution: {integrity: sha512-WL1cprxTnoLZVhNURUI8ll325EfvZ56WLavnwCkdmpNl00i7lT5emJ63q/WnOjAGwg1RAWDIEWlTL5E3JC1pow==}
+  '@ykurilov/agent-chat-storage-postgres@0.110.0':
+    resolution: {integrity: sha512-hIrQtb08A1DhqKjncPoB2UARCkuj9DlOY/v6qIed2MM35FpN7QKwN0OVeJqXHT1NQEYM67XQQw9mEAOW8m/ziA==}
     engines: {node: '>=22'}
 
-  '@ykurilov/agent-chat-videos@0.107.1':
-    resolution: {integrity: sha512-SOIv8XO9dqigdLU8fnji2yvMRnIsom6ON9ec/tfhUFpcM0ae1+GpjvQvYSz+SQqywtjJdE3q9P/Fgew450uf+A==}
+  '@ykurilov/agent-chat-videos@0.110.0':
+    resolution: {integrity: sha512-Z+mgJuEwPi1EtfPpusTtHwEs7puCR79c2Zerf0VUIWpvaJJwHLci3CYbTu4o7LE0UI5HWoORjBnaKDiMN6LzwQ==}
     engines: {node: '>=22'}
     peerDependencies:
-      '@ykurilov/agent-chat-react': ^0.107.1
+      '@ykurilov/agent-chat-react': ^0.110.0
       react: ~19.0.1 || ~19.1.2 || ^19.2.1
     peerDependenciesMeta:
       '@ykurilov/agent-chat-react':
@@ -1775,8 +1799,8 @@ packages:
       react:
         optional: true
 
-  '@ykurilov/agent-chat-voice@0.107.1':
-    resolution: {integrity: sha512-3haUfscgLLs/mtr5pMHNw9JDe1IhMY39VfIxtVMkPycwcS2oB4m3IiBlUXwtxNwGe2XzAW0I7mB80ZXHr+tJcQ==}
+  '@ykurilov/agent-chat-voice@0.110.0':
+    resolution: {integrity: sha512-+GA+QW+lFQ8ybXwyoAKjIVesVu3nuoPLcUTLm/ddwG0G3oqn9rv3vgU3oj5oRcbIRDMaVmiKYchFvPXyXBSyiQ==}
     engines: {node: '>=22'}
     peerDependencies:
       hono: ^4.13.10
@@ -1787,8 +1811,8 @@ packages:
       ws:
         optional: true
 
-  '@ykurilov/agent-chat-web-tools@0.107.1':
-    resolution: {integrity: sha512-rd19uYRA3gq8uc37HbEpYmVfoWb75tIXOjeLwywPf+sAuNeo+SPMaJfcI0YvUfk1KaTjo4hqvz+8vSN+vTy9+A==}
+  '@ykurilov/agent-chat-web-tools@0.110.0':
+    resolution: {integrity: sha512-O6f6RlJXXkb44Ha49jDgLS9HT8X3C9wjtTaCA44JLNtNO2FrrjVWHyg0HyH/wj032pvP4Fp7DklP6oQqA0f92Q==}
     engines: {node: '>=22'}
 
   '@ykurilov/ds-react@0.7.0':
@@ -2698,8 +2722,8 @@ packages:
   resolve-pkg-maps@1.0.0:
     resolution: {integrity: sha512-seS2Tj26TBVOC2NIc2rOe2y2ZO7efxITtLZcGSOnHHNOQ7CkiUBfw0Iw2ck6xkIhPwLhKNLS8BO+hEpngQlqzw==}
 
-  rolldown@1.2.18:
-    resolution: {integrity: sha512-C1uuT3UR60SShuCaPQFAAZyefJCWZlAKB02BV3BuPE2Rs4fevRQltEKoFO2tV5W9/eJhU5RieV6vJj3euulfNQ==}
+  rolldown@1.2.19:
+    resolution: {integrity: sha512-QIiV1J9d0pzN4jeeTH4sjPy0AZ6cAy2cG0ExeoE1+U8Rvj+hR3gYkokx0YbeUNGlZqiQJJ2utcETe0oKXwzsuA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
@@ -3144,7 +3168,23 @@ snapshots:
 
   '@drizzle-team/brocli@0.10.2': {}
 
+  '@emnapi/core@2.0.0-beta.2':
+    dependencies:
+      '@emnapi/wasi-threads': 2.2.0
+      tslib: 2.9.1
+    optional: true
+
   '@emnapi/runtime@1.11.3':
+    dependencies:
+      tslib: 2.9.1
+    optional: true
+
+  '@emnapi/runtime@2.0.0-beta.2':
+    dependencies:
+      tslib: 2.9.1
+    optional: true
+
+  '@emnapi/wasi-threads@2.2.0':
     dependencies:
       tslib: 2.9.1
     optional: true
@@ -3522,6 +3562,13 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
+
+  '@napi-rs/wasm-runtime@1.2.6(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)':
+    dependencies:
+      '@emnapi/core': 2.0.0-beta.2
+      '@emnapi/runtime': 2.0.0-beta.2
+      '@tybys/wasm-util': 0.10.4
+    optional: true
 
   '@next/env@16.3.7': {}
 
@@ -3976,49 +4023,56 @@ snapshots:
 
   '@radix-ui/rect@1.1.3': {}
 
-  '@rolldown/binding-android-arm-eabi@1.2.18':
+  '@rolldown/binding-android-arm-eabi@1.2.19':
     optional: true
 
-  '@rolldown/binding-android-arm64@1.2.18':
+  '@rolldown/binding-android-arm64@1.2.19':
     optional: true
 
-  '@rolldown/binding-darwin-arm64@1.2.18':
+  '@rolldown/binding-darwin-arm64@1.2.19':
     optional: true
 
-  '@rolldown/binding-darwin-x64@1.2.18':
+  '@rolldown/binding-darwin-x64@1.2.19':
     optional: true
 
-  '@rolldown/binding-freebsd-x64@1.2.18':
+  '@rolldown/binding-freebsd-x64@1.2.19':
     optional: true
 
-  '@rolldown/binding-linux-arm-gnueabihf@1.2.18':
+  '@rolldown/binding-linux-arm-gnueabihf@1.2.19':
     optional: true
 
-  '@rolldown/binding-linux-arm64-gnu@1.2.18':
+  '@rolldown/binding-linux-arm64-gnu@1.2.19':
     optional: true
 
-  '@rolldown/binding-linux-arm64-musl@1.2.18':
+  '@rolldown/binding-linux-arm64-musl@1.2.19':
     optional: true
 
-  '@rolldown/binding-linux-ppc64-gnu@1.2.18':
+  '@rolldown/binding-linux-ppc64-gnu@1.2.19':
     optional: true
 
-  '@rolldown/binding-linux-s390x-gnu@1.2.18':
+  '@rolldown/binding-linux-s390x-gnu@1.2.19':
     optional: true
 
-  '@rolldown/binding-linux-x64-gnu@1.2.18':
+  '@rolldown/binding-linux-x64-gnu@1.2.19':
     optional: true
 
-  '@rolldown/binding-linux-x64-musl@1.2.18':
+  '@rolldown/binding-linux-x64-musl@1.2.19':
     optional: true
 
-  '@rolldown/binding-openharmony-arm64@1.2.18':
+  '@rolldown/binding-openharmony-arm64@1.2.19':
     optional: true
 
-  '@rolldown/binding-win32-arm64-msvc@1.2.18':
+  '@rolldown/binding-wasm32-wasi@1.2.19':
+    dependencies:
+      '@emnapi/core': 2.0.0-beta.2
+      '@emnapi/runtime': 2.0.0-beta.2
+      '@napi-rs/wasm-runtime': 1.2.6(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)
     optional: true
 
-  '@rolldown/binding-win32-x64-msvc@1.2.18':
+  '@rolldown/binding-win32-arm64-msvc@1.2.19':
+    optional: true
+
+  '@rolldown/binding-win32-x64-msvc@1.2.19':
     optional: true
 
   '@rolldown/pluginutils@1.1.0': {}
@@ -4097,6 +4151,11 @@ snapshots:
       '@tailwindcss/oxide': 4.3.3
       postcss: 8.5.32
       tailwindcss: 4.3.3
+
+  '@tybys/wasm-util@0.10.4':
+    dependencies:
+      tslib: 2.9.1
+    optional: true
 
   '@types/chai@5.2.3':
     dependencies:
@@ -4218,20 +4277,20 @@ snapshots:
       d3-selection: 3.0.1
       d3-zoom: 3.0.1
 
-  '@ykurilov/agent-chat-attachments@0.107.1(@types/node@22.20.5)(@ykurilov/agent-chat-react@0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
+  '@ykurilov/agent-chat-attachments@0.110.0(@types/node@22.20.5)(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
     dependencies:
-      '@ykurilov/agent-chat-core': 0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       sharp: 0.35.5(@types/node@22.20.5)
       unpdf: 1.9.1
     optionalDependencies:
-      '@ykurilov/agent-chat-react': 0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+      '@ykurilov/agent-chat-react': 0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       react: 19.3.0
     transitivePeerDependencies:
       - '@napi-rs/canvas'
       - '@types/node'
       - vitest
 
-  '@ykurilov/agent-chat-core@0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
+  '@ykurilov/agent-chat-core@0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
     dependencies:
       '@ai-sdk/deepseek': 3.0.56(zod@4.6.5)
       '@ai-sdk/fireworks': 3.0.62(zod@4.6.5)
@@ -4242,15 +4301,15 @@ snapshots:
     optionalDependencies:
       vitest: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
 
-  '@ykurilov/agent-chat-flows@0.107.1(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
+  '@ykurilov/agent-chat-flows@0.110.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
     dependencies:
       '@xyflow/react': 12.12.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@ykurilov/agent-chat-core': 0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       ai: 7.0.122(zod@4.6.5)
       drizzle-orm: 0.45.3(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(pg@8.23.1)
       zod: 4.6.5
     optionalDependencies:
-      '@ykurilov/agent-chat-react': 0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+      '@ykurilov/agent-chat-react': 0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       better-sqlite3: 13.0.3
       pg: 8.23.1
       react: 19.3.0
@@ -4289,21 +4348,21 @@ snapshots:
       - sqlite3
       - vitest
 
-  '@ykurilov/agent-chat-image-library@0.107.1(@ykurilov/agent-chat-react@0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)':
+  '@ykurilov/agent-chat-image-library@0.110.0(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)':
     dependencies:
       ai: 7.0.122(zod@4.6.5)
       zod: 4.6.5
     optionalDependencies:
-      '@ykurilov/agent-chat-react': 0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+      '@ykurilov/agent-chat-react': 0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       react: 19.3.0
 
-  '@ykurilov/agent-chat-limits@0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
+  '@ykurilov/agent-chat-limits@0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
     dependencies:
-      '@ykurilov/agent-chat-core': 0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
     transitivePeerDependencies:
       - vitest
 
-  '@ykurilov/agent-chat-react@0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)':
+  '@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)':
     dependencies:
       '@ai-sdk/react': 4.0.125(react@19.3.0)(zod@4.6.5)
       ai: 7.0.122(zod@4.6.5)
@@ -4318,15 +4377,15 @@ snapshots:
       - vue
       - zod
 
-  '@ykurilov/agent-chat-reply-check@0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
+  '@ykurilov/agent-chat-reply-check@0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
     dependencies:
-      '@ykurilov/agent-chat-core': 0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
     transitivePeerDependencies:
       - vitest
 
-  '@ykurilov/agent-chat-server@0.107.1(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(zod@4.6.5)':
+  '@ykurilov/agent-chat-server@0.110.0(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(zod@4.6.5)':
     dependencies:
-      '@ykurilov/agent-chat-core': 0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       ai: 7.0.122(zod@4.6.5)
     optionalDependencies:
       hono: 4.13.12
@@ -4334,13 +4393,13 @@ snapshots:
       - vitest
       - zod
 
-  '@ykurilov/agent-chat-skin-oduvanchik@0.107.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-flows@0.107.1(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)':
+  '@ykurilov/agent-chat-skin-oduvanchik@0.110.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-flows@0.110.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)':
     dependencies:
       '@phosphor-icons/react': 2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@radix-ui/react-dialog': 1.1.23(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@radix-ui/react-dropdown-menu': 2.1.24(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@tandem/ui': '@ykurilov/tandem-ui@0.7.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)'
-      '@ykurilov/agent-chat-react': 0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+      '@ykurilov/agent-chat-react': 0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       '@ykurilov/ds-react': 0.7.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@ykurilov/ds-tokens': 0.2.1
       class-variance-authority: 0.7.1
@@ -4352,7 +4411,7 @@ snapshots:
       react-markdown: 10.1.0(@types/react@19.3.0)(react@19.3.0)
       remark-gfm: 4.0.1
     optionalDependencies:
-      '@ykurilov/agent-chat-flows': 0.107.1(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-flows': 0.110.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
     transitivePeerDependencies:
       - '@angular/common'
       - '@angular/core'
@@ -4364,9 +4423,9 @@ snapshots:
       - vue
       - zod
 
-  '@ykurilov/agent-chat-storage-postgres@0.107.1(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
+  '@ykurilov/agent-chat-storage-postgres@0.110.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
     dependencies:
-      '@ykurilov/agent-chat-core': 0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       drizzle-orm: 0.45.3(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(pg@8.23.1)
       pg: 8.23.1
     transitivePeerDependencies:
@@ -4402,26 +4461,26 @@ snapshots:
       - sqlite3
       - vitest
 
-  '@ykurilov/agent-chat-videos@0.107.1(@ykurilov/agent-chat-react@0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)':
+  '@ykurilov/agent-chat-videos@0.110.0(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)':
     dependencies:
       ai: 7.0.122(zod@4.6.5)
       zod: 4.6.5
     optionalDependencies:
-      '@ykurilov/agent-chat-react': 0.107.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+      '@ykurilov/agent-chat-react': 0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       react: 19.3.0
 
-  '@ykurilov/agent-chat-voice@0.107.1(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(ws@8.22.2)':
+  '@ykurilov/agent-chat-voice@0.110.0(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(ws@8.22.2)':
     dependencies:
-      '@ykurilov/agent-chat-core': 0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
     optionalDependencies:
       hono: 4.13.12
       ws: 8.22.2
     transitivePeerDependencies:
       - vitest
 
-  '@ykurilov/agent-chat-web-tools@0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
+  '@ykurilov/agent-chat-web-tools@0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
     dependencies:
-      '@ykurilov/agent-chat-core': 0.107.1(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       ai: 7.0.122(zod@4.6.5)
       undici: 7.30.2
       zod: 4.6.5
@@ -5502,26 +5561,27 @@ snapshots:
 
   resolve-pkg-maps@1.0.0: {}
 
-  rolldown@1.2.18:
+  rolldown@1.2.19:
     dependencies:
       '@oxc-project/types': 0.156.0
       '@rolldown/pluginutils': 1.1.0
     optionalDependencies:
-      '@rolldown/binding-android-arm-eabi': 1.2.18
-      '@rolldown/binding-android-arm64': 1.2.18
-      '@rolldown/binding-darwin-arm64': 1.2.18
-      '@rolldown/binding-darwin-x64': 1.2.18
-      '@rolldown/binding-freebsd-x64': 1.2.18
-      '@rolldown/binding-linux-arm-gnueabihf': 1.2.18
-      '@rolldown/binding-linux-arm64-gnu': 1.2.18
-      '@rolldown/binding-linux-arm64-musl': 1.2.18
-      '@rolldown/binding-linux-ppc64-gnu': 1.2.18
-      '@rolldown/binding-linux-s390x-gnu': 1.2.18
-      '@rolldown/binding-linux-x64-gnu': 1.2.18
-      '@rolldown/binding-linux-x64-musl': 1.2.18
-      '@rolldown/binding-openharmony-arm64': 1.2.18
-      '@rolldown/binding-win32-arm64-msvc': 1.2.18
-      '@rolldown/binding-win32-x64-msvc': 1.2.18
+      '@rolldown/binding-android-arm-eabi': 1.2.19
+      '@rolldown/binding-android-arm64': 1.2.19
+      '@rolldown/binding-darwin-arm64': 1.2.19
+      '@rolldown/binding-darwin-x64': 1.2.19
+      '@rolldown/binding-freebsd-x64': 1.2.19
+      '@rolldown/binding-linux-arm-gnueabihf': 1.2.19
+      '@rolldown/binding-linux-arm64-gnu': 1.2.19
+      '@rolldown/binding-linux-arm64-musl': 1.2.19
+      '@rolldown/binding-linux-ppc64-gnu': 1.2.19
+      '@rolldown/binding-linux-s390x-gnu': 1.2.19
+      '@rolldown/binding-linux-x64-gnu': 1.2.19
+      '@rolldown/binding-linux-x64-musl': 1.2.19
+      '@rolldown/binding-openharmony-arm64': 1.2.19
+      '@rolldown/binding-wasm32-wasi': 1.2.19
+      '@rolldown/binding-win32-arm64-msvc': 1.2.19
+      '@rolldown/binding-win32-x64-msvc': 1.2.19
 
   rrule-temporal@2.2.8:
     dependencies:
@@ -5735,7 +5795,7 @@ snapshots:
       lightningcss: 1.33.0
       picomatch: 4.0.7
       postcss: 8.5.32
-      rolldown: 1.2.18
+      rolldown: 1.2.19
       tinyglobby: 0.2.17
     optionalDependencies:
       '@types/node': 22.20.5

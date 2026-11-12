@@ -22,6 +22,7 @@ export const TOOL_TITLES: Readonly<Record<string, string>> = {
   find_images: "Поиск картинки",
   show_image: "Показ картинки",
   suggest_replies: "Кнопки с ответами",
+  sales_card: "Заготовка эксперта",
   ...webToolTitles,
 };
 

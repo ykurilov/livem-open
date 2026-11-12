@@ -50,10 +50,11 @@ function imageReply(call: ScriptedCall): ScriptedReply {
   return { text: E2E_SCRIPT.imageReply };
 }
 
-/** Кнопки готовых ответов, потом вопрос: ход кончается текстом, и следующий ход сценарий не примет за шаг после инструмента. */
+/** Как настоящая модель: вопрос и кнопки одним шагом, а позвали после кнопок — дописка. Ход должен кончиться на кнопках. */
 function quickRepliesReply(call: ScriptedCall): ScriptedReply {
-  if (call.lastToolResult === undefined) return { toolCalls: [{ toolName: "suggest_replies", input: { replies: [...E2E_SCRIPT.quickReplies] } }] };
-  return { text: E2E_SCRIPT.quickRepliesQuestion };
+  if (call.lastToolResult === undefined)
+    return { text: E2E_SCRIPT.quickRepliesQuestion, toolCalls: [{ toolName: "suggest_replies", input: { replies: [...E2E_SCRIPT.quickReplies] } }] };
+  return { text: E2E_SCRIPT.quickRepliesAfterthought };
 }
 
 /** Начало задачи «ты пишешь человеку первым», которую сценарий SDK кладёт в ход по таймеру (утро, переход по сроку, тишина). */

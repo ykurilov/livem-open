@@ -52,7 +52,7 @@ async function run(name: string, input: unknown) {
 
 describe("инструменты консультанта", () => {
   it("без «Продажи» — только finish_dialog: переходы, память, пояс и попутные задачи — инструменты сценария SDK", () => {
-    expect([...CONSULTANT_TOOL_NAMES].sort()).toEqual(["finish_dialog", "payment_check", "payment_promised", "sale_answer", "text_link"]);
+    expect([...CONSULTANT_TOOL_NAMES].sort()).toEqual(["finish_dialog", "payment_check", "payment_promised", "sale_answer", "sales_card", "text_link"]);
     expect(Object.keys(tools)).toEqual(["finish_dialog"]);
   });
 

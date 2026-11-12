@@ -1,9 +1,13 @@
 "use client";
 
 import { AgentChat, type AnswerEditorFields, type AnswerTextEditing, type MessageAction } from "@ykurilov/agent-chat-react";
-import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react";
+import { ArrowCounterClockwiseIcon, CardsIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { Field, Textarea } from "@/ui/primitives";
+import { salesCardLabels } from "@/ui/flow-labels";
+import type { SalesCardInput } from "@/modules/sales-cards/sales-cards";
+import { salesCardFromCorrectionAction, saveSalesCardAction } from "../actions";
+import { SalesCardDialog } from "./sales-cards-board";
 
 /** Исправленный ответ ленты: `GET <api>/:chatId/corrections` (`/api/preview`, `/api/role-swap`). */
 interface EditedAnswer {
@@ -40,17 +44,27 @@ type CorrectablePreviewChatProps = AgentChatProps & {
   chatId: string;
   /** Правок стало больше или меньше: счёт «Разобрать правки (N)» читается заново. */
   onCorrectionsChanged(): void;
+  /** «Сохранить как заготовку» у исправленных ответов консультанта; нет — действия нет («Поменяемся ролями»). */
+  salesCards?: {
+    leadMagnetId: string;
+    states: ReadonlyArray<{ id: string; title: string }>;
+    locked: boolean;
+    /** Заготовка сохранена новой версией черновика. */
+    onSaved(): void;
+  };
 };
 
 /**
  * Чат «Проверки» с «Поправить»: окно правки модуля чата с полем «Почему так лучше», метка «Исправлено» у исправленных
  * ответов и «Убрать правку» у неразобранных.
  */
-export function CorrectablePreviewChat({ onCorrectionsChanged, reloadKey, onFeedChange, ...props }: CorrectablePreviewChatProps) {
+export function CorrectablePreviewChat({ onCorrectionsChanged, reloadKey, onFeedChange, salesCards, ...props }: CorrectablePreviewChatProps) {
   const { chatId, api } = props;
   const [edited, setEdited] = useState<EditedAnswer[]>([]);
   const [removals, setRemovals] = useState(0);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  // Заготовка из исправленного ответа, открытая в окне
+  const [cardDraft, setCardDraft] = useState<SalesCardInput | null>(null);
   // Исправленные ответы, о которых метки уже спрошены: новая правка в ленте — повод перечитать метки и счёт
   const known = useRef(new Set<string>());
 
@@ -85,7 +99,32 @@ export function CorrectablePreviewChat({ onCorrectionsChanged, reloadKey, onFeed
 
   const messageActions = useMemo<MessageAction[]>(() => {
     const pending = new Map(edited.filter((answer) => answer.pending).map((answer) => [answer.messageId, answer.correctionId]));
+    const corrections = new Map(edited.map((answer) => [answer.messageId, answer.correctionId]));
+    const saveAsCard: MessageAction[] = salesCards
+      ? [
+          {
+            id: "save-as-sales-card",
+            label: salesCardLabels.saveFromCorrection,
+            icon: <CardsIcon aria-hidden />,
+            visible: ({ message }) => corrections.has(message.id),
+            // Пока модель подсказывает название и повод, модуль чата держит кнопку занятой
+            onRun: async ({ messageId }) => {
+              const correctionId = corrections.get(messageId);
+              if (!correctionId) return;
+              setRemoveError(null);
+              try {
+                const result = await salesCardFromCorrectionAction(salesCards.leadMagnetId, correctionId);
+                if ("card" in result) setCardDraft(result.card);
+                else setRemoveError(result.error);
+              } catch {
+                setRemoveError("Нет связи — заготовка не подготовлена. Попробуйте ещё раз.");
+              }
+            },
+          },
+        ]
+      : [];
     return [
+      ...saveAsCard,
       {
         id: "remove-correction",
         label: "Убрать правку",
@@ -115,7 +154,7 @@ export function CorrectablePreviewChat({ onCorrectionsChanged, reloadKey, onFeed
         },
       },
     ];
-  }, [api, chatId, edited, loadEdited, onCorrectionsChanged]);
+  }, [api, chatId, edited, loadEdited, onCorrectionsChanged, salesCards]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -133,6 +172,20 @@ export function CorrectablePreviewChat({ onCorrectionsChanged, reloadKey, onFeed
           onFeedChange={watchFeed}
         />
       </div>
+      {salesCards && cardDraft ? (
+        <SalesCardDialog
+          initial={cardDraft}
+          states={salesCards.states}
+          locked={salesCards.locked}
+          hint={salesCardLabels.fromCorrectionHint}
+          onSave={async (card) => {
+            const result = await saveSalesCardAction(salesCards.leadMagnetId, card);
+            if (result.ok) salesCards.onSaved();
+            return result;
+          }}
+          onClose={() => setCardDraft(null)}
+        />
+      ) : null}
     </div>
   );
 }

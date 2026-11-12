@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { SALES_CARDS_BLOCK_KEY, type SalesCardInput } from "../sales-cards/sales-cards";
+import { cardFromCorrection } from "../sales-cards/from-correction";
+import { getCorrection } from "../corrections";
 import { loadCurrentBranch, type AnswerEditedInput, type ChatStorage, type ModelCatalog, type ModelChoice } from "@ykurilov/agent-chat-core";
 import { flowTestChatData } from "@ykurilov/agent-chat-flows";
 import { createChatHandler, createChatServer, type ChatHandler } from "@ykurilov/agent-chat-server";
@@ -66,6 +69,8 @@ export interface PreviewEndpoint {
   ensurePreview(leadMagnetId: string): Promise<string>;
   /** «Автоответ»: реплика клиента на последнее сообщение консультанта — экран сразу её отправляет. */
   suggestReply(chatId: string): Promise<string>;
+  /** «Сохранить как заготовку»: заготовка из исправленного ответа консультанта для окна эксперта; нет такой правки — ошибка. */
+  suggestSalesCard(leadMagnetId: string, correctionId: string): Promise<SalesCardInput>;
   /** «Начать заново»: новый разговор с первым сообщением лидмагнита. */
   restartPreview(leadMagnetId: string): Promise<string>;
   status(leadMagnetId: string): Promise<PreviewStatus | null>;
@@ -201,7 +206,7 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
               knowledge,
             }),
             // Инструкции правят на ходу: модель видит только текущую карточку шага, прошлые ответы — без старых правил
-            contextBlocksHistory: { latest: ["flow:state"] },
+            contextBlocksHistory: { latest: ["flow:state", SALES_CARDS_BLOCK_KEY] },
           },
         }),
       ),
@@ -482,6 +487,18 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
       const branch = await loadCurrentBranch(chatStorage, chatId);
       const deps = { catalog: options.catalog, ...(options.env && { env: options.env }) };
       return withDirectModel(deps, options.modelChoice(lead.draft), chatId, (direct) => suggestClientReply({ direct, lead: lead.draft, branch }));
+    },
+
+    async suggestSalesCard(leadMagnetId, correctionId) {
+      const lead = await getLeadMagnet(db, leadMagnetId);
+      if (!lead) throw new Error(`Лидмагнит ${leadMagnetId} не найден`);
+      const correction = await getCorrection(db, leadMagnetId, correctionId);
+      // Заготовка — ответ консультанта: реплика клиента из «Поменяемся ролями» ею не бывает
+      if (!correction || correction.agentRole !== "consultant") throw new Error(`Нет правки ответа консультанта ${correctionId}`);
+      const deps = { catalog: options.catalog, ...(options.env && { env: options.env }) };
+      return withDirectModel(deps, options.modelChoice(lead.draft), correction.chatId, (direct) =>
+        cardFromCorrection({ direct, settings: lead.draft, correction }),
+      );
     },
 
     async reopenPreview(leadMagnetId) {

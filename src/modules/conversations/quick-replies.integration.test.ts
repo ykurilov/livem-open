@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { SUGGESTIONS_SHOWN_AFTER_ANSWER } from "@ykurilov/agent-chat-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../../../tests/integration/db-helper";
 import { createLiveDialogKit, type LiveDialogKit } from "../../../tests/integration/live-dialog-kit";
@@ -56,6 +57,33 @@ describe("готовые ответы консультанта в мессенд
     askingWithButtons();
     const [answer] = await talk("Привет");
     expect(answer).toMatchObject({ text: QUESTION, quickReplies: ["Созвониться", "Переписываться"] });
+  });
+
+  it("ответ с кнопками закрыт: человек получает сам вопрос, дописка после кнопок не уходит", async () => {
+    const results: unknown[] = [];
+    kit.reply = (call) => {
+      if (call.lastToolResult === undefined)
+        return { text: QUESTION, toolCalls: [{ toolName: "suggest_replies", input: { replies: ["Созвониться", "Переписываться"] } }] };
+      results.push(call.lastToolResult);
+      return { text: "Жду ваш выбор." };
+    };
+    const sent = await talk("Привет");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ text: QUESTION, quickReplies: ["Созвониться", "Переписываться"] });
+    expect(JSON.stringify(results)).toContain(SUGGESTIONS_SHOWN_AFTER_ANSWER);
+  });
+
+  it("запись о человеке после кнопок не теряется, а вопрос с кнопками уходит без дописки", async () => {
+    kit.reply = (call) => {
+      if (call.lastToolResult === undefined)
+        return { text: QUESTION, toolCalls: [{ toolName: "suggest_replies", input: { replies: ["Созвониться", "Переписываться"] } }] };
+      if (JSON.stringify(call.lastToolResult).includes(SUGGESTIONS_SHOWN_AFTER_ANSWER)) return { toolCalls: [{ toolName: "flow_note", input: { fact: "Любит переписку" } }] };
+      return { text: "Записал, жду ваш выбор." };
+    };
+    const sent = await talk("Привет");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ text: QUESTION, quickReplies: ["Созвониться", "Переписываться"] });
+    expect((await kit.personOf(person))!.facts.map((fact) => fact.text)).toEqual(["Любит переписку"]);
   });
 
   it("ответ без них несёт пустой список: мессенджер уберёт прежние кнопки", async () => {

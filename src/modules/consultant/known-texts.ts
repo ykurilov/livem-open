@@ -21,6 +21,7 @@ export function leadMagnetKnownTexts(settings: LeadMagnetSettings): string[] {
     flow.schedule?.dayFrame?.hardText ?? "",
     settings.firstMessage,
     settings.farewellMessage,
+    ...(settings.salesCards ?? []).map((card) => card.text),
     // Старые поля лежат в настройках до среза S10 (откат); их тексты — тоже тексты эксперта
     settings.instruction,
     ...settings.stages.flatMap((stage) => [stage.instruction, stage.transitionCondition]),

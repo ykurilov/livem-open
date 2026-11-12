@@ -1,5 +1,6 @@
 export {
   DEFAULT_HARD_DAILY_MESSAGES,
+  DEFAULT_LEAD_MAGNET_NAME,
   DEFAULT_MAX_PERSON_MESSAGES,
   DEFAULT_OUTREACH_SETTINGS,
   DEFAULT_SOFT_DAILY_MESSAGES,
@@ -14,8 +15,10 @@ export {
   newLeadMagnetSettings,
   newProgramSettings,
   programSettingsSchema,
+  unfilledSettings,
   validateLeadMagnetSettings,
 } from "./settings";
+export type { RequiredTextSetting } from "./settings";
 export type { LeadMagnetSettings, OutreachSettings, ProgramSettings, SideTask, Stage } from "./settings";
 export { VERSION_SOURCES } from "./schema";
 export type { ManualEditNote, VersionSource } from "./schema";
