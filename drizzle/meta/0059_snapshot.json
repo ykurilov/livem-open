@@ -1,5 +1,5 @@
 {
-  "id": "6b38f814-7a77-4ed7-ba7d-a205b144beda",
+  "id": "9311cfb6-be7d-40bb-8f5f-77917aab8b1c",
   "prevId": "8b6da56d-396e-4889-9e6a-9d048ec3aa36",
   "version": "7",
   "dialect": "postgresql",
@@ -2520,6 +2520,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "test_client": {
+          "name": "test_client",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "pending_manual_edits": {
           "name": "pending_manual_edits",
           "type": "jsonb",
@@ -4276,66 +4282,6 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "app.accounts": {
-      "name": "accounts",
-      "schema": "app",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "password_hash": {
-          "name": "password_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "accounts_email_unique": {
-          "name": "accounts_email_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
-        }
-      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

@@ -59,6 +59,7 @@ import { ConversationBar } from "./conversation-bar";
 import { ConversationRoleContext, ConversationRoleMenu, type ConversationRole } from "./conversation-role";
 import { showsStage } from "./stage-line";
 import { ROLE_SWAP_MODE_COOKIE } from "./role-swap-cookie";
+import { TestClientButton, TestClientContext } from "./test-client";
 
 // Доска сценария — самая тяжёлая часть редактора и нужна только на вкладке «Сценарий»: редактор оживает без неё,
 // а код доски догружается, пока эксперт смотрит на страницу. Без Suspense: React показывает содержимое после заглушки
@@ -250,6 +251,7 @@ function PreviewComposer(props: ComponentProps<ChatSkin["Composer"]>) {
           {props.actions}
           {clock ? <RewindControls {...clock.rewind} disabled={props.busy || clock.shifting} /> : null}
           <ConversationRoleMenu />
+          <TestClientButton />
         </div>
       }
     />
@@ -396,6 +398,8 @@ export interface EditorProps {
   roleSwapMode?: boolean;
   /** На сервере есть ключ Soniox: «Голосовой ввод» лидмагнита даёт микрофон и в «Проверке». */
   voiceAvailable?: boolean;
+  /** «Клиент для проверки»: кого играет модель в «Автоответе» и «Поменяемся ролями»; `null` — не задан. */
+  testClient?: string | null;
 }
 
 export function Editor({
@@ -417,6 +421,7 @@ export function Editor({
   roleSwap = null,
   roleSwapMode = false,
   voiceAvailable = false,
+  testClient: initialTestClient = null,
 }: EditorProps) {
   const router = useRouter();
   const [restarting, startRestart] = useTransition();
@@ -427,6 +432,8 @@ export function Editor({
     constructorHasMessages,
   );
   const [tab, setTab] = useState("preview");
+  const [testClient, setTestClient] = useState(initialTestClient);
+  const testClientState = useMemo(() => ({ leadMagnetId, description: testClient, saved: setTestClient }), [leadMagnetId, testClient]);
     // Доске нужно всё окно: кабинет сворачивает меню и убирает поля, шапка страницы ужимается
   const boardFull = tab === "flow";
   const FlowTab = useFlowTab(boardFull);
@@ -654,6 +661,7 @@ export function Editor({
   const leaveConfirmation = useLeaveConfirmation(settingsDirty ? "в «Настройках»" : flowDirty ? "на вкладке «Сценарий»" : null);
 
   return (
+    <TestClientContext.Provider value={testClientState}>
     <PreviewRevision.Provider value={previewRevision}>
     {/* Редактор занимает окно целиком: data-fill-window растягивает область контента на высоту окна (globals.css) */}
     <Tabs
@@ -750,10 +758,11 @@ export function Editor({
                       <PreviewClock.Provider value={previewClock}>
                       <ChatLabelsProvider labels={previewLabels}>
                         <PreviewProductLinks.Provider value={{ products: draft.productLinks ?? [], chatId: preview.chatId }}>
-                          {/* Разговор завершился или открылся — лента читается заново; новый день и возврат на вкладку —
-                              перечитывается без пересоздания чата, чтобы недописанная реплика осталась в поле */}
+                          {/* Разговор завершился, открылся или перешёл в мессенджер — лента читается заново, и отказ «нажмите кнопку
+                              мессенджера» не висит после нажатия; новый день и возврат на вкладку — перечитывается без
+                              пересоздания чата, чтобы недописанная реплика осталась в поле */}
                           <CorrectablePreviewChat
-                            key={`${preview.chatId}:${preview.finished ? "finished" : "open"}`}
+                            key={`${preview.chatId}:${preview.finished ? "finished" : "open"}${preview.messengerHandoff?.state === "taken" ? ":messenger" : ""}`}
                             reloadKey={previewFeed.version}
                             api="/api/preview"
                             chatId={preview.chatId}
@@ -914,5 +923,6 @@ export function Editor({
       </div>
     </Tabs>
     </PreviewRevision.Provider>
+    </TestClientContext.Provider>
   );
 }

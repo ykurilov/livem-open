@@ -8,7 +8,7 @@ import type { ConsultantTrialInput } from "../consultant";
 import { createPreviewCorrections } from "../consultant/preview-corrections";
 import { recordRoleSwapAnswers } from "../corrections";
 import { agentFlowOf, currentRulesOf, leadMagnetJudgeSettings } from "../flows/runtime";
-import { getLeadMagnet, type LeadMagnet, type LeadMagnetSettings } from "../lead-magnets";
+import { getLeadMagnet, setTestClient, type LeadMagnet, type LeadMagnetSettings } from "../lead-magnets";
 import { previewOwnerId } from "../platform/cabinet-owner";
 import type { Database } from "../platform/db";
 import { withDirectModel } from "../platform/direct-model";
@@ -235,6 +235,8 @@ export function createRoleSwapEndpoint(options: RoleSwapEndpointOptions): RoleSw
     const chatId = randomUUID();
     const choice = options.modelChoice(lead.draft);
     const clientBrief = brief?.trim() || null;
+    // «Кто клиент» и «Клиент для проверки» — одно описание: правка на экране старта сохраняется у лидмагнита
+    await setTestClient(db, leadMagnetId, clientBrief);
     const earlier = await previousCards(db, leadMagnetId);
     const deps = { catalog: options.catalog, ...(options.env && { env: options.env }) };
     const clientCard = await withDirectModel(deps, choice, chatId, (direct) =>

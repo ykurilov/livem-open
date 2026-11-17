@@ -575,7 +575,7 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
       const lead = await leadOfChat(chatId);
       const branch = await loadCurrentBranch(chatStorage, chatId);
       const deps = { catalog: options.catalog, ...(options.env && { env: options.env }) };
-      return withDirectModel(deps, options.modelChoice(lead.draft), chatId, (direct) => suggestClientReply({ direct, lead: lead.draft, branch }));
+      return withDirectModel(deps, options.modelChoice(lead.draft), chatId, (direct) => suggestClientReply({ direct, lead: { ...lead.draft, testClient: lead.testClient }, branch }));
     },
 
     async suggestSalesCard(leadMagnetId, correctionId) {

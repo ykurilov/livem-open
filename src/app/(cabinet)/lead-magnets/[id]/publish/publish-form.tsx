@@ -7,6 +7,7 @@ import { ArrowLeftIcon, RobotIcon as Bot } from "@phosphor-icons/react";
 import { Button as DesignButton, Dialog } from "@ykurilov/ds-react";
 import { Alert, Button } from "@/ui/primitives";
 import { EmptyState, Select, type SelectOption } from "@/ui";
+import { Checkbox } from "@/ui/checkbox";
 import { ConnectBotForm } from "../../../bots/connect-bot-form";
 import type { ConnectedBot } from "../../../bots/actions";
 import { publishAction, type PublishState } from "./actions";
@@ -42,13 +43,12 @@ export function PublishForm(props: { leadMagnetId: string; draftVersionId: strin
   );
   // Подключённые здесь боты видны в списке сразу, не дожидаясь, пока страница перечитает их с сервера
   const [connected, setConnected] = useState<ConnectedBot[]>([]);
-  // В окне без ботов выбирать нечего: сразу подключение
-  const [connectTarget, setConnectTarget] = useState<ConnectTarget>(() =>
-    props.connectInline && props.channels.every((choice) => choice.bots.length === 0) ? { channel: "all", attempt: 0 } : null,
-  );
+  // Без ботов форма не уходит сразу в подключение: опубликовать можно и только веб-страницу
+  const [connectTarget, setConnectTarget] = useState<ConnectTarget>(null);
   const [justConnected, setJustConnected] = useState<{ label: string; channel: string } | null>(null);
   // «Опубликовано» относится к тем ботам, с которыми нажали кнопку: другой выбор его снимает, и поздний ответ
   // прежнего выбора у нового не показывается
+  const [webOnlyConfirmed, setWebOnlyConfirmed] = useState(false);
   const [submittedSelection, setSubmittedSelection] = useState<Record<string, string> | null>(null);
   const sameSelection = submittedSelection !== null && props.channels.every((choice) => submittedSelection[choice.channel] === selected[choice.channel]);
 
@@ -89,34 +89,18 @@ export function PublishForm(props: { leadMagnetId: string; draftVersionId: strin
       <div className="flex flex-col gap-[var(--yk-space-4)]">
         <div className="flex items-center justify-between gap-2">
           <span className="font-semibold">Подключить нового бота</span>
-          {/* Без ботов возвращаться некуда: пустое состояние само ведёт сюда */}
-          {noBots ? null : (
-            <DesignButton type="button" variant="secondary" size="sm" icon={ArrowLeftIcon} onClick={() => setConnectTarget(null)}>
-              К выбору бота
-            </DesignButton>
-          )}
+          <DesignButton type="button" variant="secondary" size="sm" icon={ArrowLeftIcon} onClick={() => setConnectTarget(null)}>
+            {noBots ? "К публикации" : "К выбору бота"}
+          </DesignButton>
         </div>
         {connectForm}
       </div>
     );
 
-  if (noBots) {
-    return (
-      <>
-        <EmptyState
-          icon={Bot}
-          title="Ботов пока нет"
-          hint="Подключите бота — он сразу будет выбран для этого лидмагнита."
-          action={
-            <Button type="button" variant="secondary" size="sm" onClick={() => openConnect("all")}>
-              Подключить бота
-            </Button>
-          }
-        />
-        {connectDialog}
-      </>
-    );
-  }
+  const withoutBots = props.channels.every((choice) => selected[choice.channel] === NO_BOT);
+  // Боты были, а публикация снимет всех: ссылки в мессенджерах перестанут работать — только с явным согласием
+  const hadBots = props.channels.some((choice) => choice.selected !== null);
+  const dropsAllBots = hadBots && withoutBots;
 
   // Окно — рядом с формой, а не внутри: в нём своя форма, а форма в форме не работает
   return (
@@ -134,7 +118,19 @@ export function PublishForm(props: { leadMagnetId: string; draftVersionId: strin
         }}
       >
         <input type="hidden" name="draftVersionId" value={props.draftVersionId} />
-        {props.channels.map((choice) => (
+        {noBots ? (
+          <EmptyState
+            icon={Bot}
+            title="Ботов пока нет"
+            hint="Подключите бота — он сразу будет выбран для этого лидмагнита."
+            action={
+              <Button type="button" variant="secondary" size="sm" onClick={() => openConnect("all")}>
+                Подключить бота
+              </Button>
+            }
+          />
+        ) : null}
+        {noBots ? null : props.channels.map((choice) => (
           <div key={choice.channel} className="flex flex-col gap-1">
             <input type="hidden" name={`bot-${choice.channel}`} value={selected[choice.channel]} />
             <span className="yk-mono-label">Бот {choice.label}</span>
@@ -176,6 +172,21 @@ export function PublishForm(props: { leadMagnetId: string; draftVersionId: strin
             ) : null}
           </div>
         ))}
+        {dropsAllBots ? (
+          <Alert variant="warm" title="Ссылки в мессенджерах перестанут работать">
+            <span className="block">
+              Боты будут отвязаны: люди из мессенджеров не попадут в этот лидмагнит, он останется только на веб-странице.
+            </span>
+            <Checkbox name="confirmWebOnly" checked={webOnlyConfirmed} onCheckedChange={setWebOnlyConfirmed}>
+              Да, публиковать только веб-страницу
+            </Checkbox>
+          </Alert>
+        ) : withoutBots ? (
+          <p className="app-muted text-[length:var(--yk-text-small-size)]">
+            Без бота лидмагнит заработает только на веб-странице — так её можно проверить до подключения мессенджеров. Бота
+            можно выбрать позже и опубликовать снова.
+          </p>
+        ) : null}
         {justConnected ? (
           <Alert variant="success" title="Бот подключён">
             {justConnected.label} выбран для {justConnected.channel}. Нажмите «{props.published ? "Опубликовать снова" : "Опубликовать"}», чтобы он заработал.
@@ -199,7 +210,7 @@ export function PublishForm(props: { leadMagnetId: string; draftVersionId: strin
           )
         ) : null}
         <div>
-          <Button type="submit" loading={pending}>
+          <Button type="submit" loading={pending} disabled={dropsAllBots && !webOnlyConfirmed}>
             {props.published ? "Опубликовать снова" : "Опубликовать"}
           </Button>
         </div>

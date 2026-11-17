@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpIcon, MicrophoneIcon, SquareIcon, type Icon as PhosphorIcon, type IconProps } from "@phosphor-icons/react";
+import { ArrowCounterClockwiseIcon, ArrowUpIcon, MicrophoneIcon, SquareIcon, type Icon as PhosphorIcon, type IconProps } from "@phosphor-icons/react";
 import { russianLabels, useVoiceDictation, type VoiceInputView } from "@ykurilov/agent-chat-react";
 import { createVoiceInput } from "@ykurilov/agent-chat-voice";
 import { Banner, Button, ChatHeader, Textarea } from "@ykurilov/ds-react";
@@ -49,6 +49,7 @@ type PushOffer = "none" | "ask" | "ios-install";
  * `closed` — этот чат закончен, идёт другой разговор: ни ленты, ни поля ввода, только переход в текущий.
  * `voice` — у лидмагнита включён голосовой ввод и на сервере есть ключ Soniox: в поле есть кнопка микрофона.
  * `initialHandoff` — агент позвал в мессенджер или человек уже там: вместо поля ввода кнопки мессенджеров.
+ * `canStartOver` — страницу открыл вошедший эксперт: в шапке «Начать разговор заново».
  */
 export function WebChat({
   code,
@@ -57,6 +58,7 @@ export function WebChat({
   closed = null,
   voice = false,
   initialHandoff = null,
+  canStartOver = false,
 }: {
   code: string;
   title: string;
@@ -64,6 +66,7 @@ export function WebChat({
   closed?: WebChatElsewhere["current"] | null;
   voice?: boolean;
   initialHandoff?: WebChatHandoffState | null;
+  canStartOver?: boolean;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
@@ -300,7 +303,12 @@ export function WebChat({
   return (
     <div ref={rootRef} className="web-chat">
       <ViewportFit target={rootRef} />
-      <ChatHeader title={title} scrolled={scrolled} headingLevel={1} />
+      <ChatHeader
+        title={title}
+        scrolled={scrolled}
+        headingLevel={1}
+        aside={canStartOver ? <StartOverButton code={code} onStarted={() => setDraft("")} /> : undefined}
+      />
       <div ref={feedRef} className="web-chat__feed" onScroll={onScroll} role="log" aria-label="Переписка">
         <div className="web-chat__column">
           {status.kind === "loading" && items.length === 0 && <p className="web-chat__note">Открываем чат…</p>}
@@ -532,6 +540,38 @@ function ChatBubble({ item }: { item: WebChatItem }) {
       {item.video && item.video.embedUrl && <p className="web-chat__video-title">{item.video.title}</p>}
       {item.text && <p className="web-chat__text">{linkified(item.text)}</p>}
     </div>
+  );
+}
+
+/**
+ * «Начать разговор заново» для эксперта: браузер становится новым посетителем, страница открывается с чистого листа.
+ * Сбой — подпись на кнопке, разговор остаётся прежним.
+ */
+function StartOverButton({ code, onStarted }: { code: string; onStarted: () => void }) {
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const startOver = async () => {
+    setPending(true);
+    setFailed(false);
+    const response = await fetch("/api/web-chat-owner/start-over", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    }).catch(() => null);
+    if (!response?.ok) {
+      setPending(false);
+      setFailed(true);
+      return;
+    }
+    onStarted();
+    forgetSession(code);
+    window.location.replace(window.location.pathname);
+  };
+  return (
+    <Button type="button" size="sm" variant="secondary" icon={ArrowCounterClockwiseIcon} loading={pending} onClick={() => void startOver()}>
+      {failed ? "Не вышло — ещё раз" : "Начать разговор заново"}
+    </Button>
   );
 }
 

@@ -39,7 +39,10 @@ export {
   rollbackToVersion,
   saveDraft,
   setPreviewChat,
+  setTestClient,
+  TestClientTooLongError,
 } from "./lead-magnets";
+export { TEST_CLIENT_MAX_CHARS } from "./test-client-limit";
 export type { LeadMagnet, LeadMagnetCard, LeadMagnetVersion, LeadMagnetVersionSummary } from "./lead-magnets";
 export { entryLinks } from "./schema";
 export {
@@ -57,6 +60,7 @@ export { averagePassageCosts, leadMagnetReport, programReport } from "./stats";
 export type { LeadMagnetReport, LinkReportRow, ProgramReport, StageStopRow } from "./stats";
 export {
   PublishError,
+  WebOnlyConfirmationNeeded,
   attachBot,
   describePublication,
   detachBot,

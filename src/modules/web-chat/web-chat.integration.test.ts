@@ -8,7 +8,7 @@ import { inboundMessages, passages } from "../conversations/schema";
 import { replyFromInbox } from "../inbox";
 import { createLabeledLink, newProgramSettings } from "../lead-magnets";
 import { listLabeledLinks } from "../lead-magnets/links";
-import { describePublication, unpublishLeadMagnet } from "../lead-magnets/publish";
+import { describePublication, publishWithBots, unpublishLeadMagnet } from "../lead-magnets/publish";
 import { profileNameForTail } from "../consultant/profile-name";
 import { people } from "../people/schema";
 import {
@@ -26,6 +26,8 @@ import {
   saveWebChatSubscription,
   sendWebChatMessage,
   sessionsPerAddress,
+  startWebChatOverAsNewVisitor,
+  webChatCanStartOver,
   webChatImagePath,
   webChatResumeCode,
   webChatElsewhere,
@@ -638,5 +640,54 @@ describe("веб-чат лидмагнита", () => {
     // Брошенный больше недели назад уже не продолжится — писать некуда, кроме эксперта: чат не «закончен»
     kit.clock.advance(8 * 24 * 60 * 60_000);
     expect(await webChatElsewhere(kit.db, ended.code, visitor, kit.clock.now())).toBeNull();
+  });
+});
+
+describe("автор начинает разговор заново на веб-странице", () => {
+  it("лидмагнит без бота: разговор идёт на веб-странице, «Начать заново» даёт чистый старт новым посетителем", async () => {
+    const published = await kit.publish({ firstMessage: "Здравствуйте! Что у вас за бизнес?" });
+    // Ботов нет: только веб-страница
+    await publishWithBots(kit.db, published.leadMagnetId, { telegram: null }, { confirmWebOnly: true });
+    const opened = await open(published.code);
+    expect(await say(opened.token, "Я веду курсы", published.code)).toMatchObject({ ok: true });
+    expect(await feed(opened.token)).toHaveLength(3);
+    const oldVisitor = await visitorOf(opened.token);
+    const [oldPerson] = await kit.db.select().from(people).where(eq(people.externalUserId, oldVisitor.id));
+
+    const restarted = await startWebChatOverAsNewVisitor(deps, { token: opened.token, code: published.code });
+    if (restarted.kind !== "restarted") throw new Error(`Сброс не прошёл: ${restarted.kind}`);
+    // Прежний токен этого браузера больше не ведёт в старый разговор
+    expect(await findWebChatVisitor(kit.db, opened.token)).toBeNull();
+    expect(restarted.token).not.toBe(opened.token);
+
+    const again = await open(published.code, restarted.token);
+    expect(again.issued).toBe(false);
+    const items = await feed(restarted.token);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.text).toContain("Здравствуйте! Что у вас за бизнес?");
+    const newVisitor = await visitorOf(restarted.token);
+    expect(newVisitor.id).not.toBe(oldVisitor.id);
+    const [newPerson] = await kit.db.select().from(people).where(eq(people.externalUserId, newVisitor.id));
+    expect(newPerson!.id).not.toBe(oldPerson!.id);
+    expect(await kit.db.select({ status: passages.status }).from(passages).where(eq(passages.personId, newPerson!.id))).toEqual([{ status: "active" }]);
+    // Старый разговор закрыт: касаний ему больше не будет, а сам он остаётся отдельным человеком
+    expect(await kit.db.select({ status: passages.status }).from(passages).where(eq(passages.personId, oldPerson!.id))).toEqual([
+      { status: "not_completed" },
+    ]);
+  });
+
+  it("без прежнего посетителя — просто новый; неизвестная ссылка — не найдено", async () => {
+    const published = await kit.publish();
+    const restarted = await startWebChatOverAsNewVisitor(deps, { token: null, code: published.code });
+    expect(restarted).toMatchObject({ kind: "restarted" });
+    expect(await startWebChatOverAsNewVisitor(deps, { token: null, code: "nope-code" })).toEqual({ kind: "not_found" });
+  });
+
+  it("кнопка — только пока лидмагнит опубликован: на снятом новый разговор не начнётся", async () => {
+    const published = await kit.publish();
+    expect(await webChatCanStartOver(kit.db, published.code)).toBe(true);
+    await unpublishLeadMagnet(kit.db, published.leadMagnetId);
+    expect(await webChatCanStartOver(kit.db, published.code)).toBe(false);
+    expect(await webChatCanStartOver(kit.db, "nope-code")).toBe(false);
   });
 });

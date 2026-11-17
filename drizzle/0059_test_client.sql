@@ -1,0 +1,1 @@
+ALTER TABLE "app"."lead_magnets" ADD COLUMN "test_client" text;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AccessError, accessErrorResponse, requireUserFromCookie } from "./require-user";
+import { AccessError, accessErrorResponse, cabinetUserFromCookie, requireUserFromCookie } from "./require-user";
 
 const allowedEmails = new Set(["expert@example.com"]);
 const sessionUser = { id: "u1", email: "Expert@Example.com", name: "Эксперт", roles: [] };
@@ -32,5 +32,22 @@ describe("requireUser", () => {
 
   it("чужие ошибки не маскируются под ответ", () => {
     expect(accessErrorResponse(new Error("база упала"))).toBeNull();
+  });
+});
+
+describe("вошедший эксперт на открытой странице", () => {
+  it("эксперт из списка — он, посетитель без входа и чужой адрес — никто", async () => {
+    expect(await cabinetUserFromCookie("cookie", { allowedEmails, getUser: async () => sessionUser })).toMatchObject({ id: "u1" });
+    expect(await cabinetUserFromCookie(null, { allowedEmails, getUser: async () => null })).toBeNull();
+    expect(
+      await cabinetUserFromCookie("cookie", { allowedEmails, getUser: async () => ({ ...sessionUser, email: "stranger@example.com" }) }),
+    ).toBeNull();
+  });
+
+  it("сбой входа (нет настроек, испорченная cookie) — не эксперт, а не ошибка открытой страницы", async () => {
+    const broken = async () => {
+      throw new Error("AUTH_COOKIE_SECRET не задан");
+    };
+    expect(await cabinetUserFromCookie("auth_session=x", { allowedEmails, getUser: broken })).toBeNull();
   });
 });

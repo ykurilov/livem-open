@@ -500,9 +500,10 @@ describe("links, bots и publish", () => {
     const before = await run(["links", lead.id]);
     expect(before.json).toMatchObject({ published: false, main: [] });
 
-    const noBot = await run(["publish", lead.id]);
-    expect(noBot.exitCode).not.toBe(0);
-    expect(noBot.output).toMatch(/бот/);
+    // Без бота публикуется только веб-страница
+    const webOnly = await run(["publish", lead.id]);
+    expect(webOnly.exitCode).toBe(0);
+    expect(webOnly.json).toMatchObject({ published: true, main: [], attachedBots: [] });
 
     const published = await run(["publish", lead.id, "--telegram", bot!.id]);
     expect(published.exitCode).toBe(0);
@@ -511,6 +512,15 @@ describe("links, bots и publish", () => {
 
     const links = await run(["links", lead.id]);
     expect(links.json.main).toEqual(published.json.main);
+
+    // Снять всех ботов молча нельзя: ссылки в мессенджерах перестанут работать — только с --web-only
+    const refused = await run(["publish", lead.id, "--telegram", "none"]);
+    expect(refused.exitCode).toBe(1);
+    expect(refused.output).toContain("--web-only");
+    expect((await run(["links", lead.id])).json.attachedBots).toHaveLength(1);
+    const confirmed = await run(["publish", lead.id, "--telegram", "none", "--web-only"]);
+    expect(confirmed.exitCode).toBe(0);
+    expect(confirmed.json).toMatchObject({ published: true, main: [], attachedBots: [] });
   });
 });
 

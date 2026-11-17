@@ -1,6 +1,7 @@
 // Сервер для сквозных проверок: пустая база с миграциями, сервер приложения в режиме разработки, подставной Soniox и работник очереди с подставными моделью и мессенджером.
 // Страницы собираются заранее: иначе первая сборка страницы в одном тесте перезагружает вкладку соседнего.
 import { spawn } from "node:child_process";
+import { request as httpRequest } from "node:http";
 import { Pool } from "pg";
 import { seal } from "@/auth/core/cookie-seal";
 import { connectDatabase, migrateDatabase } from "@/modules/platform/db";
@@ -64,8 +65,33 @@ async function warmUp(): Promise<void> {
   await Promise.all([
     ...pages.map((path) => fetch(`${E2E_BASE_URL}${path}`, { headers }).then((response) => response.arrayBuffer())),
     ...posts.map((path) => fetch(`${E2E_BASE_URL}${path}`, { method: "POST", body: "{}" }).then((response) => response.arrayBuffer())),
+    // Закрытый маршрут собирается только для вошедшего: без входа его отсекает proxy
+    fetch(`${E2E_BASE_URL}/api/web-chat-owner/start-over`, { method: "POST", body: "{}", headers }).then((response) => response.arrayBuffer()),
   ]);
+  // Своя страница ошибки сервера: её собирает только оборванный запрос к уже собранному адресу. Конец сборки снаружи
+  // не виден, а страница маленькая: десяти секунд хватает, пока вкладок ещё нет
+  await abortMidBody("/api/web-chat/session");
+  await new Promise((resolve) => setTimeout(resolve, ERROR_PAGE_BUILD_MS));
   console.log(E2E_READY_LINE);
+}
+
+const ERROR_PAGE_BUILD_MS = 10_000;
+
+/**
+ * Запрос, оборванный посреди тела (`Error: aborted`): так браузер бросает запрос, когда тест закрывает вкладку. Сервер
+ * отвечает на это своей страницей ошибки (`/_error`), и её первая сборка посреди прогона перезагружала вкладки соседних
+ * тестов.
+ */
+function abortMidBody(path: string): Promise<void> {
+  return new Promise((resolve) => {
+    const request = httpRequest(`${E2E_BASE_URL}${path}`, { method: "POST", headers: { "content-type": "application/json", "content-length": "1000" } });
+    request.on("error", () => resolve());
+    request.write("{");
+    setTimeout(() => {
+      request.destroy();
+      resolve();
+    }, 500);
+  });
 }
 
 await warmUp();

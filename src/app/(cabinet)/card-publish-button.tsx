@@ -60,7 +60,8 @@ export function CardPublishButton(props: {
 
   return (
     <>
-      {connections.length === 0 ? (
+      {/* Опубликован без ботов — работает на веб-странице: тоже «Работает в», со значком веб-версии */}
+      {connections.length === 0 && !(props.published && props.webLink) ? (
         <Button type="button" variant="secondary" size="sm" icon={PlugIcon} className="app-card-action relative z-10" onClick={openDialog}>
           {LABEL}
         </Button>
@@ -81,7 +82,7 @@ export function CardPublishButton(props: {
               const Icon = CHANNEL_ICONS[connection.channel];
               return <Icon key={connection.channel} />;
             })}
-            {props.webLink ? <ChatCircleDotsIcon aria-hidden /> : null}
+            {props.published && props.webLink ? <ChatCircleDotsIcon aria-hidden /> : null}
           </span>
         </Button>
       )}

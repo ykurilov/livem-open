@@ -11,7 +11,7 @@ import { publishedByCode } from "../conversations/router";
 import { loadWithoutCodeHistory, whoWritesWithoutCode } from "../conversations/returning";
 import { chatOwnerOf, inboundMessages, passages } from "../conversations/schema";
 import { acceptChannelEvents } from "../conversations/webhook";
-import { afterStartOver } from "../conversations/start-over";
+import { afterStartOver, startConversationsOver } from "../conversations/start-over";
 import { findEntryLinkByCode } from "../lead-magnets/links";
 import { entryLinks, leadMagnets, leadMagnetVersions } from "../lead-magnets/schema";
 import { parseLabeledStartPayload } from "../lead-magnets/start-payload";
@@ -257,6 +257,29 @@ export async function openWebChat(
     visitorId: visitor.id,
     title: await leadMagnetTitle(deps.db, target.leadMagnetId),
   };
+}
+
+/**
+ * «Начать разговор заново» автора на живой веб-странице (вход эксперта проверяет вызывающий): браузер становится новым
+ * посетителем — пустая лента, человек без полей и истории, первый «Старт» как у пришедшего впервые. Прежний разговор
+ * закрывается как «не завершил» (касания ему больше не уходят) и остаётся отдельным человеком в «Людях» и «Входящих»;
+ * прежний токен этого браузера гаснет. Сам разговор начнёт следующее открытие страницы.
+ */
+export async function startWebChatOverAsNewVisitor(
+  deps: WebChatDependencies,
+  input: { token: string | null | undefined; code: string },
+): Promise<{ kind: "restarted"; token: string } | { kind: "not_found" }> {
+  const code = input.code.trim();
+  if (!code || code.length > CODE_MAX_LENGTH || !(await publishedByCode(deps.db, code))) return { kind: "not_found" };
+  const previous = await findWebChatVisitor(deps.db, input.token);
+  if (previous) {
+    const person = await findPerson(deps.db, previous.id);
+    if (person?.channel === "web") await startConversationsOver(deps.db, person.id, deps.clock.now());
+    await deps.db.delete(webChatTokens).where(eq(webChatTokens.tokenHash, hashToken(input.token!)));
+  }
+  const [visitor] = await deps.db.insert(webChatVisitors).values({ lastCode: code }).returning();
+  if (!visitor) throw new Error("Посетитель веб-чата не создался");
+  return { kind: "restarted", token: await issueToken(deps.db, visitor.id) };
 }
 
 /** Пояс браузера — человеку веб-чата, у которого пояса ещё нет; узнанный консультантом не трогаем. */
@@ -507,6 +530,12 @@ export async function forgetWebChatSubscription(db: DatabaseExecutor, visitorId:
  * Название чата по коду ссылки (заголовок страницы, манифеста и уведомления): опубликованного лидмагнита — всем;
  * снятого с публикации — только посетителю, у которого был этот разговор. Иначе `null`.
  */
+/** «Начать разговор заново» имеет смысл, пока лидмагнит опубликован: на снятом новый разговор не начнётся. */
+export async function webChatCanStartOver(db: DatabaseExecutor, code: string): Promise<boolean> {
+  if (!code || code.length > CODE_MAX_LENGTH) return false;
+  return (await publishedByCode(db, code)) !== null;
+}
+
 export async function webChatTitle(db: DatabaseExecutor, code: string, visitor: WebChatVisitor | null): Promise<string | null> {
   if (!code || code.length > CODE_MAX_LENGTH) return null;
   const target = await publishedByCode(db, code);

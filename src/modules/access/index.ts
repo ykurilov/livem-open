@@ -1,4 +1,4 @@
-export { requireUser } from "./require-current-user";
+export { currentCabinetUser, requireUser } from "./require-current-user";
 export { AccessError, accessErrorResponse } from "./require-user";
 export type { CabinetUser } from "./require-user";
 export { decideAccess, isEmailAllowed, isPublicPath, parseAllowedEmails, SILENT_CHECK_COOKIE, SILENT_NEXT_COOKIE } from "./access";

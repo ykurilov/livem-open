@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { ChannelAdapters, ChannelKind } from "../channels/channel";
 import { bots, leadMagnetBots } from "../channels/schema";
 import type { DatabaseExecutor } from "../platform/db";
@@ -12,6 +12,14 @@ export class PublishError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "PublishError";
+  }
+}
+
+/** Публикация сняла бы всех ботов, что были у лидмагнита: ссылки в мессенджерах перестанут работать — нужно согласие. */
+export class WebOnlyConfirmationNeeded extends PublishError {
+  constructor() {
+    super("Без ботов ссылки в мессенджерах перестанут запускать лидмагнит: он останется только на веб-странице. Подтвердите, что так и нужно");
+    this.name = "WebOnlyConfirmationNeeded";
   }
 }
 
@@ -92,6 +100,15 @@ async function dropDefaultLeadMagnet(db: DatabaseExecutor, botId: string, leadMa
     .where(and(eq(bots.id, botId), eq(bots.defaultLeadMagnetId, leadMagnetId)));
 }
 
+async function liveAttachedBotCount(db: DatabaseExecutor, leadMagnetId: string): Promise<number> {
+  const rows = await db
+    .select({ botId: leadMagnetBots.botId })
+    .from(leadMagnetBots)
+    .innerJoin(bots, eq(bots.id, leadMagnetBots.botId))
+    .where(and(eq(leadMagnetBots.leadMagnetId, leadMagnetId), isNull(bots.deletedAt)));
+  return rows.length;
+}
+
 export async function listAttachedBots(db: DatabaseExecutor, leadMagnetId: string): Promise<AttachedBot[]> {
   return db
     .select({ botId: bots.id, channel: bots.channel, title: bots.title, username: bots.username, externalId: bots.externalId })
@@ -115,7 +132,8 @@ export async function listAttachedBotsByLeadMagnet(db: DatabaseExecutor): Promis
 
 /**
  * Публикация: текущая версия черновика становится снимком, у лидмагнита появляется основная ссылка (одна на все
- * мессенджеры). Начатые прохождения остаются на своих снимках, новые идут по новому.
+ * мессенджеры и веб-страницу). Ботов может не быть: тогда лидмагнит работает только на веб-странице `/c/<код>`.
+ * Начатые прохождения остаются на своих снимках, новые идут по новому.
  */
 export async function publishLeadMagnet(
   db: DatabaseExecutor,
@@ -124,13 +142,21 @@ export async function publishLeadMagnet(
   return db.transaction(async (tx) => {
     const lead = await lockLeadMagnet(tx, leadMagnetId);
     // Строки ботов держатся до конца: удаление бота дождётся публикации и увидит её (или публикация — удаление)
-    const live = await tx
+    await tx
       .select({ botId: bots.id })
       .from(leadMagnetBots)
       .innerJoin(bots, eq(bots.id, leadMagnetBots.botId))
       .where(and(eq(leadMagnetBots.leadMagnetId, leadMagnetId), isNull(bots.deletedAt)))
       .for("update");
-    if (live.length === 0) throw new PublishError("Привяжите хотя бы одного бота");
+    // Привязка к удалённому боту (публикация шла вместе с удалением) снимается: такой бот не должен вернуться
+    await tx
+      .delete(leadMagnetBots)
+      .where(
+        and(
+          eq(leadMagnetBots.leadMagnetId, leadMagnetId),
+          inArray(leadMagnetBots.botId, tx.select({ id: bots.id }).from(bots).where(isNotNull(bots.deletedAt))),
+        ),
+      );
     validateLeadMagnetSettings(lead.draft);
 
     // Версии неизменны: снимок — это версия черновика с пометкой, копия не нужна
@@ -158,19 +184,21 @@ const DRAFT_CHANGED = "Черновик изменился, пока была о
 /**
  * Выбор ботов по мессенджерам (`null` — отвязать) и публикация — одним целым: не опубликовалось — привязки прежние.
  * Чужие id (не UUID, удалённые) — понятная ошибка, а не сбой базы. `expectedDraftVersionId` — версия черновика, которую
- * видел эксперт: черновик с тех пор изменился — не публикуется ничего.
+ * видел эксперт: черновик с тех пор изменился — не публикуется ничего. Выбор снимает всех ботов, что были, — только с
+ * `confirmWebOnly`: иначе ссылки в мессенджерах молча перестали бы работать.
  */
 export async function publishWithBots(
   db: DatabaseExecutor,
   leadMagnetId: string,
   choices: Partial<Record<ChannelKind, string | null>>,
-  options: { expectedDraftVersionId?: string } = {},
+  options: { expectedDraftVersionId?: string; confirmWebOnly?: boolean } = {},
 ): Promise<{ snapshotId: string; code: string }> {
   if (!isUuid(leadMagnetId)) throw new LeadMagnetNotFoundError(leadMagnetId);
   return db.transaction(async (tx) => {
     const lead = await lockLeadMagnet(tx, leadMagnetId);
     if (options.expectedDraftVersionId !== undefined && lead.draftVersionId !== options.expectedDraftVersionId)
       throw new PublishError(DRAFT_CHANGED);
+    const hadBots = (await liveAttachedBotCount(tx, leadMagnetId)) > 0;
     for (const [channel, botId] of Object.entries(choices) as Array<[ChannelKind, string | null | undefined]>) {
       if (botId === undefined) continue;
       if (botId === null) await detachBot(tx, { leadMagnetId, channel });
@@ -179,6 +207,8 @@ export async function publishWithBots(
         await attachBot(tx, { leadMagnetId, botId });
       }
     }
+    // Откат транзакции возвращает и снятые привязки
+    if (hadBots && !options.confirmWebOnly && (await liveAttachedBotCount(tx, leadMagnetId)) === 0) throw new WebOnlyConfirmationNeeded();
     return publishLeadMagnet(tx, leadMagnetId);
   });
 }

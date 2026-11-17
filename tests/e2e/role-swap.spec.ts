@@ -202,3 +202,48 @@ test("переключатель и экран старта на телефон�
   await hideDevIndicator(page);
   await expect(page).toHaveScreenshot("role-swap-start-phone.png", { animations: "disabled", caret: "hide", stylePath: WITHOUT_DEV_INDICATOR });
 });
+
+test("«Клиент для проверки»: шестерёнка в «Проверке», подстановка в «Кто клиент» и обратное сохранение", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  const lead = await leadWithDraft("Лидмагнит с клиентом для проверки");
+  await page.goto(`/lead-magnets/${lead.id}`);
+  const conversation = await openConversation(page);
+  const gear = conversation.getByRole("button", { name: "Клиент для проверки" });
+  await expect(gear).toBeVisible({ timeout: 30_000 });
+  await expect(gear).toHaveAttribute("title", "Клиент для проверки");
+  await hideDevIndicator(page);
+  await page.mouse.move(0, 0);
+  await conversation.locator(".app-composer-actions").screenshot({ path: testInfo.outputPath("testclient-button.png") });
+
+  await gear.click();
+  const dialog = page.getByRole("dialog", { name: "Клиент для проверки" });
+  await dialog.getByRole("textbox", { name: "Кто клиент" }).fill("Пенсионер, ездит на дачу, боится сложной техники");
+  await page.screenshot({ path: testInfo.outputPath("testclient-dialog.png") });
+  await dialog.getByRole("button", { name: "Сохранить" }).click();
+  await expect(dialog).toBeHidden({ timeout: 30_000 });
+
+  // Описание хранится у лидмагнита: после перезагрузки окно показывает его
+  await page.reload();
+  await openConversation(page);
+  await gear.click();
+  await expect(dialog.getByRole("textbox", { name: "Кто клиент" })).toHaveValue("Пенсионер, ездит на дачу, боится сложной техники");
+  await dialog.getByRole("button", { name: "Отмена" }).click();
+  await expect(dialog).toBeHidden();
+
+  // «Поменяемся ролями» подставляет то же описание; правка там при старте сохраняется обратно
+  await consultantMode(page);
+  const brief = conversation.getByRole("textbox", { name: "Кто клиент" });
+  await expect(brief).toHaveValue("Пенсионер, ездит на дачу, боится сложной техники");
+  await brief.fill("Студентка, денег мало, сомневается");
+  await conversation.getByRole("button", { name: "Начать" }).click();
+  await expect(conversation.getByRole("button", { name: "Начать заново" })).toBeVisible({ timeout: 30_000 });
+
+  await clientMode(page);
+  await gear.click();
+  await expect(dialog.getByRole("textbox", { name: "Кто клиент" })).toHaveValue("Студентка, денег мало, сомневается");
+  await dialog.getByRole("button", { name: "Отмена" }).click();
+  await page.reload();
+  await openConversation(page);
+  await gear.click();
+  await expect(dialog.getByRole("textbox", { name: "Кто клиент" })).toHaveValue("Студентка, денег мало, сомневается");
+});

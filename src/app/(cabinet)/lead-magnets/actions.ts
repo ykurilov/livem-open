@@ -12,8 +12,11 @@ import {
   DEFAULT_LEAD_MAGNET_NAME,
   InvalidLeadMagnetSettingsError,
   LeadMagnetNotFoundError,
+  setTestClient,
+  TestClientTooLongError,
   type LeadMagnetSettings,
 } from "@/modules/lead-magnets";
+import { TEST_CLIENT_MAX_CHARS } from "@/modules/lead-magnets/test-client-limit";
 import { getDatabase } from "@/modules/platform/db";
 import { describeInvalidModelChoice } from "@/modules/platform/model-choice";
 import { isUuid } from "@/modules/platform/uuid";
@@ -215,4 +218,17 @@ export async function salesCardFromCorrectionAction(leadMagnetId: string, correc
 export async function restartPreviewAction(leadMagnetId: string): Promise<string> {
   await requireUser();
   return (await getEditorServices()).preview.restartPreview(leadMagnetId);
+}
+
+/** «Клиент для проверки»: кого модель играет в «Автоответе» и «Поменяемся ролями». */
+export async function saveTestClientAction(leadMagnetId: string, description: string): Promise<ActionResult> {
+  await requireUser();
+  try {
+    await setTestClient(getDatabase().db, leadMagnetId, description);
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof TestClientTooLongError) return { ok: false, error: `Описание длиннее ${TEST_CLIENT_MAX_CHARS} символов. Сократите его.` };
+    console.error(`«Клиент для проверки» у ${leadMagnetId} не сохранился:`, error instanceof Error ? error.message : error);
+    return { ok: false, error: "Не получилось сохранить. Попробуйте ещё раз." };
+  }
 }

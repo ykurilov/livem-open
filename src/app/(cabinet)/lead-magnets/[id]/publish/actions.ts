@@ -40,7 +40,7 @@ export async function publishAction(leadMagnetId: string, _previous: PublishStat
     if (typeof botId === "string") choices[channel] = botId === NO_BOT ? null : botId;
   }
   try {
-    await publishWithBots(db, leadMagnetId, choices, { expectedDraftVersionId });
+    await publishWithBots(db, leadMagnetId, choices, { expectedDraftVersionId, confirmWebOnly: formData.get("confirmWebOnly") === "on" });
   } catch (error) {
     if (error instanceof PublishError || error instanceof LeadMagnetNotFoundError || error instanceof InvalidLeadMagnetSettingsError)
       return { error: error.message };

@@ -418,8 +418,15 @@
     {
       "idx": 59,
       "version": "7",
+      "when": 1794907873639,
+      "tag": "0059_test_client",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
       "when": 1793256194999,
-      "tag": "0059_password_accounts",
+      "tag": "0060_password_accounts",
       "breakpoints": true
     }
   ]

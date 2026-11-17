@@ -12,8 +12,8 @@ import {
 } from "../../../tests/integration/live-dialog-kit";
 import { AUTOREPLY_TEXT_MAX_LENGTH, createBotService, type BotService } from "../channels/bots";
 import { bots, leadMagnetBots, outboundMessages, type NoCodeMode } from "../channels/schema";
-import { findEntryLinkByCode, publishLeadMagnet, PublishError, unpublishLeadMagnet } from "../lead-magnets";
-import { publishWithBots } from "../lead-magnets/publish";
+import { findEntryLinkByCode, publishLeadMagnet, unpublishLeadMagnet } from "../lead-magnets";
+import { listAttachedBots, publishWithBots } from "../lead-magnets/publish";
 import { countUnansweredThreads, listUnansweredThreads } from "../inbox";
 import { createMailing, sendMailingTest } from "../mailings";
 import { MENU_BUTTON_LABEL_LIMIT, MENU_TEXT, menuButtonPayload } from "./no-code";
@@ -757,13 +757,14 @@ describe("удаление бота", () => {
     expect(await botService.countActiveConversations(randomUUID())).toBe(0);
   });
 
-  it("на удалённого бота лидмагнит не публикуется, даже если привязка осталась", async () => {
+  it("на удалённого бота лидмагнит не публикуется, даже если привязка осталась: она снимается, остаётся веб-страница", async () => {
     const lead = await kit.publish();
     await unpublishLeadMagnet(database.db, lead.leadMagnetId);
     // Привязка пережила удаление — так бывает, если публикация шла одновременно с удалением
     await database.db.update(bots).set({ deletedAt: new Date() }).where(eq(bots.id, kit.bot.id));
 
-    await expect(publishLeadMagnet(database.db, lead.leadMagnetId)).rejects.toBeInstanceOf(PublishError);
+    await publishLeadMagnet(database.db, lead.leadMagnetId);
+    expect(await listAttachedBots(database.db, lead.leadMagnetId)).toEqual([]);
   });
 
   it("удалённого бота можно подключить заново тем же токеном", async () => {

@@ -21,6 +21,8 @@ export const leadMagnets = appSchema.table("lead_magnets", {
   publishedSnapshotId: uuid("published_snapshot_id"),
   constructorChatId: text("constructor_chat_id").unique(),
   previewChatId: text("preview_chat_id").unique(),
+  /** «Клиент для проверки»: кого играет модель в «Автоответе» и «Поменяемся ролями». Инструмент проверки — вне черновика, версий и публикации. */
+  testClient: text("test_client"),
   pendingManualEdits: jsonb("pending_manual_edits").$type<ManualEditNote[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

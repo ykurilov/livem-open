@@ -12,14 +12,28 @@ const textOf = (parts: StoredMessage["parts"]) =>
     .join("\n")
     .trim();
 
-/** Инструкция роли: тема — название и описание лидмагнита; кто клиент, видно из его прошлых реплик. */
-export function autoreplyInstructions(lead: { name: string; cardDescription: string }): string {
+/** Что о лидмагните и клиенте знает «Автоответ»: `testClient` — «Клиент для проверки» эксперта. */
+export interface AutoreplyLead {
+  name: string;
+  cardDescription: string;
+  testClient: string | null;
+}
+
+/**
+ * Инструкция роли: тема — название и описание лидмагнита. Кто клиент — из «Клиента для проверки», без него — из прошлых реплик.
+ * Описание стоит в самом конце: смена описания сбрасывает кэш модели только с этого места, начало инструкции лидмагнита остаётся в кэше.
+ */
+export function autoreplyInstructions(lead: AutoreplyLead): string {
   const topic = lead.cardDescription.trim() ? `${lead.name} (${lead.cardDescription.trim()})` : lead.name;
+  const client = lead.testClient?.trim();
+  const who = client
+    ? "- Кто ты, описал эксперт ниже: играй этого человека. Чего в описании нет — додумай в его духе и держись своих прошлых реплик."
+    : "- Кто ты, видно из твоих прошлых реплик: держись их. Разговор только начался — придумай себе правдоподобную ситуацию по теме бота.";
   return `${clientRoleIntro(topic)}
 
 ${CLIENT_PLAY_RULES}
-- Кто ты, видно из твоих прошлых реплик: держись их. Разговор только начался — придумай себе правдоподобную ситуацию по теме бота.
-- Ответь на последнее сообщение бота так, как ответил бы такой человек. Напиши только текст реплики.`;
+${who}
+- Ответь на последнее сообщение бота так, как ответил бы такой человек. Напиши только текст реплики.${client ? `\n\nКто ты:\n${client}` : ""}`;
 }
 
 /** Переписка глазами клиента: бот — собеседник, свои реплики — ответы модели. Служебная просьба «напиши первым» не видна. */
@@ -37,7 +51,7 @@ export function clientView(branch: readonly StoredMessage[]): ModelMessage[] {
 
 export async function suggestClientReply(input: {
   direct: DirectModel;
-  lead: { name: string; cardDescription: string };
+  lead: AutoreplyLead;
   branch: readonly StoredMessage[];
 }): Promise<string> {
   const { direct } = input;

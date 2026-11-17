@@ -11,8 +11,7 @@ import { ConversationBar } from "./conversation-bar";
 import { ConversationRoleMenu } from "./conversation-role";
 import { CorrectablePreviewChat } from "./preview-corrections";
 import { restartRoleSwap, roleSwapState, startRoleSwap, submitRoleSwap } from "./role-swap-actions";
-
-const BRIEF_MAX_CHARS = 1000;
+import { TEST_CLIENT_MAX_CHARS, useTestClient } from "./test-client";
 
 // Эксперт пишет за консультанта, правит реплики клиента
 const roleSwapLabels = {
@@ -38,7 +37,16 @@ function RoleSwapStart({
   onStarted(chatId: string): void;
   onCancel?: () => void;
 }) {
-  const [brief, setBrief] = useState("");
+  // «Кто клиент» — тот же «Клиент для проверки», что у шестерёнки в «Проверке»; старт сохраняет правку туда
+  const testClient = useTestClient();
+  const description = testClient?.description ?? "";
+  const [brief, setBrief] = useState(description);
+  // Описание поправили шестерёнкой в «Проверке», пока экран старта ждал в скрытом режиме: поле показывает новое
+  const [shownDescription, setShownDescription] = useState(description);
+  if (shownDescription !== description) {
+    setShownDescription(description);
+    if (brief.trim() !== description) setBrief(description);
+  }
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +57,8 @@ function RoleSwapStart({
     try {
       const run = restarting ? restartRoleSwap : startRoleSwap;
       const result = await run(leadMagnetId, brief.trim() || null);
+      // Сервер сохраняет «Кто клиент» до того, как придумывает клиента: сбой придумывания правку не отменяет
+      if (!("error" in result) || result.error === "failed") testClient?.saved(brief.trim() || null);
       if ("chatId" in result) onStarted(result.chatId);
       else setError(result.message);
     } catch {
@@ -61,8 +71,8 @@ function RoleSwapStart({
   return (
     <form onSubmit={start} className="mx-auto flex w-full max-w-xl flex-col gap-4 overflow-y-auto px-3 py-6">
       <p>Агент сыграет клиента лидмагнита, а вы ответите ему за консультанта. Если ответ клиента звучит не так, как сказал бы живой человек, поправьте его.</p>
-      <Field label="Кто клиент" hint="Необязательно. Опишите, какого клиента хотите встретить: его ситуацию, настроение, сомнения. Пусто — агент придумает сам.">
-        <Textarea rows={3} maxLength={BRIEF_MAX_CHARS} value={brief} disabled={starting} onChange={(event) => setBrief(event.target.value)} />
+      <Field label="Кто клиент" hint="Необязательно. Опишите, какого клиента хотите встретить: его ситуацию, настроение, сомнения. Пусто — агент придумает сам. Это же описание берёт «Автоответ» в «Проверке».">
+        <Textarea rows={3} maxLength={TEST_CLIENT_MAX_CHARS} value={brief} disabled={starting} onChange={(event) => setBrief(event.target.value)} />
       </Field>
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" loading={starting}>

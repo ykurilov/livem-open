@@ -33,6 +33,18 @@ export async function requireUserFromCookie(
   return { id: user.id, email: user.email.toLowerCase(), name: user.name };
 }
 
+/**
+ * Вошедший эксперт на открытой странице (веб-чат): посетитель без входа или с чужим адресом — `null`. Любой сбой входа
+ * (не настроен, испорчена cookie) — тоже `null`: открытая страница от входа не зависит и падать из-за него не должна.
+ */
+export async function cabinetUserFromCookie(cookieHeader: string | null, deps: RequireUserDependencies): Promise<CabinetUser | null> {
+  try {
+    return await requireUserFromCookie(cookieHeader, deps);
+  } catch {
+    return null;
+  }
+}
+
 /** Для обработчиков API: `catch (error) { return accessErrorResponse(error) ?? Promise.reject(error) }`. */
 export function accessErrorResponse(error: unknown): Response | null {
   if (!(error instanceof AccessError)) return null;

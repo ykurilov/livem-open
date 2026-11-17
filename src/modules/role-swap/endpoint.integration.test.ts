@@ -165,6 +165,13 @@ describe("«Поменяемся ролями»: старт", () => {
     expect((await conversationOfChat(database.db, chatId))?.clientBrief).toBeNull();
   });
 
+  it("«Кто клиент» при старте сохраняется в «Клиента для проверки» лидмагнита", async () => {
+    await started("  Пенсионер, боится сложной техники  ");
+    expect((await getLeadMagnet(database.db, lead.id))?.testClient).toBe("Пенсионер, боится сложной техники");
+    await started(null);
+    expect((await getLeadMagnet(database.db, lead.id))?.testClient).toBeNull();
+  });
+
   it("ответ эксперта получает отметку с версией черновика", async () => {
     const chatId = await started();
     await clientAnswered(chatId, 1);

@@ -5,6 +5,7 @@ import { systemClock, type Clock } from "../platform/clock";
 import { leadMagnets, leadMagnetVersions, type ManualEditNote, type VersionSource } from "./schema";
 import { averagePassageCosts } from "./stats";
 import { newLeadMagnetSettings, validateLeadMagnetSettings, type LeadMagnetSettings } from "./settings";
+import { TEST_CLIENT_MAX_CHARS } from "./test-client-limit";
 
 export type LeadMagnet = Omit<typeof leadMagnets.$inferSelect, "draftVersionId"> & { draftVersionId: string };
 export type LeadMagnetVersion = typeof leadMagnetVersions.$inferSelect;
@@ -206,6 +207,25 @@ export async function attachConstructorChat(db: DatabaseExecutor, leadMagnetId: 
 }
 
 /** Текущий тестовый разговор; «Начать заново» ставит новый. */
+export class TestClientTooLongError extends Error {
+  constructor() {
+    super(`Описание клиента длиннее ${TEST_CLIENT_MAX_CHARS} символов`);
+    this.name = "TestClientTooLongError";
+  }
+}
+
+/** «Клиент для проверки» лидмагнита; пустое описание — как его нет. Длиннее предела — отказ, прежнее остаётся. */
+export async function setTestClient(db: DatabaseExecutor, leadMagnetId: string, description: string | null): Promise<void> {
+  const text = description?.trim() || null;
+  if (text && text.length > TEST_CLIENT_MAX_CHARS) throw new TestClientTooLongError();
+  const updated = await db
+    .update(leadMagnets)
+    .set({ testClient: text })
+    .where(eq(leadMagnets.id, leadMagnetId))
+    .returning({ id: leadMagnets.id });
+  if (updated.length === 0) throw new LeadMagnetNotFoundError(leadMagnetId);
+}
+
 export async function setPreviewChat(db: DatabaseExecutor, leadMagnetId: string, chatId: string): Promise<void> {
   await db.update(leadMagnets).set({ previewChatId: chatId }).where(eq(leadMagnets.id, leadMagnetId));
 }

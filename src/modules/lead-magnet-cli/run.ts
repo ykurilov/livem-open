@@ -14,6 +14,7 @@ import {
   lockLeadMagnet,
   newLeadMagnetSettings,
   PublishError,
+  WebOnlyConfirmationNeeded,
   publishWithBots,
   saveDraft,
   type LeadMagnetSettings,
@@ -54,14 +55,18 @@ export const USAGE = `Команды:
   videos                          ролики архива
   bots                            подключённые боты
   links <id>                      ссылки запуска в ботах
-  publish <id> [--telegram <botId|none>] [--vk ...] [--max ...]
-                                  опубликовать текущий черновик в привязанных ботах
+  publish <id> [--telegram <botId|none>] [--vk ...] [--max ...] [--web-only]
+                                  опубликовать текущий черновик в привязанных ботах (без ботов — только веб-страница);
+                                  снять всех ботов, что были, — только с --web-only: ссылки в мессенджерах перестанут работать
   connect-vk [--remove-callback <https-адрес>] < ключ
                                   подключить сообщество ВК ключом со стандартного ввода, как форма «Настройки» → «Боты»;
                                   затем убрать чужой Callback-сервер с точно таким адресом
   connect-max < токен             подключить бота Max токеном со стандартного ввода, как форма «Настройки» → «Боты»`;
 
-/** Разбор аргументов: позиционные и `--ключ значение`. */
+/** Флаги без значения. */
+const BOOLEAN_FLAGS = new Set(["web-only"]);
+
+/** Разбор аргументов: позиционные, `--ключ значение` и флаги без значения (`--web-only` → «yes»). */
 function parseArgs(args: string[]): { positional: string[]; options: Map<string, string> } {
   const positional: string[] = [];
   const options = new Map<string, string>();
@@ -69,6 +74,10 @@ function parseArgs(args: string[]): { positional: string[]; options: Map<string,
     const arg = args[index]!;
     if (!arg.startsWith("--")) {
       positional.push(arg);
+      continue;
+    }
+    if (BOOLEAN_FLAGS.has(arg.slice(2))) {
+      options.set(arg.slice(2), "yes");
       continue;
     }
     const value = args[index + 1];
@@ -148,6 +157,7 @@ async function links(deps: LeadMagnetCliDependencies, id: string) {
     main: publication.bots.flatMap((bot) =>
       bot.link ? [{ channel: bot.channel, bot: bot.username, botId: bot.botId, url: bot.link }] : [],
     ),
+    web: publication.webLink,
     attachedBots: publication.bots.map((bot) => ({ channel: bot.channel, botId: bot.botId, title: bot.title, username: bot.username })),
     labeled: labeled.map((link) => ({ label: link.label, urls: link.urls })),
   };
@@ -159,7 +169,12 @@ async function publish(deps: LeadMagnetCliDependencies, id: string, options: Map
     const value = options.get(channel);
     if (value !== undefined) choices[channel] = value === "none" ? null : value;
   }
-  await publishWithBots(deps.db, id, choices);
+  try {
+    await publishWithBots(deps.db, id, choices, { confirmWebOnly: options.has("web-only") });
+  } catch (error) {
+    if (error instanceof WebOnlyConfirmationNeeded) throw new CliInputError(`${error.message}: добавьте --web-only`);
+    throw error;
+  }
   return links(deps, id);
 }
 

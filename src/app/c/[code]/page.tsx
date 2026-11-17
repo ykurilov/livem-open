@@ -2,11 +2,12 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
+import { currentCabinetUser } from "@/modules/access";
 import { getDatabase } from "@/modules/platform/db";
 import { systemClock } from "@/modules/platform/clock";
 import { voiceConfigured } from "@/modules/voice/relay-options";
 import { createChannelAdapters } from "@/modules/channels";
-import { pagesPerAddress, readWebChat, takeWebChatLimit, webChatElsewhere, webChatMessengerHandoff, webChatTitle, webChatVoiceInput } from "@/modules/web-chat";
+import { pagesPerAddress, readWebChat, webChatCanStartOver, takeWebChatLimit, webChatElsewhere, webChatMessengerHandoff, webChatTitle, webChatVoiceInput } from "@/modules/web-chat";
 import { clientAddress, currentVisitor } from "@/modules/web-chat/server";
 import { TooManyAttempts } from "./too-many-attempts";
 import { WebChat } from "./web-chat";
@@ -62,11 +63,14 @@ export default async function WebChatPage({ params, searchParams }: Props) {
   const handoff = visitor && !elsewhere ? await webChatMessengerHandoff(getDatabase().db, createChannelAdapters(), visitor, code) : null;
   // Микрофон — только когда голос включён у лидмагнита и на сервере есть ключ Soniox
   const voice = !elsewhere && voiceConfigured() && (await webChatVoiceInput(getDatabase().db, code));
+  // Вошедший эксперт проверяет живую страницу: ему — «Начать разговор заново», посетителям её нет. На снятом с
+  // публикации лидмагните новый разговор не начнётся — и кнопки нет
+  const canStartOver = (await currentCabinetUser()) !== null && (await webChatCanStartOver(getDatabase().db, code));
   return (
     <>
       {/* С cookie: в манифесте код входа именно этого посетителя (веб-приложение на экране «Домой» начинает без cookie) */}
       <link rel="manifest" href={`/c/${encodeURIComponent(code)}/manifest.webmanifest`} crossOrigin="use-credentials" />
-      <WebChat code={code} title={page.title} initialItems={initialItems} closed={elsewhere?.current ?? null} voice={voice} initialHandoff={handoff} />
+      <WebChat code={code} title={page.title} initialItems={initialItems} closed={elsewhere?.current ?? null} voice={voice} initialHandoff={handoff} canStartOver={canStartOver} />
       {/* Лента сразу внизу, на последних сообщениях, ещё до загрузки скриптов — как будет и после */}
       {initialItems.length > 0 && <script dangerouslySetInnerHTML={{ __html: SCROLL_FEED_TO_END }} />}
     </>

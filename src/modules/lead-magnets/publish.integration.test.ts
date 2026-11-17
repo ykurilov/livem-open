@@ -6,7 +6,7 @@ import { KIT_CIPHER, createLiveDialogKit, type LiveDialogKit } from "../../../te
 import { bots } from "../channels/schema";
 import { createLeadMagnet, getLeadMagnet, getVersion, LeadMagnetNotFoundError, saveDraft } from "./lead-magnets";
 import { generateEntryCode } from "./links";
-import { attachBot, describePublication, listAttachedBots, publishLeadMagnet, PublishError, publishWithBots } from "./publish";
+import { attachBot, describePublication, listAttachedBots, publishLeadMagnet, PublishError, publishWithBots, WebOnlyConfirmationNeeded } from "./publish";
 import { entryLinks } from "./schema";
 
 let database: TestDatabase;
@@ -48,10 +48,29 @@ describe("код ссылки", () => {
 });
 
 describe("публикация", () => {
-  it("без бота не публикуется", async () => {
+  it("без бота публикуется только веб-страница: снимок и основная ссылка есть, ссылок в мессенджеры нет", async () => {
     const lead = await createLeadMagnet(database.db, { name: "Без бота" });
-    await expect(publishLeadMagnet(database.db, lead.id)).rejects.toThrow(/Привяжите хотя бы одного бота/);
-    expect((await getLeadMagnet(database.db, lead.id))?.publishedSnapshotId).toBeNull();
+    const published = await publishLeadMagnet(database.db, lead.id);
+    expect((await getLeadMagnet(database.db, lead.id))?.publishedSnapshotId).toBe(published.snapshotId);
+
+    const publication = await describePublication(database.db, kit.dialogAdapters, lead.id);
+    expect(publication.bots).toEqual([]);
+    expect(publication.code).toBe(published.code);
+    expect(publication.webLink).toBe(`https://lm.test/c/${published.code}`);
+  });
+
+  it("отвязать всех ботов молча нельзя: без подтверждения ничего не меняется, с подтверждением остаётся веб-страница", async () => {
+    const lead = await kit.publish();
+    const before = await getLeadMagnet(database.db, lead.leadMagnetId);
+    await expect(publishWithBots(database.db, lead.leadMagnetId, { telegram: null })).rejects.toThrow(WebOnlyConfirmationNeeded);
+    expect((await listAttachedBots(database.db, lead.leadMagnetId)).map((bot) => bot.botId)).toEqual([kit.bot.id]);
+    expect((await getLeadMagnet(database.db, lead.leadMagnetId))?.publishedSnapshotId).toBe(before?.publishedSnapshotId);
+
+    await publishWithBots(database.db, lead.leadMagnetId, { telegram: null }, { confirmWebOnly: true });
+    const publication = await describePublication(database.db, kit.dialogAdapters, lead.leadMagnetId);
+    expect(publication.snapshotId).not.toBeNull();
+    expect(publication.bots).toEqual([]);
+    expect(publication.webLink).toContain(`/c/${lead.code}`);
   });
 
   it("на мессенджер — один бот: новый заменяет прежнего", async () => {
@@ -118,12 +137,13 @@ describe("публикация", () => {
   it("выбор ботов и публикация — одно целое: публикация не прошла — привязки прежние", async () => {
     const lead = await kit.publish();
     const before = await getLeadMagnet(database.db, lead.leadMagnetId);
+    const second = await anotherTelegramBot();
 
-    await expect(publishWithBots(database.db, lead.leadMagnetId, { telegram: null })).rejects.toThrow(PublishError);
+    // Telegram сменился бы, но бот ВК не найден: ни смены, ни публикации
+    await expect(publishWithBots(database.db, lead.leadMagnetId, { telegram: second.id, vk: randomUUID() })).rejects.toThrow(PublishError);
     expect((await listAttachedBots(database.db, lead.leadMagnetId)).map((bot) => bot.botId)).toEqual([kit.bot.id]);
     expect((await getLeadMagnet(database.db, lead.leadMagnetId))?.publishedSnapshotId).toBe(before?.publishedSnapshotId);
 
-    const second = await anotherTelegramBot();
     const republished = await publishWithBots(database.db, lead.leadMagnetId, { telegram: second.id });
     expect((await listAttachedBots(database.db, lead.leadMagnetId)).map((bot) => bot.botId)).toEqual([second.id]);
     expect(republished.code).toBe(lead.code);

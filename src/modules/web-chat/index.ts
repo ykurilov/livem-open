@@ -12,6 +12,8 @@ export {
   SEEN_WRITE_GAP_MS,
   saveWebChatSubscription,
   sendWebChatMessage,
+  startWebChatOverAsNewVisitor,
+  webChatCanStartOver,
   webChatImagePath,
   webChatMessengerHandoff,
   webChatResumeCode,

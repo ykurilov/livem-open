@@ -55,6 +55,7 @@ export default async function LeadMagnetPage({ params }: { params: Promise<{ id:
       roleSwap={roleSwap}
       leadMagnetId={id}
       draft={lead.draft}
+      testClient={lead.testClient}
       draftVersionId={lead.draftVersionId}
       constructorChatId={constructorChatId}
       constructorHasMessages={constructorHasMessages}
