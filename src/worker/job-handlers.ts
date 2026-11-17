@@ -90,6 +90,7 @@ export async function registerJobHandlers({ queue, connection }: JobHandlerConte
   await queue.work("chats-migrate", (input) => dialog.migrateChats(input));
   // Оплата продукта (GetCourse): поздравление и одно напоминание — ходом консультанта, через наш бот
   await queue.work("purchase-congratulate", ({ passageId }) => dialog.congratulatePurchase(passageId), concurrency);
+  await queue.work("messenger-handoff-continue", ({ handoffId }) => dialog.continueInMessenger(handoffId), concurrency);
   await queue.work("payment-reminder", ({ passageId }) => dialog.remindPayment(passageId), concurrency);
   // Пришедшие по ссылке в бот ВК с Senler — в группу Senler; сбой Senler повторяет очередь, разговор его не ждёт
   await queue.work("senler-subscribe", ({ passageId }) => subscribeToSenler({ db, cipher, api: senler }, passageId), concurrency);

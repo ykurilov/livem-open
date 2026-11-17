@@ -305,7 +305,7 @@ describe("метки и «Убрать правку»", () => {
     const { chatId, corrected, correction } = await editedChat();
     const response = await labels(chatId);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ edited: [{ messageId: corrected, correctionId: correction.id, pending: true }] });
+    expect(await response.json()).toEqual({ edited: [{ messageId: corrected, correctionId: correction.id, pending: true, intent: "auto" }] });
   });
 
   it("DELETE удаляет правку и возвращает исходный ответ; повторное чтение меток её не возвращает", async () => {
@@ -323,7 +323,7 @@ describe("метки и «Убрать правку»", () => {
     const { chatId, correction } = await editedChat();
     await resolveCorrections(database.db, lead.id, [correction.id], "rejected");
     expect((await removeCorrection(chatId, correction.id)).status).toBe(409);
-    expect(await (await labels(chatId)).json()).toEqual({ edited: [{ messageId: correction.correctedMessageId, correctionId: correction.id, pending: false }] });
+    expect(await (await labels(chatId)).json()).toEqual({ edited: [{ messageId: correction.correctedMessageId, correctionId: correction.id, pending: false, intent: "auto" }] });
   });
 
   it("повторная правка разобранного ответа: «Убрать правку» возвращает ответ, который правили, а не самый первый", async () => {

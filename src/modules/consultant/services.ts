@@ -19,6 +19,8 @@ import { leadMagnetKnownTexts } from "./known-texts";
 import { viewsLinks } from "./instruction";
 import { FLOW_STATE_KEY } from "@ykurilov/agent-chat-flows";
 import { stageCardsBlock } from "../sales-cards/sales-cards";
+import { enabledMessengerHandoff } from "../messenger-handoff/setting";
+import { createMessengerHandoffTool, IN_WEB_CHAT, type MessengerHandoffPort } from "../messenger-handoff/tool";
 
 /** Общие на процесс: настройки пересоздаются каждый ход, а помнить показанный ролик и картинку надо весь ответ. */
 const limitVideosPerReply = oneVideoPerReply();
@@ -43,11 +45,15 @@ export function consultantAgentSettings(input: {
   dayOf?(chat: { ownerId: string; chatId: string }): Promise<number>;
   /** Тексты живых баз знаний версии (`liveConsultantVersion`): последний раздел неизменной инструкции. */
   knowledge?: readonly KnowledgeBaseWithText[];
+  /** Переход из веб-чата в мессенджер; нужен, только если он включён в настройках. */
+  messengerHandoff?: MessengerHandoffPort;
 }): AgentSettings {
   const personLink = viewsLinks(input.settings) ? (input.personLink ?? null) : null;
   const appDomains = appDomainsIn(leadMagnetKnownTexts(input.settings));
   const videoLibrary = input.settings.videoIds.length > 0 ? createVideoLibrary({ source: input.videos }) : null;
   const imageLibrary = input.settings.imageIds.length > 0 ? createImageLibrary({ source: input.images }) : null;
+  const handoffSetting = enabledMessengerHandoff(input.settings);
+  const handoff = handoffSetting && input.messengerHandoff ? { setting: handoffSetting, port: input.messengerHandoff } : null;
   return {
     instructions: buildConsultantInstruction(input.settings, input.knowledge),
     tools: (model) =>
@@ -63,9 +69,12 @@ export function consultantAgentSettings(input: {
           ...(videoLibrary && limitVideosPerReply(videoLibrary.tools(model), model)),
           ...(imageLibrary && limitImagesPerReply(imageLibrary.tools(model), model)),
           ...(personLink && personLink(model, { appDomains })),
+          ...(handoff && model.viewer?.[IN_WEB_CHAT] === true && createMessengerHandoffTool(handoff.setting, () => handoff.port.offer({ ownerId: model.ownerId, chatId: model.chatId }))),
         },
         model.chatId,
       ),
+    // Где человек — в начале хода: инструмент перехода только в веб-чате; после перехода он пропадает (один промах кэша)
+    ...(handoff && { viewer: async ({ ownerId, chatId }) => ({ [IN_WEB_CHAT]: await handoff.port.inWebChat({ ownerId, chatId }) }) }),
     // Заготовки текущего этапа — блоком рядом с карточкой этапа: ядро шлёт его заново, только когда этап сменился
     ...((input.settings.salesCards ?? []).some((card) => card.stateId !== null) && {
       contextBlocks: ({ state }) => {

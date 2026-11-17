@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { startTransition, useActionState, useState } from "react";
 import { Dialog } from "@ykurilov/ds-react";
-import { Alert, Button } from "@/ui/primitives";
+import { Alert, Button, Field, Textarea } from "@/ui/primitives";
 import type { NoCodeMode } from "@/modules/channels";
 import { Select, type SelectOption } from "@/ui";
-import { deleteBotAction, saveNoCodeAction, type BotSettingsState } from "../actions";
+import { deleteBotAction, saveAutoreplyAction, saveNoCodeAction, type BotSettingsState } from "../actions";
 import { ACTION_SEND_FAILED, keepingFormOnSendFailure } from "@/ui/form-upload";
 
 const MODES: Array<SelectOption & { value: NoCodeMode; hint: string }> = [
@@ -33,6 +33,7 @@ export function BotSettingsForm(props: {
 
   return (
     <form
+      data-testid="no-code-settings"
       className="flex max-w-xl flex-col gap-[var(--yk-space-4)]"
       onSubmit={(event) => {
         // Через action React после отправки сбрасывает форму, и список показывал бы «Ничего»
@@ -75,6 +76,59 @@ export function BotSettingsForm(props: {
           )}
         </div>
       ) : null}
+      {state.error ? (
+        <Alert variant="danger" title="Не сохранилось">
+          {state.error}
+        </Alert>
+      ) : null}
+      {state.saved && state !== edited ? <Alert variant="success" title="Сохранено" /> : null}
+      <div>
+        <Button type="submit" loading={pending}>
+          Сохранить
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Свой текст автоответа тем, кто пишет после конца разговора. Пустое поле — текст по умолчанию: он виден подсказкой
+ * в поле, чтобы эксперт знал, что уйдёт человеку.
+ */
+export function AutoreplyForm(props: { botId: string; autoreplyText: string | null; defaultText: string; maxLength: number }) {
+  const [state, formAction, pending] = useActionState<BotSettingsState, FormData>(
+    keepingFormOnSendFailure(saveAutoreplyAction.bind(null, props.botId)),
+    {},
+  );
+  const [text, setText] = useState(props.autoreplyText ?? "");
+  const [edited, setEdited] = useState<BotSettingsState | null>(null);
+
+  return (
+    <form
+      data-testid="autoreply-settings"
+      className="flex max-w-xl flex-col gap-[var(--yk-space-4)]"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        startTransition(() => formAction(data));
+      }}
+    >
+      <Field
+        label="Текст автоответа"
+        hint="Бот отправляет его, когда человек пишет после конца программы, — не чаще раза в день и не в день, когда вы ответили сами. Сообщение человека при этом попадает к вам во «Входящие». Оставьте поле пустым — уйдёт текст, который виден в поле серым."
+      >
+        <Textarea
+          name="autoreplyText"
+          rows={3}
+          maxLength={props.maxLength}
+          placeholder={props.defaultText}
+          value={text}
+          onChange={(event) => {
+            setText(event.target.value);
+            setEdited(state);
+          }}
+        />
+      </Field>
       {state.error ? (
         <Alert variant="danger" title="Не сохранилось">
           {state.error}

@@ -5,7 +5,8 @@ import { cache } from "react";
 import { getDatabase } from "@/modules/platform/db";
 import { systemClock } from "@/modules/platform/clock";
 import { voiceConfigured } from "@/modules/voice/relay-options";
-import { pagesPerAddress, readWebChat, takeWebChatLimit, webChatElsewhere, webChatTitle, webChatVoiceInput } from "@/modules/web-chat";
+import { createChannelAdapters } from "@/modules/channels";
+import { pagesPerAddress, readWebChat, takeWebChatLimit, webChatElsewhere, webChatMessengerHandoff, webChatTitle, webChatVoiceInput } from "@/modules/web-chat";
 import { clientAddress, currentVisitor } from "@/modules/web-chat/server";
 import { TooManyAttempts } from "./too-many-attempts";
 import { WebChat } from "./web-chat";
@@ -57,13 +58,15 @@ export default async function WebChatPage({ params, searchParams }: Props) {
   const elsewhere = visitor ? await webChatElsewhere(getDatabase().db, code, visitor, systemClock.now()) : null;
   // Вернувшийся посетитель видит свою переписку сразу со страницей, без двух запросов после загрузки скриптов
   const initialItems = visitor && !elsewhere ? await readWebChat(getDatabase().db, systemClock, visitor) : [];
+  // Разговор ушёл в мессенджер или агент показал кнопки: вместо поля ввода — они, сразу со страницей
+  const handoff = visitor && !elsewhere ? await webChatMessengerHandoff(getDatabase().db, createChannelAdapters(), visitor, code) : null;
   // Микрофон — только когда голос включён у лидмагнита и на сервере есть ключ Soniox
   const voice = !elsewhere && voiceConfigured() && (await webChatVoiceInput(getDatabase().db, code));
   return (
     <>
       {/* С cookie: в манифесте код входа именно этого посетителя (веб-приложение на экране «Домой» начинает без cookie) */}
       <link rel="manifest" href={`/c/${encodeURIComponent(code)}/manifest.webmanifest`} crossOrigin="use-credentials" />
-      <WebChat code={code} title={page.title} initialItems={initialItems} closed={elsewhere?.current ?? null} voice={voice} />
+      <WebChat code={code} title={page.title} initialItems={initialItems} closed={elsewhere?.current ?? null} voice={voice} initialHandoff={handoff} />
       {/* Лента сразу внизу, на последних сообщениях, ещё до загрузки скриптов — как будет и после */}
       {initialItems.length > 0 && <script dangerouslySetInnerHTML={{ __html: SCROLL_FEED_TO_END }} />}
     </>

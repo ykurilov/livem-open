@@ -10,7 +10,7 @@ import {
   outboundOf,
   type LiveDialogKit,
 } from "../../../tests/integration/live-dialog-kit";
-import { createBotService, type BotService } from "../channels/bots";
+import { AUTOREPLY_TEXT_MAX_LENGTH, createBotService, type BotService } from "../channels/bots";
 import { bots, leadMagnetBots, outboundMessages, type NoCodeMode } from "../channels/schema";
 import { findEntryLinkByCode, publishLeadMagnet, PublishError, unpublishLeadMagnet } from "../lead-magnets";
 import { publishWithBots } from "../lead-magnets/publish";
@@ -773,5 +773,31 @@ describe("удаление бота", () => {
 
     expect(again).toMatchObject({ ok: true, bot: { id: kit.bot.id } });
     expect((await botService.listBots()).map((bot) => bot.id)).toContain(kit.bot.id);
+  });
+});
+
+describe("текст автоответа в настройках бота", () => {
+  it("сохраняется без лишних пробелов; пустое поле — текст по умолчанию; слишком длинный — понятная ошибка", async () => {
+    expect(await botService.getBot(kit.bot.id)).toMatchObject({ autoreplyText: null });
+
+    expect(await botService.updateAutoreplyText(kit.bot.id, "  Программа закончилась, отвечу сам.  ")).toEqual({ ok: true });
+    expect(await botService.getBot(kit.bot.id)).toMatchObject({ autoreplyText: "Программа закончилась, отвечу сам." });
+
+    expect(await botService.updateAutoreplyText(kit.bot.id, "   ")).toEqual({ ok: true });
+    expect(await botService.getBot(kit.bot.id)).toMatchObject({ autoreplyText: null });
+
+    expect(await botService.updateAutoreplyText(kit.bot.id, "а".repeat(AUTOREPLY_TEXT_MAX_LENGTH + 1))).toMatchObject({ ok: false });
+    expect(await botService.updateAutoreplyText(randomUUID(), "Текст")).toMatchObject({ ok: false });
+  });
+
+  it("свой текст уходит вернувшемуся вместо текста по умолчанию", async () => {
+    const lead = await kit.publish();
+    await say(`/start ${lead.code}`, lead.code);
+    await finishPassages();
+    await botService.updateAutoreplyText(kit.bot.id, "Отвечу вам сам сегодня вечером.");
+
+    await say("У меня вопрос");
+
+    expect(kit.textsTo(person).at(-1)).toBe("Отвечу вам сам сегодня вечером.");
   });
 });

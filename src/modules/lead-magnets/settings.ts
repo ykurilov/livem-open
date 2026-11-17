@@ -5,6 +5,7 @@ import { validateLeadMagnetFlow, type FlowSettingsIssue } from "../flows/validat
 import { DEFAULT_MODEL_CHOICE } from "../platform/models-catalog";
 import { productLinkSchema, productPage, type ProductLink } from "../purchases/product-links";
 import { textLinkSchema } from "../text-links/text-link";
+import { messengerHandoffSchema } from "../messenger-handoff/setting";
 import { checkedSalesCards, salesCardsSchema } from "../sales-cards/sales-cards";
 
 export const DEFAULT_MAX_PERSON_MESSAGES = 60;
@@ -16,6 +17,10 @@ export const PROGRAM_MAX_DAYS = 14;
 export const PROGRAM_DAY_STARTS_AT = "05:00";
 export const SIDE_TASK_TEXT_MAX_LENGTH = 300;
 export const SIDE_TASKS_MAX_COUNT = 10;
+
+/** Что делать с человеком, который вернулся по ссылке лидмагнита после конца его программы. */
+export const RETURN_AFTER_PROGRAM_MODES = ["inbox", "restart"] as const;
+export type ReturnAfterProgramMode = (typeof RETURN_AFTER_PROGRAM_MODES)[number];
 
 export const stageSchema = z.object({
   id: z.string().min(1),
@@ -119,6 +124,11 @@ export const leadMagnetSettingsSchema = z.object({
   clientImages: z.boolean().default(false),
   /** Кнопка микрофона в веб-чате и в «Проверке»: человек диктует, текст появляется в поле. По умолчанию выключено. */
   voiceInput: z.boolean().default(false),
+  /**
+   * Человек вернулся по ссылке или кнопке этого лидмагнита, когда его программа уже закончилась: `inbox` — сообщение
+   * эксперту во «Входящие» с автоответом (как было до поля), `restart` — лидмагнит начинается заново с первого дня.
+   */
+  returnAfterProgram: z.enum(RETURN_AFTER_PROGRAM_MODES).default("inbox"),
   /** Программа на несколько дней; `null` — один разговор, как раньше. */
   program: programSettingsSchema.nullable().default(null),
   /**
@@ -139,6 +149,11 @@ export const leadMagnetSettingsSchema = z.object({
    * (название и «когда уместна»), текст берёт инструментом. В настройках, записанных до поля, — пусто.
    */
   salesCards: salesCardsSchema.default([]),
+  /**
+   * «Переход в мессенджер»: в веб-чате агент в нужный момент показывает кнопки мессенджеров, и разговор продолжается
+   * там. Нет поля или выключено — инструмента нет.
+   */
+  messengerHandoff: messengerHandoffSchema.optional(),
 });
 
 export type Stage = z.infer<typeof stageSchema>;
@@ -203,6 +218,7 @@ export function newLeadMagnetSettings(name: string, cardDescription = ""): LeadM
     videoIds: [],
     clientImages: false,
     voiceInput: false,
+    returnAfterProgram: "inbox",
     imageIds: [],
     knowledgeIds: [],
     viewsLinks: false,

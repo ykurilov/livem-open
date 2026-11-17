@@ -62,5 +62,5 @@ export async function cardFromCorrection(input: { direct: DirectModel; settings:
   });
   const suggestion = parseCardSuggestion(result.text) ?? { title: "", when: "" };
   const stageExists = correction.stageId !== null && settings.flow.states.some((state) => state.id === correction.stageId);
-  return { stateId: stageExists ? correction.stageId : null, ...suggestion, text: correction.correctedText, verbatim: false };
+  return { stateId: stageExists ? correction.stageId : null, ...suggestion, text: correction.correctedText, mode: "own_words" };
 }

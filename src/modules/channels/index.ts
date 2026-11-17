@@ -19,7 +19,7 @@ export { createChannelAdapters } from "./adapters";
 export { BOT_HEALTH_CRON, checkAllBots, reportSendFailure } from "./bot-health";
 export type { BotHealthDependencies } from "./bot-health";
 export { createBotServiceFromEnv } from "./bot-service-from-env";
-export { botWebhookUrl, createBotService, findBotWithCredentials, listLiveBots } from "./bots";
+export { AUTOREPLY_TEXT, AUTOREPLY_TEXT_MAX_LENGTH, autoreplyTextOf, botWebhookUrl, createBotService, findBotWithCredentials, listLiveBots } from "./bots";
 export type {
   BotActionResult,
   BotRow,

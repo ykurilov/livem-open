@@ -4,6 +4,7 @@ export {
   newSalesCardId,
   SALES_CARD_TEXT_MAX_LENGTH,
   SALES_CARD_TITLE_MAX_LENGTH,
+  SALES_CARD_MODES,
   SALES_CARD_TOOL,
   SALES_CARD_WHEN_MAX_LENGTH,
   SALES_CARDS_BLOCK_KEY,
@@ -15,5 +16,6 @@ export {
   withSalesCard,
   type SalesCard,
   type SalesCardInput,
+  type SalesCardMode,
 } from "./sales-cards";
 export { createSalesCardTool } from "./tool";

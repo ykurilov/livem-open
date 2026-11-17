@@ -18,4 +18,4 @@ export type {
 } from "./schema";
 export { consultantAgentSettings, VersionCache } from "./services";
 export { PREVIEW_BASE_PATH, createPreviewEndpoint } from "./preview-endpoint";
-export type { ConsultantTrialInput, PreviewEndpoint, PreviewEndpointOptions, PreviewStatus } from "./preview-endpoint";
+export type { ConsultantTrialInput, PreviewEndpoint, PreviewEndpointOptions, PreviewMessengerHandoff, PreviewStatus } from "./preview-endpoint";

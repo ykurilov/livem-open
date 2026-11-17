@@ -5,10 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { Alert, Button, Field, Input, Textarea } from "@/ui/primitives";
-import type { LeadMagnetSettings } from "@/modules/lead-magnets";
+import type { LeadMagnetSettings, ReturnAfterProgramMode } from "@/modules/lead-magnets";
 import { Select } from "@/ui";
 import { Checkbox } from "@/ui/checkbox";
 import { KNOWLEDGE_MAX_CHARS, formatChars } from "@/modules/knowledge/knowledge-file";
+import { CHANNEL_LABELS, MESSENGER_KINDS } from "@/modules/channels/channel";
+import { DEFAULT_MESSENGER_HANDOFF, MESSENGER_HANDOFF_WHEN_MAX_LENGTH, type MessengerHandoffSetting } from "@/modules/messenger-handoff/setting";
 import type { AgentFlow } from "@ykurilov/agent-chat-flows/format";
 import { saveSettingsAction, saveSettingsAndFlowAction } from "../actions";
 import { combineUnsavedEdits, rebaseSettingsEdit, type SettingsEditKey } from "./unsaved-edits";
@@ -30,6 +32,19 @@ const textFields: Array<{ key: TextKey; label: string; rows?: number; hint?: str
 
 const DEFAULT_REASONING = "default";
 
+const RETURN_AFTER_PROGRAM_OPTIONS: Array<{ value: ReturnAfterProgramMode; label: string; hint: string }> = [
+  {
+    value: "inbox",
+    label: "Передать мне во «Входящие»",
+    hint: "Сообщение придёт вам, человек получит автоответ из настроек бота.",
+  },
+  {
+    value: "restart",
+    label: "Начать заново",
+    hint: "Бот начнёт лидмагнит с самого начала: первое сообщение, программа с первого дня.",
+  },
+];
+
 /** Как поля формы подписаны на экране: ими плашка новой версии называет поля, где правка легла поверх. */
 const editKeyLabels: Partial<Record<SettingsEditKey, string>> = {
   common: "Основная инструкция",
@@ -39,6 +54,7 @@ const editKeyLabels: Partial<Record<SettingsEditKey, string>> = {
   clientPortrait: "Описание клиентов",
   endCondition: "Условие завершения",
   farewellMessage: "Прощальное сообщение",
+  returnAfterProgram: "Если человек вернулся после конца программы",
   maxPersonMessages: "Предел сообщений человека",
   providerId: "Модель консультанта",
   modelId: "Модель консультанта",
@@ -48,6 +64,7 @@ const editKeyLabels: Partial<Record<SettingsEditKey, string>> = {
   imageIds: "Картинки",
   clientImages: "Картинки клиента",
   voiceInput: "Голосовой ввод",
+  messengerHandoff: "Переход в мессенджер",
 };
 
 /** Ролик архива, который можно разрешить консультанту. */
@@ -195,6 +212,20 @@ export function SettingsTab({ leadMagnetId, draft, draftVersionId, videos, image
         </Field>
       ))}
 
+      <div className="flex flex-col gap-1">
+        <span className="yk-mono-label">Если человек вернулся после конца программы</span>
+        <Select
+          aria-label="Если человек вернулся после конца программы"
+          // Черновики, записанные до настройки, её не хранят: для них действует «Входящие»
+          value={settings.returnAfterProgram ?? "inbox"}
+          options={RETURN_AFTER_PROGRAM_OPTIONS}
+          onValueChange={(value) => update({ returnAfterProgram: value as ReturnAfterProgramMode })}
+        />
+        <span className="text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">
+          Когда человек снова нажимает ссылку или кнопку этого лидмагнита. {RETURN_AFTER_PROGRAM_OPTIONS.find((option) => option.value === (settings.returnAfterProgram ?? "inbox"))?.hint}
+        </span>
+      </div>
+
       {/* Если у сценария есть «Дни и время», разговор ограничивают рамки дня, а не общий предел */}
       {settings.flow.schedule ? null : (
         <Field label="Предел сообщений человека" hint={settings.maxPersonMessages < 1 ? "Впишите число — хотя бы 1" : undefined}>
@@ -301,6 +332,11 @@ export function SettingsTab({ leadMagnetId, draft, draftVersionId, videos, image
         <span className="text-[var(--yk-muted)]">- кнопка микрофона в веб-чате и в «Проверке»: клиент говорит, текст появляется в поле</span>
       </Checkbox>
 
+      <MessengerHandoffChoice
+        value={settings.messengerHandoff ?? DEFAULT_MESSENGER_HANDOFF}
+        onChange={(messengerHandoff) => update({ messengerHandoff })}
+      />
+
       <div className="flex items-center gap-3">
         <Button type="submit" loading={saving} disabled={!dirty}>
           Сохранить
@@ -323,6 +359,56 @@ export function SettingsTab({ leadMagnetId, draft, draftVersionId, videos, image
       </div>
       </fieldset>
     </form>
+  );
+}
+
+/**
+ * «Переход в мессенджер»: агент веб-чата в нужный момент показывает кнопки мессенджеров вместо поля ввода. Кнопка
+ * появляется, только если лидмагнит опубликован в этом мессенджере.
+ */
+function MessengerHandoffChoice({ value, onChange }: { value: MessengerHandoffSetting; onChange(value: MessengerHandoffSetting): void }) {
+  const whenMissing = value.enabled && !value.when.trim();
+  const channelsMissing = value.enabled && value.channels.length === 0;
+  return (
+    <fieldset className="flex flex-col gap-2" data-testid="messenger-handoff-settings">
+      <legend className="mb-1 text-[length:var(--yk-text-small-size)] font-semibold">Переход в мессенджер</legend>
+      <Checkbox checked={value.enabled} onCheckedChange={(checked) => onChange({ ...value, enabled: checked === true })}>
+        Звать из веб-чата в мессенджер{" "}
+        <span className="text-[var(--yk-muted)]">- агент показывает кнопки мессенджеров, и разговор продолжается там с того же места</span>
+      </Checkbox>
+      {value.enabled ? (
+        <>
+          <Field label="Когда предложить" hint={whenMissing ? "Впишите, когда агенту позвать в мессенджер" : "Агент позовёт, когда в разговоре случится это."}>
+            <Textarea
+              rows={2}
+              maxLength={MESSENGER_HANDOFF_WHEN_MAX_LENGTH}
+              value={value.when}
+              onChange={(event) => onChange({ ...value, when: event.target.value })}
+            />
+          </Field>
+          <fieldset className="flex flex-col gap-1">
+            <legend className="mb-1 text-[length:var(--yk-text-small-size)]">Куда звать</legend>
+            {MESSENGER_KINDS.map((channel) => (
+              <Checkbox
+                key={channel}
+                checked={value.channels.includes(channel)}
+                onCheckedChange={(checked) =>
+                  onChange({
+                    ...value,
+                    channels: MESSENGER_KINDS.filter((kind) => (kind === channel ? checked === true : value.channels.includes(kind))),
+                  })
+                }
+              >
+                {CHANNEL_LABELS[channel]}
+              </Checkbox>
+            ))}
+            <span className={`text-[length:var(--yk-text-small-size)] ${channelsMissing ? "text-[var(--yk-danger)]" : "text-[var(--yk-muted)]"}`}>
+              {channelsMissing ? "Отметьте хотя бы один мессенджер." : "Кнопка будет только у мессенджеров, где лидмагнит опубликован."}
+            </span>
+          </fieldset>
+        </>
+      ) : null}
+    </fieldset>
   );
 }
 

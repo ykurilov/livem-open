@@ -17,6 +17,8 @@ import { createPreviewEndpoint, PreviewReopenRefused, type PreviewEndpoint } fro
 import { createPreviewConversationStore, readPreviewConversation } from "./preview-store";
 import { previewConversations } from "./schema";
 import { recordCorrection } from "../corrections";
+import { HANDOFF_NOTICE_MARK } from "../messenger-handoff/notice";
+import { MESSENGER_HANDOFF_EVENT } from "../messenger-handoff/setting";
 
 let database: TestDatabase;
 let chatStorage: ChatStorage;
@@ -1088,7 +1090,7 @@ describe("«Сохранить как заготовку» у исправлен
       title: "Дорого",
       when: "Человек сомневается из-за цены",
       text: "Понимаю. Есть рассрочка на 3 месяца без переплаты.",
-      verbatim: false,
+      mode: "own_words",
     });
     expect(JSON.stringify(calls.at(-1)!.options.prompt)).toContain("Дороговато для меня");
     expect(calls.at(-1)!.toolNames).toEqual([]);
@@ -1098,5 +1100,127 @@ describe("«Сохранить как заготовку» у исправлен
     const { id } = await correctionOf(null, "client");
     await expect(endpoint.suggestSalesCard(lead.id, id)).rejects.toThrow();
     await expect(endpoint.suggestSalesCard(lead.id, "00000000-0000-4000-8000-000000000000")).rejects.toThrow();
+  });
+});
+
+describe("переход в мессенджер в «Проверке»", () => {
+  const CONTINUATION = "Продолжаем в мессенджере: на чём остановились?";
+  const STAGES = [
+    { id: "start", name: "Знакомство", instruction: "Узнай задачу.", transitionCondition: "", startDay: null, isSale: false },
+    { id: "messenger", name: "В мессенджере", instruction: "Продолжай в мессенджере.", transitionCondition: "", startDay: null, isSale: false },
+  ];
+
+  beforeEach(async () => {
+    const settings: LeadMagnetSettings = {
+      ...lead.draft,
+      instruction: "Ты консультант превью.",
+      stages: STAGES,
+      messengerHandoff: { enabled: true, when: "Когда человек согласился", channels: ["telegram", "vk"] },
+    };
+    const flow = leadMagnetToFlow(settings, []);
+    const withEvent = {
+      ...flow,
+      states: flow.states.map((state) =>
+        state.id === "start"
+          ? { ...state, exits: [...state.exits, { id: "start_messenger", when: { type: "event", event: "app", name: MESSENGER_HANDOFF_EVENT }, to: "messenger" }] }
+          : state,
+      ),
+    } as typeof flow;
+    await saveSettings(database.db, lead.id, { ...settings, flow: withEvent }, "manual");
+    reply = (call) => {
+      if (call.lastUserText.includes(HANDOFF_NOTICE_MARK)) return { text: CONTINUATION };
+      if (call.lastUserText.includes("в мессенджер") && call.toolNames.includes("offer_messenger"))
+        return call.lastToolResult === undefined ? { toolCalls: [{ toolName: "offer_messenger", input: {} }] } : { text: "Нажмите кнопку ниже." };
+      return { text: "Расскажите подробнее." };
+    };
+  });
+
+  const offer = async () => {
+    const chatId = await endpoint.ensurePreview(lead.id);
+    await (await send(chatId, "Давайте в мессенджер")).text();
+    // Судья сценария после хода — до счёта вызовов модели
+    await endpoint.flow.settled();
+    return chatId;
+  };
+
+  it("до кнопок разговор идёт обычно; консультант показывает кнопки всех выбранных мессенджеров — публикация не нужна", async () => {
+    const chatId = await endpoint.ensurePreview(lead.id);
+    expect((await endpoint.status(lead.id))?.messengerHandoff).toBeNull();
+    await (await send(chatId, "Привет")).text();
+    expect(calls[0]!.toolNames).toContain("offer_messenger");
+    await (await send(chatId, "Давайте в мессенджер")).text();
+    expect((await endpoint.status(lead.id))?.messengerHandoff).toEqual({
+      state: "offered",
+      buttons: [
+        { channel: "telegram", title: "Telegram" },
+        { channel: "vk", title: "ВКонтакте" },
+      ],
+    });
+  });
+
+  it("после кнопок поле ввода закрыто, как в веб-чате: сообщение получает 409 с подсказкой, модель не зовётся", async () => {
+    const chatId = await offer();
+    calls.length = 0;
+    const response = await send(chatId, "Ещё вопрос");
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { error: { message: string } }).error.message).toMatch(/кнопк/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("нажатие кнопки: событие сценария, консультант продолжает первым без знакомства, дальше разговор как в мессенджере", async () => {
+    const chatId = await offer();
+    calls.length = 0;
+    await endpoint.takeMessengerHandoff(lead.id, "vk");
+    await endpoint.flow.settled();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.lastUserText).toContain(HANDOFF_NOTICE_MARK);
+    expect(JSON.stringify((await chatStorage.listMessages(chatId)).at(-1)!.parts)).toContain(CONTINUATION);
+    expect(await endpoint.status(lead.id)).toMatchObject({ stageName: "В мессенджере", messengerHandoff: { state: "taken", channel: "vk", title: "ВКонтакте" } });
+
+    // Повторное нажатие ничего не меняет
+    await endpoint.takeMessengerHandoff(lead.id, "vk");
+    await endpoint.flow.settled();
+    expect(calls).toHaveLength(1);
+
+    // В мессенджере инструмента перехода нет, сообщения снова принимаются
+    const response = await send(chatId, "Продолжим");
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(calls.at(-1)!.toolNames).not.toContain("offer_messenger");
+  });
+
+  it("кнопка не того мессенджера или кнопок не было — отказ, разговор не меняется", async () => {
+    await endpoint.ensurePreview(lead.id);
+    await expect(endpoint.takeMessengerHandoff(lead.id, "telegram")).rejects.toThrow();
+    await offer();
+    await expect(endpoint.takeMessengerHandoff(lead.id, "max")).rejects.toThrow();
+    expect((await endpoint.status(lead.id))?.messengerHandoff).toMatchObject({ state: "offered" });
+  });
+
+  it("«Начать проверку заново» — кнопок снова нет", async () => {
+    await offer();
+    await endpoint.restartPreview(lead.id);
+    expect((await endpoint.status(lead.id))?.messengerHandoff).toBeNull();
+  });
+
+  it("сбой после нажатия кнопки — кнопки остаются, повторное нажатие доводит продолжение", async () => {
+    await offer();
+    calls.length = 0;
+    const signal = endpoint.flow.signal;
+    endpoint.flow.signal = async () => {
+      throw new Error("сценарий недоступен");
+    };
+    try {
+      await expect(endpoint.takeMessengerHandoff(lead.id, "telegram")).rejects.toThrow();
+    } finally {
+      endpoint.flow.signal = signal;
+    }
+    expect((await endpoint.status(lead.id))?.messengerHandoff).toMatchObject({ state: "offered" });
+
+    await endpoint.takeMessengerHandoff(lead.id, "telegram");
+    await endpoint.flow.settled();
+    expect(calls).toHaveLength(1);
+    expect((await endpoint.status(lead.id))?.messengerHandoff).toMatchObject({ state: "taken", channel: "telegram" });
   });
 });

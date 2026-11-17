@@ -78,3 +78,25 @@
 /* Отправлять нечего: кнопка тихая, без чёрного пятна в пустом поле */
 .web-chat__field-actions .web-chat__send:disabled { background: var(--yk-surface-2); color: var(--yk-faint); opacity: 1; }
 .web-chat__field--disabled .web-chat__send:disabled { background: var(--yk-surface-3); }
+
+/* Переход в мессенджер: на месте поля ввода. Мессенджеры — плитками со знаком в один ряд: узнаются с первого взгляда */
+.web-chat__handoff { margin: 0 var(--yk-space-2); }
+.web-chat__messengers { display: flex; justify-content: center; gap: var(--yk-space-2); }
+.web-chat__messenger {
+  flex: 1 1 0; min-width: 0; max-width: 200px; min-height: 44px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--yk-space-2);
+  padding: var(--yk-space-3) var(--yk-space-2);
+  border: 1px solid var(--yk-border); border-radius: var(--yk-radius-md); background: var(--yk-surface);
+  color: var(--yk-text); font-weight: 600; text-decoration: none; text-align: center;
+  transition: border-color 120ms, background-color 120ms;
+}
+.web-chat__messenger span { overflow-wrap: anywhere; }
+.web-chat__messenger svg { flex: none; }
+@media (hover: hover) { .web-chat__messenger:hover { border-color: var(--yk-border-strong); background: var(--yk-surface-2); } }
+.web-chat__messenger:active { background: var(--yk-surface-2); }
+.web-chat__messenger:focus-visible { outline: 2px solid var(--yk-accent); outline-offset: 2px; }
+/* После перехода — одна кнопка в строку: знак и «Перейти в …» */
+.web-chat__messenger--wide { flex-direction: row; max-width: none; width: 100%; padding: var(--yk-space-2) var(--yk-space-3); }
+.web-chat__handoff-moved { display: flex; align-items: center; gap: var(--yk-space-3); margin-bottom: var(--yk-space-3); }
+.web-chat__handoff-moved svg { flex: none; }
+.web-chat__handoff .web-chat__handoff-moved p { margin: 0; }

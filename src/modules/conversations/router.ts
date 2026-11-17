@@ -1,13 +1,12 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, ne, notInArray } from "drizzle-orm";
 import { tagPassageText } from "../purchases/outgoing";
-import { bots, enqueueOutbound, findBotWithCredentials, outboundMessages, type ChannelAdapters } from "../channels";
+import { AUTOREPLY_TEXT, autoreplyTextOf, bots, enqueueOutbound, findBotWithCredentials, outboundMessages, type ChannelAdapters } from "../channels";
 import type { AgentFlowHandle, FlowEndInput } from "@ykurilov/agent-chat-flows";
 import type { HeadlessConsultant } from "../consultant/headless-turn";
 import { loadLeadMagnetFlow } from "../flows/runtime";
 import { findEntryLinkByCode, getVersion, type LeadMagnetSettings } from "../lead-magnets";
 import { ensurePayloadEntryLink, type EntryLink } from "../lead-magnets/links";
 import { ENTRY_LABEL_SEPARATOR, parseLabeledStartPayload, START_PAYLOAD_LIMIT } from "../lead-magnets/start-payload";
-import { leadMagnetVersions } from "../lead-magnets/schema";
 import { markPersonBlocked, markPersonUnblocked, people, upsertPerson, type Person } from "../people";
 import type { Clock } from "../platform/clock";
 import type { TokenCipher } from "../platform/crypto";
@@ -19,11 +18,12 @@ import { recordSenlerError, SenlerError, senlerConnections, senlerGroupFor, senl
 import { buildMenu, chooseNoCodeReply, codeFromMenuPayload, findPublishedTarget, isPublishedOnBot, menuOffersSwitch, type StartTarget } from "./no-code";
 import { endActivePassages, type PassageEndStatus } from "./passage-end";
 import { loadWithoutCodeHistory, REOPEN_WINDOW_MS, whoWritesWithoutCode } from "./returning";
-import { afterStartOver } from "./start-over";
-import { inboundMessages, passages, type InboundRoute, type PassageStatus } from "./schema";
+import { returnGoesToInbox } from "./program-return";
+import { chatOwnerOf, inboundMessages, passages, type InboundRoute } from "./schema";
+import { findHandoffByCode, takeMessengerHandoff, type HandoffTake } from "../messenger-handoff/handoff";
+import { messengerHandoffs } from "../messenger-handoff/schema";
 
-/** Автоответ человеку, который пишет после завершённого лидмагнита. */
-export const AUTOREPLY_TEXT = "Спасибо! Сейчас пока не могу говорить, но в ближайшее время я с вами свяжусь!";
+export { AUTOREPLY_TEXT } from "../channels";
 
 export interface RouterDependencies {
   db: Database;
@@ -78,17 +78,32 @@ export async function routeInboundMessage(deps: RouterDependencies, inboundMessa
       const [bot] = await tx.select().from(bots).where(eq(bots.id, inbound.botId));
       if (!bot) throw new Error(`Бот ${inbound.botId} не найден`);
       const now = deps.clock.now();
-      const person = await upsertPerson(tx, {
+      let person = await upsertPerson(tx, {
         channel: bot.channel,
         botId: bot.id,
         externalUserId: inbound.externalUserId,
         displayName: inbound.userName,
         at: now,
       });
+      // «Старт» по кнопке веб-чата: человек из веб-чата становится этим аккаунтом мессенджера, разговор — его прежний
+      const found = inbound.kind === "message" && inbound.startCode && bot.channel !== "web" ? await findHandoffByCode(tx, inbound.startCode) : null;
+      const handoff = found
+        ? await takeMessengerHandoff(tx, {
+            handoff: found,
+            messenger: person,
+            bot,
+            inbound,
+            now,
+            isPublishedOnBot: (leadMagnetId) => isPublishedOnBot(tx, bot.id, leadMagnetId),
+            endFlow: (input) => void flowEnds.push(input),
+          })
+        : null;
+      if (handoff && handoff.kind !== "foreign") person = handoff.person;
 
       const decision = await decide(tx, deps, {
         inbound,
         person,
+        handoff,
         bot,
         now,
         privacyPolicyUrl: appSettings.privacyPolicyUrl,
@@ -121,6 +136,9 @@ export async function routeInboundMessage(deps: RouterDependencies, inboundMessa
 /** Брошенный разговор, который можно продолжить: сценарий его чата открывается заново. */
 interface ReopenCandidate {
   passageId: string;
+  /** Человек: его строка — замок маршрутизации. */
+  personId: string;
+  /** Владелец чата SDK (`chatOwnerOf`). */
   ownerId: string;
   chatId: string;
   now: Date;
@@ -128,6 +146,7 @@ interface ReopenCandidate {
 
 interface ReopenOutcome {
   passageId: string;
+  personId: string;
   ownerId: string;
   chatId: string;
   reopened: boolean;
@@ -149,6 +168,7 @@ async function reopenConversation(deps: RouterDependencies, candidate: ReopenCan
   });
   return {
     passageId: candidate.passageId,
+    personId: candidate.personId,
     ownerId: candidate.ownerId,
     chatId: candidate.chatId,
     reopened: result.reopened || result.reason === "not_ended",
@@ -171,7 +191,7 @@ async function flowIsOpen(deps: RouterDependencies, ownerId: string, chatId: str
 async function closeUnusedReopen(deps: RouterDependencies, outcome: ReopenOutcome, routed: InboundRow): Promise<void> {
   if (!outcome.reopened || routed.passageId === outcome.passageId) return;
   await deps.db.transaction(async (tx) => {
-    await tx.select({ id: people.id }).from(people).where(eq(people.id, outcome.ownerId)).for("update");
+    await tx.select({ id: people.id }).from(people).where(eq(people.id, outcome.personId)).for("update");
     const [passage] = await tx.select({ status: passages.status }).from(passages).where(eq(passages.id, outcome.passageId));
     if (passage?.status === "active") return;
     await deps.flow.end({ ownerId: outcome.ownerId, chatId: outcome.chatId, reason: outcome.endReason });
@@ -194,6 +214,8 @@ async function decide(
   input: {
     inbound: InboundRow;
     person: Person;
+    /** «Старт» с кодом перехода из веб-чата (`takeMessengerHandoff`); обычное входящее — `null`. */
+    handoff: HandoffTake | null;
     bot: typeof bots.$inferSelect;
     now: Date;
     privacyPolicyUrl: string | null;
@@ -210,11 +232,11 @@ async function decide(
   if (inbound.kind === "blocked") {
     await markPersonBlocked(tx, person.id, now);
     const [blocked] = await tx
-      .select({ chatId: passages.chatId })
+      .select({ chatId: passages.chatId, personId: passages.personId, chatOwnerId: passages.chatOwnerId })
       .from(passages)
       .where(and(eq(passages.personId, person.id), eq(passages.status, "active")));
     await endActivePassages(tx, eq(passages.personId, person.id), "blocked", now);
-    if (blocked) input.endFlow({ ownerId: person.id, chatId: blocked.chatId, reason: "blocked" });
+    if (blocked) input.endFlow({ ownerId: chatOwnerOf(blocked), chatId: blocked.chatId, reason: "blocked" });
     return { route: "ignored" };
   }
   if (inbound.kind === "unblocked") {
@@ -274,7 +296,13 @@ async function decide(
     return { route: isButton ? "ignored" : "inbox" };
   };
 
-  const found = startCode ? await publishedByCode(tx, startCode) : null;
+  const handoff = input.handoff;
+  if (handoff && handoff.kind !== "foreign" && active?.id === handoff.handoff.passageId)
+    // Перешёл — разговор продолжается здесь, продолжение пишет агент (`messenger-handoff-continue`); повтор «Старта» — как
+    // та же ссылка посреди разговора
+    return handoff.kind === "taken" ? { route: "ignored", passageId: active.id } : { route: "ignored", repeatLastMessage: true };
+  // Код перехода чужой или его разговор уже закончился — как ссылка его лидмагнита
+  const found = handoff ? await handoffTarget(tx, handoff.handoff.passageId) : startCode ? await publishedByCode(tx, startCode) : null;
   // Ссылка и кнопка запускают только лидмагнит, опубликованный на этом боте: старая ссылка в отвязанный или заменённый
   // бот — как неизвестный код
   // Веб-чат есть у любого опубликованного лидмагнита: к нему не привязывают
@@ -282,13 +310,13 @@ async function decide(
   if (target) {
     // Та же ссылка посреди разговора — разговор продолжается, человеку напоминаем, на чём остановились
     if (active?.leadMagnetId === target.leadMagnetId) return { route: "ignored", repeatLastMessage: true };
-    // Программа этого лидмагнита у человека уже закончилась: заново не начинаем, сообщение уходит эксперту,
-    // человеку — автоответ, как вернувшемуся без кода
-    if (await programEnded(tx, person, target.leadMagnetId)) return { route: "inbox", autoreply: await autoreplyToday() };
+    // Программа этого лидмагнита у человека уже закончилась: по настройке лидмагнита сообщение уходит эксперту,
+    // человеку — автоответ, как вернувшемуся без кода; или лидмагнит начинается заново — новым прохождением, как первый старт
+    if (await returnGoesToInbox(tx, person, target)) return { route: "inbox", autoreply: await autoreplyToday() };
     if (active) {
       await endPassage(tx, active, "not_completed", now);
       // Ссылка другого лидмагнита: старый разговор сценария закончен, касаний и сроков у него больше нет
-      input.endFlow({ ownerId: person.id, chatId: active.chatId, reason: "switched", outcome: `перешёл на лидмагнит ${target.leadMagnetId}` });
+      input.endFlow({ ownerId: chatOwnerOf(active), chatId: active.chatId, reason: "switched", outcome: `перешёл на лидмагнит ${target.leadMagnetId}` });
     }
     return start(target);
   }
@@ -322,11 +350,14 @@ async function decide(
   if (writer.kind === "reopen" && !isStartCommand) {
     const outcome = input.reopenOutcome;
     if (!outcome) {
-      const [ended] = await tx.select({ chatId: passages.chatId }).from(passages).where(eq(passages.id, writer.passageId));
-      return { reopen: { passageId: writer.passageId, ownerId: person.id, chatId: ended!.chatId, now } };
+      const [ended] = await tx
+        .select({ chatId: passages.chatId, personId: passages.personId, chatOwnerId: passages.chatOwnerId })
+        .from(passages)
+        .where(eq(passages.id, writer.passageId));
+      return { reopen: { passageId: writer.passageId, personId: person.id, ownerId: chatOwnerOf(ended!), chatId: ended!.chatId, now } };
     }
     // Сценарий проверяем ещё раз под блокировкой человека (upsertPerson): соседняя копия могла закрыть его обратно
-    if (outcome.passageId === writer.passageId && outcome.reopened && (await flowIsOpen(deps, person.id, outcome.chatId))) {
+    if (outcome.passageId === writer.passageId && outcome.reopened && (await flowIsOpen(deps, outcome.ownerId, outcome.chatId))) {
       await tx
         .update(passages)
         .set({ status: "active", endedAt: null, ...(!isButton && { lastPersonMessageAt: now }) })
@@ -341,26 +372,12 @@ async function decide(
   return { route: "inbox", autoreply: await autoreplyToday() };
 }
 
-/** Программа, брошенная ради другого лидмагнита («не завершил»), не закончилась: возврат по ссылке начинает её заново. */
-const PROGRAM_END_STATUSES: PassageStatus[] = ["completed", "term_ended", "blocked"];
-
-/**
- * У человека было прохождение этого лидмагнита на снимке с программой, и оно закончилось: согласием, сроком или
- * блокировкой. Прохождения до «Начать заново» не считаются.
- */
-export async function programEnded(tx: DatabaseExecutor, person: Pick<Person, "id" | "conversationsResetAt">, leadMagnetId: string): Promise<boolean> {
-  const ended = await tx
-    .select({ settings: leadMagnetVersions.settings })
-    .from(passages)
-    .innerJoin(leadMagnetVersions, eq(leadMagnetVersions.id, passages.snapshotId))
-    .where(
-      afterStartOver(
-        passages.startedAt,
-        person.conversationsResetAt,
-        and(eq(passages.personId, person.id), eq(passages.leadMagnetId, leadMagnetId), inArray(passages.status, PROGRAM_END_STATUSES)),
-      ),
-    );
-  return ended.some((row) => row.settings.flow?.schedule ?? row.settings.program);
+/** Лидмагнит разговора, из которого показан переход, с источником этого разговора. Снят с публикации — `null`. */
+async function handoffTarget(tx: DatabaseExecutor, passageId: string): Promise<PayloadStartTarget | null> {
+  const [passage] = await tx.select({ leadMagnetId: passages.leadMagnetId, entryLinkId: passages.entryLinkId }).from(passages).where(eq(passages.id, passageId));
+  const published = passage && (await findPublishedTarget(tx, passage.leadMagnetId));
+  if (!published) return null;
+  return { ...published, ...(passage.entryLinkId && { entryLinkId: passage.entryLinkId }) };
 }
 
 export interface PayloadStartTarget extends StartTarget {
@@ -428,6 +445,17 @@ async function followUp(deps: RouterDependencies, inbound: InboundRow, privacyPo
   if (inbound.kind === "button") await answerButton(deps, inbound);
   if (!inbound.personId) return;
 
+  if (inbound.kind === "message" && inbound.startCode && inbound.route === "ignored" && inbound.passageId) {
+    const [handoff] = await deps.db.select({ id: messengerHandoffs.id }).from(messengerHandoffs).where(eq(messengerHandoffs.takenInboundId, inbound.id));
+    if (handoff) {
+      await deps.queue.enqueue("messenger-handoff-continue", { handoffId: handoff.id }, { singletonKey: handoff.id });
+      // Перешёл из веб-чата — пришёл по ссылке, как все: в группу Senler бота
+      const [passage] = await deps.db.select({ id: passages.id, leadMagnetId: passages.leadMagnetId }).from(passages).where(eq(passages.id, inbound.passageId));
+      if (passage) await queueSenlerSubscribe(deps, inbound.botId, passage);
+      return;
+    }
+  }
+
   if (inbound.startedPassage && inbound.passageId) {
     const [passage] = await deps.db.select().from(passages).where(eq(passages.id, inbound.passageId));
     const snapshot = passage && (await getVersion(deps.db, passage.snapshotId));
@@ -468,11 +496,12 @@ async function followUp(deps: RouterDependencies, inbound: InboundRow, privacyPo
   }
 
   if (inbound.autoreply) {
+    const [bot] = await deps.db.select({ autoreplyText: bots.autoreplyText }).from(bots).where(eq(bots.id, inbound.botId));
     await enqueueOutbound(deps, {
       botId: inbound.botId,
       personId: inbound.personId,
       kind: "autoreply",
-      text: AUTOREPLY_TEXT,
+      text: bot ? autoreplyTextOf(bot) : AUTOREPLY_TEXT,
       idempotencyKey: `autoreply:${inbound.id}`,
     });
     return;
@@ -530,14 +559,18 @@ async function endFlows(deps: RouterDependencies, ends: FlowEndInput[]): Promise
   }
 }
 
-/** Повтор последнего доставленного сообщения идущего разговора: текст, картинка, кнопки и ролик как были. Ещё ничего не ушло — оно в пути. */
+/**
+ * Повтор последнего доставленного сообщения идущего разговора: текст, картинка, кнопки и ролик как были.
+ * Ещё ничего не ушло — оно в пути (после перехода из веб-чата веб-сообщения в мессенджер не повторяются).
+ */
 async function repeatLastMessage(deps: RouterDependencies, inbound: InboundRow, personId: string): Promise<void> {
+  const otherWebBots = deps.db.select({ id: bots.id }).from(bots).where(and(eq(bots.channel, "web"), ne(bots.id, inbound.botId)));
   const [last] = await deps.db
     .select({ message: outboundMessages })
     .from(outboundMessages)
     .innerJoin(passages, eq(passages.id, outboundMessages.passageId))
-    .where(and(eq(passages.personId, personId), eq(passages.status, "active"), eq(outboundMessages.status, "sent")))
-    .orderBy(desc(outboundMessages.sentAt))
+    .where(and(eq(passages.personId, personId), eq(passages.status, "active"), eq(outboundMessages.status, "sent"), notInArray(outboundMessages.botId, otherWebBots)))
+    .orderBy(desc(outboundMessages.sentAt), desc(outboundMessages.createdAt))
     .limit(1);
   if (!last) return;
   const { message } = last;
@@ -565,7 +598,7 @@ async function pinConversation(deps: RouterDependencies, passage: PassageRow, st
   const loaded = await loadLeadMagnetFlow(deps.db, passage.chatId);
   if (!loaded) return;
   try {
-    await deps.flow.adopt({ ownerId: passage.personId, chatId: passage.chatId, ...loaded, startedAt, lastAgentAt: deps.clock.now() });
+    await deps.flow.adopt({ ownerId: chatOwnerOf(passage), chatId: passage.chatId, ...loaded, startedAt, lastAgentAt: deps.clock.now() });
   } catch (error) {
     if (!isFlowProblem(error)) throw error;
     // Сценарий снимка с ошибкой — повтор не поможет: разговор идёт без сценария, первый ход попробует закрепить его снова

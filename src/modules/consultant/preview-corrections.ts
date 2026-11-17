@@ -13,6 +13,7 @@ import type { FlowRunView } from "@ykurilov/agent-chat-flows";
 import {
   answerActions,
   correctionContext,
+  correctionIntentOf,
   draftVersionAt,
   editedAnswersOfChat,
   recordAnswerEdit,
@@ -83,6 +84,7 @@ export function createPreviewCorrections(deps: {
       correctedMessageId: edit.messageId,
       correctedText: edit.text,
       reason: reasonOf(edit.data),
+      intent: correctionIntentOf(edit.data),
       answerKind: forClient ? "reply" : answerKindOf(original, lead.draft.farewellMessage),
       context: correctionContext(forClient ? path.map(asConsultantSees) : path, corrected.id),
       actions: forClient ? [] : answerActions(source.parts),

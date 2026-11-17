@@ -1,0 +1,1 @@
+ALTER TABLE "app"."answer_corrections" ADD COLUMN "intent" text DEFAULT 'auto' NOT NULL;

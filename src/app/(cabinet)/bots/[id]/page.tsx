@@ -2,12 +2,12 @@ import { Suspense, type ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { Alert, Card, CardContent, CardHeader, CardTitle } from "@/ui/primitives";
 import { requireUser } from "@/modules/access";
-import { CHANNEL_LABELS, createBotServiceFromEnv } from "@/modules/channels";
+import { AUTOREPLY_TEXT, AUTOREPLY_TEXT_MAX_LENGTH, CHANNEL_LABELS, createBotServiceFromEnv } from "@/modules/channels";
 import { listBotLeadMagnets } from "@/modules/lead-magnets";
 import { getDatabase } from "@/modules/platform/db";
 import { createSenlerSettingsFromEnv } from "@/modules/senler";
 import { ArrowLink, PageHeader } from "@/ui";
-import { BotSettingsForm, DeleteBotForm } from "./bot-settings-form";
+import { AutoreplyForm, BotSettingsForm, DeleteBotForm } from "./bot-settings-form";
 import { PhotosKeyForm } from "./photos-key-form";
 import { SenlerDisconnectForm, SenlerGroupsForm, SenlerKeyForm } from "./senler-form";
 
@@ -52,6 +52,14 @@ export default async function BotPage({ params }: { params: Promise<{ id: string
                 label: lead.published ? lead.name : `${lead.name} (не опубликован)`,
               }))}
             />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Если человек пишет после конца программы</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <AutoreplyForm botId={bot.id} autoreplyText={bot.autoreplyText} defaultText={AUTOREPLY_TEXT} maxLength={AUTOREPLY_TEXT_MAX_LENGTH} />
           </CardContent>
         </Card>
         {bot.channel === "vk" ? (

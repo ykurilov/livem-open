@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { seal } from "../../src/auth/core/cookie-seal";
+import { listCorrections } from "../../src/modules/corrections";
 import { seedCorrections } from "../../src/modules/corrections/test-fixtures";
 import { createLeadMagnet, saveDraft } from "../../src/modules/lead-magnets";
 import { connectDatabase, type DatabaseConnection } from "../../src/modules/platform/db";
@@ -132,6 +133,61 @@ test("«Поправить» в «Проверке»: метка «Исправ�
   const constructor = await openConstructor(page);
   await expect(constructor.getByRole("textbox")).toBeVisible({ timeout: 30_000 });
   await expect(constructor.getByRole("button", { name: /Разобрать правки/ })).toHaveCount(0);
+});
+
+test("«Что сделать с правкой»: выбор пишется в правку, «Сделать заготовку» сразу открывает окно заготовки с ответом; повторная правка показывает сохранённый выбор", async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const lead = await createLeadMagnet(connection.db, { name: "Лидмагнит для заготовки из правки" });
+  await saveDraft(connection.db, lead.id, { ...lead.draft, instruction: "Ты консультант.", firstMessage: "Здравствуйте!" }, "manual");
+  const corrected = "Расскажите, что вы уже пробовали, и я подскажу первый шаг.";
+  // Метки исправленных ответов грузятся дольше, чем эксперт правит ответ: окно заготовки всё равно открывается
+  let saving = false;
+  let releaseLabels!: () => void;
+  const labelsHeld = new Promise<void>((resolve) => (releaseLabels = resolve));
+  await page.route(/\/corrections$/, async (route) => {
+    if (route.request().method() === "GET" && !saving) await labelsHeld;
+    await route.continue();
+  });
+
+  await page.goto(`/lead-magnets/${lead.id}`);
+  await openTab(page, "Разговор");
+  const preview = page.getByRole("tabpanel", { name: "Разговор" });
+  await expect(preview.getByRole("paragraph").filter({ hasText: "Здравствуйте!" })).toBeVisible({ timeout: 30_000 });
+  await preview.getByRole("button", { name: "Поправить" }).last().click();
+  const editor = page.getByRole("dialog", { name: "Поправить" });
+  await editor.getByRole("textbox", { name: "Поправить" }).fill(corrected);
+  const choice = editor.getByRole("radiogroup", { name: "Что сделать с правкой" });
+  await expect(choice.getByRole("radio", { name: /^Пусть конструктор решит/ })).toBeChecked();
+  await choice.getByRole("radio", { name: /^Сделать заготовку/ }).check();
+  await hideDevIndicator(page);
+  await page.screenshot({ path: test.info().outputPath("formulas-correction-choice.png"), animations: "disabled", caret: "hide" });
+  saving = true;
+  await editor.getByRole("button", { name: "Сохранить" }).click();
+  await expect(editor).toBeHidden({ timeout: 30_000 });
+
+  const card = page.getByRole("dialog", { name: "Новая заготовка" });
+  await expect(card).toBeVisible({ timeout: 60_000 });
+  await expect(card.getByRole("textbox", { name: /^Текст/ })).toHaveValue(corrected);
+  await page.screenshot({ path: test.info().outputPath("formulas-card-from-correction.png"), animations: "disabled", caret: "hide" });
+  const [correction] = await listCorrections(connection.db, lead.id);
+  expect(correction).toMatchObject({ correctedText: corrected, intent: "card" });
+  releaseLabels();
+  await card.getByRole("button", { name: "Отмена" }).click();
+  await expect(card).toBeHidden();
+
+  // Повторная правка того же ответа: в окне прежний выбор; сменили на «Пусть конструктор решит» — окно заготовки не открывается
+  const recorrected = "Что вы уже пробовали? Подскажу первый шаг.";
+  await preview.getByRole("button", { name: "Поправить" }).last().click();
+  await editor.getByRole("textbox", { name: "Поправить" }).fill(recorrected);
+  await expect(choice.getByRole("radio", { name: /^Сделать заготовку/ })).toBeChecked();
+  await choice.getByRole("radio", { name: /^Пусть конструктор решит/ }).check();
+  const relabeled = page.waitForResponse((response) => /\/corrections$/.test(response.url()) && response.request().method() === "GET");
+  await editor.getByRole("button", { name: "Сохранить" }).click();
+  await expect(editor).toBeHidden({ timeout: 30_000 });
+  await relabeled;
+  expect((await listCorrections(connection.db, lead.id))[0]).toMatchObject({ correctedText: recorrected, intent: "auto" });
+  await expect(card).toBeHidden();
 });
 
 test("окно правки ответа на телефоне — в узкой вёрстке", async ({ page }) => {

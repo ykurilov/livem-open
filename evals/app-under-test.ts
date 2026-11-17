@@ -241,6 +241,7 @@ export async function startAppUnderTest(input: {
       // Напоминание об оплате курса («беру», а оплаты нет): уходит назавтра сообщением первым
       "payment-reminder": ({ passageId }) => dialog.remindPayment(passageId),
       "purchase-congratulate": ({ passageId }) => dialog.congratulatePurchase(passageId),
+      "messenger-handoff-continue": ({ handoffId }) => dialog.continueInMessenger(handoffId),
     };
 
     const delivered: TimedBotMessage[] = [];

@@ -5,7 +5,7 @@ import { getCorrection } from "../corrections";
 import { loadCurrentBranch, type AnswerEditedInput, type ChatStorage, type ModelCatalog, type ModelChoice } from "@ykurilov/agent-chat-core";
 import { flowTestChatData } from "@ykurilov/agent-chat-flows";
 import { createChatHandler, createChatServer, type ChatHandler } from "@ykurilov/agent-chat-server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { Pool } from "pg";
 import { createFlowLog } from "../flows/flow-log";
 import { moveTestChatToDraft } from "../flows/chat-migration";
@@ -33,6 +33,12 @@ import { suggestClientReply } from "./autoreply";
 import { withDirectModel } from "../platform/direct-model";
 import { buildConsultantTail } from "./tail";
 import { personLinkFromEnv } from "./person-link";
+import { APP_EVENT_NOTICE } from "./headless-turn";
+import { CHANNEL_LABELS } from "../channels/channel";
+import { enabledMessengerHandoff, MESSENGER_HANDOFF_EVENT, type HandoffMessenger } from "../messenger-handoff/setting";
+import { handoffNotice } from "../messenger-handoff/notice";
+import type { MessengerHandoffPort } from "../messenger-handoff/tool";
+import type { PreviewConversation } from "./preview-store";
 
 export const PREVIEW_BASE_PATH = "/api/preview";
 
@@ -61,7 +67,14 @@ export interface PreviewStatus {
   day: number | null;
   days: number | null;
   finished: boolean;
+  /** Переход в мессенджер: консультант показал кнопки или эксперт уже нажал одну; нет — `null`. */
+  messengerHandoff: PreviewMessengerHandoff | null;
 }
+
+/** Кнопки мессенджеров в «Проверке»: все выбранные в настройке — публикация для проверки не нужна. */
+export type PreviewMessengerHandoff =
+  | { state: "offered"; buttons: Array<{ channel: HandoffMessenger; title: string }> }
+  | { state: "taken"; channel: HandoffMessenger; title: string };
 
 export interface PreviewEndpoint {
   fetch(request: Request): Promise<Response>;
@@ -74,6 +87,12 @@ export interface PreviewEndpoint {
   /** «Начать заново»: новый разговор с первым сообщением лидмагнита. */
   restartPreview(leadMagnetId: string): Promise<string>;
   status(leadMagnetId: string): Promise<PreviewStatus | null>;
+  /**
+   * Эксперт нажал кнопку мессенджера, которую показал консультант: как «Старт» в боте. Сценарий получает событие
+   * `messenger_handoff`, консультант пишет первым и продолжает разговор; дальше он идёт как в мессенджере. Повтор — без
+   * изменений. Кнопок не было или мессенджер не выбран в настройке — ошибка.
+   */
+  takeMessengerHandoff(leadMagnetId: string, channel: HandoffMessenger): Promise<void>;
   /**
    * «Продолжить разговор»: завершённый тестовый разговор снова принимает сообщения. Консультант продолжает с того места,
    * где закончил; брошенный («не завершил») сценарий открывается заново. Незавершённый — ничего не меняется.
@@ -163,6 +182,22 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
   // Промах кэша — с днём программы и нодой чата: так промахи раскладываются по дням и нодам
   const logError = cacheMissLog({ ownerOf, readRun: (ownerId, chatId) => flow.readRun(ownerId, chatId), log: (line) => console.error(line) });
 
+  // «Проверка» изображает веб-чат до нажатия кнопки: кнопки всех выбранных мессенджеров, без публикации
+  const previewMessengerHandoff = (settings: LeadMagnetSettings): MessengerHandoffPort => ({
+    inWebChat: async ({ chatId }) => !(await readPreviewConversation(db, chatId))?.messengerChannel,
+    async offer({ chatId }) {
+      const setting = enabledMessengerHandoff(settings);
+      if (!setting) return { ok: false, reason: "off" };
+      const [offered] = await db
+        .update(previewConversations)
+        .set({ messengerOfferedAt: clock.now() })
+        .where(and(eq(previewConversations.chatId, chatId), isNull(previewConversations.messengerChannel)))
+        .returning({ chatId: previewConversations.chatId });
+      if (!offered) return { ok: false, reason: "taken" };
+      return { ok: true, buttons: setting.channels.map((channel) => ({ title: CHANNEL_LABELS[channel] })) };
+    },
+  });
+
   type PreviewServer = ReturnType<typeof createChatServer>;
   const servers = new VersionCache<PreviewServer>(SERVICES_IN_MEMORY);
   const serverFor = ({ key, settings, knowledge }: LiveConsultantVersion): Promise<PreviewServer> =>
@@ -204,6 +239,7 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
               stepContext,
               dayOf,
               knowledge,
+              messengerHandoff: previewMessengerHandoff(settings),
             }),
             // Инструкции правят на ходу: модель видит только текущую карточку шага, прошлые ответы — без старых правил
             contextBlocksHistory: { latest: ["flow:state", SALES_CARDS_BLOCK_KEY] },
@@ -447,6 +483,22 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
             { status: 409 },
           );
       }
+      // Кнопки мессенджеров показаны — поле ввода закрыто, как в веб-чате. Правка реплики или «Переделать» кнопки убирают
+      if (previewHandoffOf(state, lead.draft)?.state === "offered") {
+        if (segments[1] === "messages")
+          return Response.json(
+            {
+              error: {
+                kind: "messenger_offered",
+                message:
+                  "Консультант показал кнопки мессенджеров: человек в веб-чате сейчас может только нажать кнопку. " +
+                  "Нажмите кнопку мессенджера над чатом, чтобы проверить продолжение, или «Начать проверку заново».",
+              },
+            },
+            { status: 409 },
+          );
+        await db.update(previewConversations).set({ messengerOfferedAt: null }).where(eq(previewConversations.chatId, chatId));
+      }
       // Инструкции правили — разговор и с прошлой реплики, и дальше идёт по текущему черновику
       await moveTestChatToDraft(flow, { leadMagnetId: lead.id, chatId, draftVersionId: lead.draftVersionId, draftFlow: lead.draft.flow })
         .catch((error: unknown) => console.error(`Тестовый чат ${chatId} не переведён на черновик:`, error instanceof Error ? error.message : error));
@@ -479,7 +531,44 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
         days: lead.draft.flow.schedule?.lengthDays ?? null,
         // Конец сценария приложение записывает в `finishedAt` (`onFinish`); «Продолжить разговор» его снимает
         finished: Boolean(state?.finishedAt),
+        messengerHandoff: previewHandoffOf(state, lead.draft),
       };
+    },
+
+    async takeMessengerHandoff(leadMagnetId, channel) {
+      const lead = await getLeadMagnet(db, leadMagnetId);
+      if (!lead?.previewChatId) throw new Error(`У лидмагнита ${leadMagnetId} нет тестового разговора`);
+      const chatId = lead.previewChatId;
+      if (!enabledMessengerHandoff(lead.draft)?.channels.includes(channel)) throw new Error(`Переход в ${channel} не выбран в настройках`);
+      const state = await readPreviewConversation(db, chatId);
+      if (state?.messengerChannel) return;
+      if (!state?.messengerOfferedAt) throw new Error("Консультант ещё не показал кнопки мессенджеров");
+      const [taken] = await db
+        .update(previewConversations)
+        .set({ messengerChannel: channel })
+        .where(and(eq(previewConversations.chatId, chatId), isNull(previewConversations.messengerChannel)))
+        .returning({ chatId: previewConversations.chatId });
+      if (!taken) return;
+      const ownerId = await ownerOf(chatId);
+      await moveTestChatToDraft(flow, { leadMagnetId: lead.id, chatId, draftVersionId: lead.draftVersionId, draftFlow: lead.draft.flow })
+        .catch((error: unknown) => console.error(`Тестовый чат ${chatId} не переведён на черновик:`, error instanceof Error ? error.message : error));
+      try {
+        // Как «Старт» в боте: сначала событие сценария, потом консультант продолжает первым
+        await flow.signal({ ownerId, chatId, name: MESSENGER_HANDOFF_EVENT, data: { channel }, wakeAgent: false });
+        tails.set(chatId, null);
+        await (await serverOfChat(chatId)).service.deliverNotices({
+          ownerId,
+          chatId,
+          notices: [{ kind: "app", name: APP_EVENT_NOTICE, title: handoffNotice(channel) }],
+          wakeAgent: true,
+          awaitAnswer: true,
+          deliveryKey: `handoff:${chatId}`,
+        });
+      } catch (error) {
+        // Продолжение не случилось — кнопки снова на месте, повторное нажатие доведёт его
+        await db.update(previewConversations).set({ messengerChannel: null }).where(eq(previewConversations.chatId, chatId));
+        throw error;
+      }
     },
 
     async suggestReply(chatId) {
@@ -536,4 +625,12 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
 async function drainStream(stream: ReadableStream<unknown>): Promise<void> {
   const reader = stream.getReader();
   while (!(await reader.read()).done);
+}
+
+/** Кнопки мессенджеров тестового разговора: показаны консультантом или уже нажаты. Настройку выключили — кнопок нет. */
+function previewHandoffOf(state: PreviewConversation | null, settings: LeadMagnetSettings): PreviewMessengerHandoff | null {
+  if (state?.messengerChannel) return { state: "taken", channel: state.messengerChannel, title: CHANNEL_LABELS[state.messengerChannel] };
+  const setting = enabledMessengerHandoff(settings);
+  if (!state?.messengerOfferedAt || !setting) return null;
+  return { state: "offered", buttons: setting.channels.map((channel) => ({ channel, title: CHANNEL_LABELS[channel] })) };
 }

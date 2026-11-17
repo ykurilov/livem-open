@@ -4,7 +4,7 @@
 import type { AgentFlowHandle } from "@ykurilov/agent-chat-flows";
 import { asc, eq } from "drizzle-orm";
 import type { Pool } from "pg";
-import { passages } from "../conversations/schema";
+import { chatOwnerOf, passages } from "../conversations/schema";
 import type { Database } from "../platform/db";
 import { readPassagePlacement, type PassagePlacement } from "./passage-placement";
 import { agentFlowOf, loadLeadMagnetFlow } from "./runtime";
@@ -88,7 +88,7 @@ export async function adoptRunningChats(input: AdoptRunningChatsInput): Promise<
       continue;
     }
     try {
-      const { adopted } = await input.flow.adopt({ ownerId: passage.personId, chatId: passage.chatId, ...loaded, ...placement });
+      const { adopted } = await input.flow.adopt({ ownerId: chatOwnerOf(passage), chatId: passage.chatId, ...loaded, ...placement });
       report.push({ ...planned, outcome: adopted ? "adopted" : "already", dueAt: await dueAtOf(pool, passage.chatId) });
     } catch (error) {
       report.push({ ...planned, outcome: "failed", error: errorText(error) });

@@ -109,11 +109,12 @@ test("ссылка с меткой попадает в отчёт; бот в р�
   // Режим «меню» на экране бота; удалить бота с опубликованными нельзя
   await page.goto(`/bots/${bot!.id}`);
   await page.getByRole("combobox", { name: "Что делает бот без кода" }).selectOption({ label: "Меню" });
-  await page.getByRole("button", { name: "Сохранить" }).click();
-  await expect(page.getByText("Сохранено")).toBeVisible({ timeout: 30_000 });
+  const noCodeSettings = page.getByTestId("no-code-settings");
+  await noCodeSettings.getByRole("button", { name: "Сохранить" }).click();
+  await expect(noCodeSettings.getByText("Сохранено")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("combobox", { name: "Что делает бот без кода" }), "после сохранения выбор остаётся на экране").toHaveValue("menu");
   await page.getByRole("combobox", { name: "Что делает бот без кода" }).selectOption({ label: "Ничего" });
-  await expect(page.getByText("Сохранено"), "новый выбор ещё не сохранён").toBeHidden();
+  await expect(noCodeSettings.getByText("Сохранено"), "новый выбор ещё не сохранён").toBeHidden();
   await page.getByRole("combobox", { name: "Что делает бот без кода" }).selectOption({ label: "Меню" });
   // Удалить нельзя — видно сразу: кнопка выключена, рядом причина и какие лидмагниты снять с публикации
   const deleteBot = page.getByRole("button", { name: "Удалить бота" });

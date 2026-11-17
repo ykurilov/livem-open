@@ -27,8 +27,13 @@ export const passages = appSchema.table(
       .notNull()
       .references(() => leadMagnetVersions.id),
     entryLinkId: uuid("entry_link_id").references(() => entryLinks.id),
-    /** Чат SDK; его владелец — человек (`people.id`). */
+    /** Чат SDK; его владелец — человек (`people.id`), кроме чатов из склеенной записи (`chatOwnerId`). */
     chatId: text("chat_id").notNull(),
+    /**
+     * Владелец чата SDK, если он не `person_id`: человек перешёл из веб-чата в мессенджер, где у него уже была своя
+     * запись с разговорами, — записи склеены, а чаты той записи остались за её прежним id (`chatOwnerOf`).
+     */
+    chatOwnerId: uuid("chat_owner_id"),
     status: text("status").$type<PassageStatus>().notNull().default("active"),
     currentStageId: text("current_stage_id"),
     stageHistory: jsonb("stage_history").$type<StageHistoryEntry[]>().notNull().default([]),
@@ -185,3 +190,8 @@ export const inboundMessages = appSchema.table(
       .where(sql`${table.processedAt} is not null and ${table.followedUpAt} is null`),
   ],
 );
+
+/** Владелец чата SDK прохождения: обычно сам человек, у склеенной записи — её прежний id. */
+export function chatOwnerOf(passage: { personId: string; chatOwnerId: string | null }): string {
+  return passage.chatOwnerId ?? passage.personId;
+}

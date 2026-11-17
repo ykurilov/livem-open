@@ -142,7 +142,7 @@ function renderSalesCards(cards: LeadMagnetSettings["salesCards"], titleOf: (id:
   if (!cards?.length) return "";
   const card = (item: LeadMagnetSettings["salesCards"][number]) =>
     [
-      `### ${item.title} — ${item.stateId === null ? "шпаргалка возражений" : `этап «${titleOf(item.stateId)}»`}, ${item.verbatim ? "дословно" : "своими словами"}`,
+      `### ${item.title} — ${item.stateId === null ? "шпаргалка возражений" : `этап «${titleOf(item.stateId)}»`}, ${{ verbatim: "дословно", own_words: "своими словами", formula: "по формуле" }[item.mode]}`,
       "",
       `Когда уместна: ${item.when}`,
       "",

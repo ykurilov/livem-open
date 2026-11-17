@@ -34,7 +34,7 @@ describe("заготовка из исправленного ответа", () =
   it("текст — вариант эксперта, этап — где прозвучал ответ, название и повод — от модели", async () => {
     const prompts: unknown[] = [];
     const card = await cardFromCorrection({ direct: modelAnswering('{"title":"Дорого","when":"Человеку дорого"}', prompts), settings, correction });
-    expect(card).toEqual({ stateId: "sale", title: "Дорого", when: "Человеку дорого", text: correction.correctedText, verbatim: false });
+    expect(card).toEqual({ stateId: "sale", title: "Дорого", when: "Человеку дорого", text: correction.correctedText, mode: "own_words" });
     // Модель видит, что ответили и на что
     expect(JSON.stringify(prompts)).toContain("Дороговато для меня");
     expect(JSON.stringify(prompts)).toContain("рассрочка на 3 месяца");

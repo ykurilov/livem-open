@@ -1,8 +1,11 @@
 import type { AgentFlowHandle, FlowRevokeConfirmationInput } from "@ykurilov/agent-chat-flows";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { passages } from "../conversations/schema";
 import type { Database } from "../platform/db";
 import { FIRST_APP_ID, OWN_PUBLISHED } from "./first-app-confirmations";
+
+/** Владелец чата: человек или склеенная запись, чей это чат (`chatOwnerOf` в SQL). */
+const chatOwnerColumn = sql<string>`coalesce(${passages.chatOwnerId}, ${passages.personId})`;
 
 export class FirstAppCorrectionConflict extends Error {
   constructor(readonly status: "busy" | "stale" | "not_found") {
@@ -24,7 +27,7 @@ export async function revokeFirstAppPublication(
   if (!input.idempotencyKey.trim() || input.idempotencyKey.length > 200 || !input.reason.trim() || input.reason.length > 1000)
     throw new Error("Для исправления требуются ограниченные operation key и причина");
   const [passage] = await db.select({ id: passages.id }).from(passages).where(and(
-    eq(passages.chatId, input.chatId), eq(passages.personId, input.ownerId), eq(passages.leadMagnetId, FIRST_APP_ID),
+    eq(passages.chatId, input.chatId), eq(chatOwnerColumn, input.ownerId), eq(passages.leadMagnetId, FIRST_APP_ID),
   ));
   if (!passage) throw new FirstAppCorrectionConflict("not_found");
   const result = await flow.revokeConfirmation({ ...input, flowId: FIRST_APP_ID, ...OWN_PUBLISHED });

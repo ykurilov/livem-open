@@ -33,7 +33,7 @@ import { MESSAGE_LIMIT_REASON, passageStatusOf } from "../flows/events";
 import { noteCongratulationDelivered } from "../purchases/orders";
 import { tagPassageTexts } from "../purchases/outgoing";
 import { endActivePassages, releaseHeldMessages, type PassageEndStatus } from "./passage-end";
-import { inboundMessages, passages } from "./schema";
+import { chatOwnerOf, inboundMessages, passages } from "./schema";
 
 /** Ход остановлен вместе с работником — через столько его повторит новый. */
 const RETRY_AFTER_STOP_SECONDS = 5;
@@ -385,7 +385,7 @@ async function botOf(deps: Pick<TurnDependencies, "db">, personId: string): Prom
 async function answerTurn(deps: TurnDependencies, claim: TurnClaim): Promise<void> {
   const { passage } = claim;
   // Решение сценария о входящем: разговор закончился — эксперту; рамку дня и паузу держат ворота хода службы
-  const decision = await deps.flow.admit({ ownerId: passage.personId, chatId: passage.chatId });
+  const decision = await deps.flow.admit({ ownerId: chatOwnerOf(passage), chatId: passage.chatId });
   // Разговор закрыл сам этот ход (`finish_dialog`), а ответ не дошёл: сценарий уже закончен, но итог с прощанием доводим
   const finishing = passage.status === "completed" && Boolean(claim.turnId);
   if (decision.kind === "ended" && !finishing) return endedBeforeTurn(deps, claim, passageStatusOf(decision.reason));
@@ -395,7 +395,7 @@ async function answerTurn(deps: TurnDependencies, claim: TurnClaim): Promise<voi
   const ref = await refOf(deps, claim, answer.questionId);
   if (answer.held) {
     // Пока ход ждал тишины, эксперт ответил или разговор закончился: решение — текущее, а не с начала хода
-    const current = decision.kind === "paused" ? decision : await deps.flow.admit({ ownerId: passage.personId, chatId: passage.chatId });
+    const current = decision.kind === "paused" ? decision : await deps.flow.admit({ ownerId: chatOwnerOf(passage), chatId: passage.chatId });
     if (current.kind === "ended") return endedBeforeTurn(deps, claim, passageStatusOf(current.reason));
     if (await heldWithoutAnswer(deps, ref, current.kind === "paused"))
       await deps.queue.enqueue("inbound-turn", { passageId: passage.id }, { singletonKey: passage.id });
@@ -421,7 +421,7 @@ async function deliverAnswer(deps: TurnDependencies, ref: TurnRef, answer: TurnA
   // Ответ из finish_dialog мимо хранилища консультанта: проверяется здесь, прощание эксперта — нет
   const reply = closing
     ? await deps.consultant.checkedClosingAnswer({
-        ownerId: passage.personId,
+        ownerId: chatOwnerOf(passage),
         chatId: passage.chatId,
         messageId: answer.answerId ?? answer.questionId,
         answer: closing.answer,
@@ -502,7 +502,7 @@ async function deliverAnswer(deps: TurnDependencies, ref: TurnRef, answer: TurnA
  */
 async function endFlowAtLimit(deps: TurnDependencies, passage: PassageRow, limit: number): Promise<void> {
   try {
-    await deps.flow.end({ ownerId: passage.personId, chatId: passage.chatId, reason: MESSAGE_LIMIT_REASON, outcome: `предел сообщений человека: ${limit}` });
+    await deps.flow.end({ ownerId: chatOwnerOf(passage), chatId: passage.chatId, reason: MESSAGE_LIMIT_REASON, outcome: `предел сообщений человека: ${limit}` });
   } catch (error) {
     console.error(`Сценарий разговора ${passage.id} не закончен по пределу сообщений:`, error instanceof Error ? error.message : error);
   }
@@ -543,13 +543,13 @@ async function askConsultant(deps: TurnDependencies, claim: TurnClaim): Promise<
   const { maxMessageChars } = await readSettings(deps.db);
   // Фото клиента консультант видит, только если лидмагнит их принимает; иначе — прежняя пометка о вложении
   const { messages, images } = settings.clientImages
-    ? await attachClientImages(deps, { ownerId: passage.personId, chatId: passage.chatId, messages: claim.messages })
+    ? await attachClientImages(deps, { ownerId: chatOwnerOf(passage), chatId: passage.chatId, messages: claim.messages })
     : { messages: claim.messages, images: new Map() };
   const timeZone = await timeZoneOf(deps, passage.personId);
   return deps.consultant.runTurn({
     snapshotId: passage.snapshotId,
     settings,
-    ownerId: passage.personId,
+    ownerId: chatOwnerOf(passage),
     chatId: passage.chatId,
     // Каждое сообщение — своим сообщением SDK с id входящего, фото — его частью; пустое (без текста и вложения) модели не нужно
     messages: messages.flatMap((message) => {

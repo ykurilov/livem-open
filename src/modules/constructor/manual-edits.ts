@@ -16,7 +16,7 @@ import { deletedFieldIds, getFields } from "../people";
 import { getImages } from "../images";
 import { getVideos } from "../videos";
 import { getKnowledgeBases, knowledgeOverLimit } from "../knowledge";
-import { withoutSalesCard, withSalesCard, type SalesCard, type SalesCardInput } from "../sales-cards";
+import { withoutSalesCard, withSalesCard, type SalesCard, type SalesCardInput, type SalesCardMode } from "../sales-cards";
 import type { Database, DatabaseExecutor } from "../platform/db";
 import { AGENT_TIME_ZONE } from "../platform/models-catalog";
 
@@ -219,6 +219,8 @@ export function describeManualEdits(
 }
 
 /** Заготовки эксперта: добавленные, удалённые и что поменялось в оставшихся. */
+const MODE_CHANGE: Record<SalesCardMode, string> = { verbatim: "теперь дословно", own_words: "теперь своими словами", formula: "теперь по формуле" };
+
 function describeSalesCards(before: readonly SalesCard[], after: readonly SalesCard[], flow: AgentFlow): string[] {
   const notes: string[] = [];
   const stage = (id: string) => flow.states.find((state) => state.id === id)?.title ?? id;
@@ -232,7 +234,7 @@ function describeSalesCards(before: readonly SalesCard[], after: readonly SalesC
       ...(old.title !== card.title ? [`название ${quoteChange(old.title, card.title)}`] : []),
       ...(old.when !== card.when ? [`«когда уместна» ${quoteChange(old.when, card.when)}`] : []),
       ...(old.text !== card.text ? [`текст ${quoteChange(old.text, card.text)}`] : []),
-      ...(old.verbatim !== card.verbatim ? [card.verbatim ? "теперь дословно" : "теперь своими словами"] : []),
+      ...(old.mode !== card.mode ? [MODE_CHANGE[card.mode]] : []),
       ...(old.stateId !== card.stateId ? [`перенесена ${card.stateId === null ? "в общую шпаргалку" : `на этап «${stage(card.stateId)}»`}`] : []),
     ];
     if (changes.length > 0) notes.push(`Заготовка «${card.title}» (id ${card.id}): ${changes.join("; ")}`);

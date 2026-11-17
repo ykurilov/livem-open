@@ -50,7 +50,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   kit = await createLiveDialogKit(database);
-  deps = { db: kit.db, queue: kit.queue, clock: kit.clock, cipher: KIT_CIPHER };
+  deps = { db: kit.db, queue: kit.queue, clock: kit.clock, cipher: KIT_CIPHER, adapters: kit.dialogAdapters };
   address = `test-${randomUUID()}`;
 });
 
@@ -422,6 +422,28 @@ describe("веб-чат лидмагнита", () => {
     await open(plain.code, opened.token);
     await open(current.code, opened.token);
     expect(await webChatElsewhere(kit.db, plain.code, visitor, kit.clock.now())).toBeNull();
+  });
+
+  it("«Начать заново» после конца программы: старая ссылка не «закончена» и при идущем, и при недавно брошенном разговоре другого — программа начинается с начала", async () => {
+    const ended = await kit.publish({ name: "Марафон", program: newProgramSettings(3), returnAfterProgram: "restart" });
+    const dance = await kit.publish({ name: "Курс по танцам" });
+    const opened = await open(ended.code);
+    const visitor = await visitorOf(opened.token);
+    await kit.db.update(passages).set({ status: "completed", endedAt: kit.clock.now(), nextReminderAt: null }).where(eq(passages.leadMagnetId, ended.leadMagnetId));
+    await open(dance.code, opened.token);
+
+    // Идёт разговор другого
+    expect(await webChatElsewhere(kit.db, ended.code, visitor, kit.clock.now())).toBeNull();
+
+    // Разговор другого недавно брошен
+    kit.clock.advance(3 * 24 * 60 * 60_000);
+    await kit.db.update(passages).set({ status: "not_completed", endedAt: kit.clock.now() }).where(eq(passages.leadMagnetId, dance.leadMagnetId));
+    expect(await webChatElsewhere(kit.db, ended.code, visitor, kit.clock.now())).toBeNull();
+    // Открытие ссылки начинает программу заново
+    expect(await open(ended.code, opened.token)).toMatchObject({ title: "Марафон" });
+    const statuses = await kit.db.select({ status: passages.status }).from(passages).where(eq(passages.leadMagnetId, ended.leadMagnetId)).orderBy(passages.startedAt);
+    expect(statuses.map((row) => row.status)).toEqual(["completed", "active"]);
+    expect(await kit.db.select({ status: passages.status }).from(passages).where(eq(passages.leadMagnetId, dance.leadMagnetId))).toEqual([{ status: "not_completed" }]);
   });
 
   it("подписка на уведомления — за одним посетителем: тот же браузер с новым посетителем забирает её у прежнего", async () => {

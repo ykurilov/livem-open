@@ -19,7 +19,7 @@ export {
   validateLeadMagnetSettings,
 } from "./settings";
 export type { RequiredTextSetting } from "./settings";
-export type { LeadMagnetSettings, OutreachSettings, ProgramSettings, SideTask, Stage } from "./settings";
+export type { LeadMagnetSettings, OutreachSettings, ProgramSettings, ReturnAfterProgramMode, SideTask, Stage } from "./settings";
 export { VERSION_SOURCES } from "./schema";
 export type { ManualEditNote, VersionSource } from "./schema";
 export {

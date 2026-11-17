@@ -30,6 +30,8 @@ import { buildConsultantInstruction } from "../consultant/instruction";
 import { isOutreachRequest } from "../consultant/outreach-request";
 import { assistantHandoffIn, botDirectionIn, greetingDirectionIn } from "./bot-directed-text";
 import { textLinkSchema } from "../text-links/text-link";
+import { MESSENGER_KINDS } from "../channels/channel";
+import { messengerHandoffSchema } from "../messenger-handoff/setting";
 import { getKnowledgeBases } from "../knowledge";
 import { withoutSalesCard, withSalesCard } from "../sales-cards";
 import { describeEditInputIssues } from "./edit-input-hints";
@@ -147,11 +149,31 @@ const change = z.union([
         title: z.string(),
         when: z.string().describe("Когда уместна: ситуация в разговоре, по которой консультант её выбирает"),
         text: z.string(),
-        verbatim: z.boolean().describe("true — текст уходит человеку дословно (цена, условия, ссылка); false — консультант передаёт суть своими словами"),
+        mode: z
+          .enum(["verbatim", "own_words", "formula"])
+          .describe(
+            "verbatim — текст уходит человеку дословно (цена, условия, ссылка); own_words — консультант передаёт суть своими словами; " +
+              "formula — каркас ответа с пропусками в квадратных скобках, консультант заполняет их по разговору",
+          ),
       }),
     })
     .describe("Добавить или заменить заготовку эксперта"),
   z.strictObject({ op: z.literal("remove_sales_card"), id: z.string() }).describe("Убрать заготовку эксперта"),
+  z
+    .strictObject({
+      op: z.literal("set_messenger_handoff"),
+      messengerHandoff: z
+        .union([
+          z.strictObject({
+            enabled: z.boolean(),
+            when: z.string().describe("Словами эксперта: в какой момент разговора позвать в мессенджер"),
+            channels: z.array(z.enum(MESSENGER_KINDS)).describe("Куда звать"),
+          }),
+          z.null(),
+        ])
+        .describe("null — убрать"),
+    })
+    .describe("Переход из веб-чата в мессенджер: консультант в этот момент показывает кнопки ботов эксперта"),
   z.strictObject({ op: z.literal("attach_field"), fieldId: z.string() }).describe("Подключить поле словаря к карточке клиента"),
   z.strictObject({ op: z.literal("detach_field"), fieldId: z.string() }),
   z
@@ -335,6 +357,15 @@ async function applyChange(tx: DatabaseExecutor, settings: LeadMagnetSettings, i
       if (!parsed.success) throw new ChangeRejected(`Ссылка с подставленным текстом: ${parsed.error.issues.map((issue) => issue.message).join("; ")}`);
       return { ...settings, textLink: parsed.data };
     }
+    case "set_messenger_handoff": {
+      if (item.messengerHandoff === null) {
+        const { messengerHandoff: _removed, ...rest } = settings;
+        return rest;
+      }
+      const parsed = messengerHandoffSchema.safeParse(item.messengerHandoff);
+      if (!parsed.success) throw new ChangeRejected(parsed.error.issues.map((issue) => issue.message).join("; "));
+      return { ...settings, messengerHandoff: parsed.data };
+    }
     case "attach_field": {
       const [field] = await getFields(tx, [item.fieldId]);
       if (!field) throw new ChangeRejected(`Нет поля с id «${item.fieldId}» в словаре`);
@@ -377,9 +408,12 @@ function keepCreatedFields(settings: LeadMagnetSettings, created: LeadMagnetSett
   return lost.length === 0 ? settings : { ...settings, flow: { ...settings.flow, clientCard: [...card, ...lost] } };
 }
 
-type TextForPerson = { where: string; text: string; firstMessage: boolean };
+type TextForPerson = { where: string; text: string; firstMessage: boolean; formula?: boolean };
 
-/** Тексты, которые уходят человеку дословно, с местом для подсказки. */
+/** Текст формулы, который уходит человеку как есть: пропуски в [квадратных скобках] — указания консультанту, их нет. */
+const formulaOutsideGaps = (text: string) => text.replace(/\[[^\]]*\]/g, "…");
+
+/** Тексты, которые уходят человеку дословно, с местом для подсказки; у формулы — всё вне пропусков. */
 function textsForPerson(settings: LeadMagnetSettings): TextForPerson[] {
   const { flow } = settings;
   return [
@@ -389,8 +423,8 @@ function textsForPerson(settings: LeadMagnetSettings): TextForPerson[] {
     { where: "прощании при «срок вышел»", text: flow.schedule?.farewellText ?? "", firstMessage: false },
     { where: "фразе жёсткой рамки дня", text: flow.schedule?.dayFrame?.hardText ?? "", firstMessage: false },
     ...(settings.salesCards ?? [])
-      .filter((card) => card.verbatim)
-      .map((card) => ({ where: `заготовке «${card.title}» (id ${card.id})`, text: card.text, firstMessage: false })),
+      .filter((card) => card.mode !== "own_words")
+      .map((card) => ({ where: `заготовке «${card.title}» (id ${card.id})`, text: card.text, firstMessage: false, formula: card.mode === "formula" })),
   ];
 }
 
@@ -400,13 +434,17 @@ function textsForPerson(settings: LeadMagnetSettings): TextForPerson[] {
  */
 function checkTextsForPerson(before: LeadMagnetSettings, after: LeadMagnetSettings): void {
   const old = new Map(textsForPerson(before).map((item) => [item.where, item.text]));
-  for (const { where, text, firstMessage } of textsForPerson(after)) {
-    if (!text.trim() || old.get(where) === text) continue;
+  for (const { where, text: written, firstMessage, formula } of textsForPerson(after)) {
+    if (!written.trim() || old.get(where) === written) continue;
+    const text = formula ? formulaOutsideGaps(written) : written;
     const direction = firstMessage ? greetingDirectionIn(text) : botDirectionIn(text);
     if (direction)
       throw new ChangeRejected(
-        `В ${where} указание консультанту («${direction}»), а этот текст уходит человеку дословно. ` +
-          "Напиши готовый текст от лица помощника. Указания консультанту должны быть в инструкции",
+        formula
+          ? `В ${where} указание консультанту («${direction}») вне пропусков, а текст формулы вне [квадратных скобок] уходит человеку как есть. ` +
+              "Указание консультанту поставь в квадратные скобки пропуском"
+          : `В ${where} указание консультанту («${direction}»), а этот текст уходит человеку дословно. ` +
+              "Напиши готовый текст от лица помощника. Указания консультанту должны быть в инструкции",
       );
     const handoff = assistantHandoffIn(text);
     if (handoff)
@@ -522,6 +560,7 @@ export async function viewLeadMagnet(
           fieldCount: draft.flow.clientCard.length,
           published: lead.publishedSnapshotId !== null,
           textLink: draft.textLink ?? null,
+          messengerHandoff: draft.messengerHandoff ?? null,
           unfilled: unfilledSettings(draft),
         };
         break;

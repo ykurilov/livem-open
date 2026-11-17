@@ -89,6 +89,23 @@ describe("read_answer_corrections", () => {
     }
   });
 
+  it("выбор эксперта «Что сделать с правкой» — строкой правки; «пусть конструктор решит» строки не даёт", async () => {
+    await seedCorrections(database.db, lead.id, [
+      { originalText: "Было 1", correctedText: "Стало 1" },
+      { originalText: "Было 2", correctedText: "Стало 2", intent: "principles" },
+      { originalText: "Было 3", correctedText: "Стало 3", intent: "formula" },
+      { originalText: "Было 4", correctedText: "Стало 4", intent: "card" },
+    ]);
+    const blocks = (await read()).split(/\n\n(?=Правка )/);
+    expect(blocks).toHaveLength(4);
+    expect(blocks[0]).not.toContain("Что сделать:");
+    expect(blocks[1]).toMatch(/\nЧто сделать: поправить принципы$/);
+    expect(blocks[2]).toMatch(/\nЧто сделать: сделать формулу$/);
+    expect(blocks[3]).toMatch(/\nЧто сделать: эксперт делает заготовку сам$/);
+    // Выбор — после «Почему»: рядом с тем, что эксперт сказал о правке
+    expect(blocks[1]!.indexOf("Почему:")).toBeLessThan(blocks[1]!.indexOf("Что сделать:"));
+  });
+
   it("правка на старой версии черновика помечена", async () => {
     await seedCorrections(database.db, lead.id, [{ originalText: "Было", correctedText: "Стало" }]);
     await saveDraft(database.db, lead.id, { ...lead.draft, name: "Новое имя" }, "manual");

@@ -68,8 +68,11 @@ describe("адаптеры мессенджеров из окружения", ()
     expect(calls).toEqual(["https://api.vk.com/method/groups.getById", "https://api.vk.com/method/groups.getTokenPermissions", "https://platform-api.max.ru/me"]);
   });
 
-  it("STUB_CHANNEL=fake — подделка вместо Telegram, в продакшене — отказ", () => {
-    expect(createChannelAdapters({ STUB_CHANNEL: "fake" }).telegram).toBeInstanceOf(FakeChannel);
+  it("STUB_CHANNEL=fake — подделки вместо Telegram и ВКонтакте, в продакшене — отказ", () => {
+    const fake = createChannelAdapters({ STUB_CHANNEL: "fake" });
+    expect(fake.telegram).toBeInstanceOf(FakeChannel);
+    expect(fake.vk).toBeInstanceOf(FakeChannel);
+    expect(fake.vk?.kind).toBe("vk");
     expect(() => createChannelAdapters({ STUB_CHANNEL: "fake", NODE_ENV: "production" })).toThrow(/STUB_CHANNEL/);
   });
 });

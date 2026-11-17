@@ -11,11 +11,25 @@ export const SALES_CARD_TEXT_MAX_LENGTH = 2000;
 export const SALES_CARDS_MAX_COUNT = 60;
 
 /**
- * Заготовка эксперта: готовый текст, который консультант берёт по своему решению. `stateId` — этап доски; `null` —
- * общая шпаргалка возражений, доступна на любом этапе. `verbatim` — текст уходит человеку как есть (цена, условия,
- * ссылка), иначе консультант пересказывает его своими словами.
+ * Как консультант использует текст заготовки: `verbatim` — отправляет как есть (цена, условия, ссылка), `own_words` —
+ * пересказывает своими словами, `formula` — заполняет пропуски в квадратных скобках по разговору, сохраняя порядок и
+ * остальной текст.
  */
-export const salesCardSchema = z.object({
+export const SALES_CARD_MODES = ["verbatim", "own_words", "formula"] as const;
+export type SalesCardMode = (typeof SALES_CARD_MODES)[number];
+
+/** Заготовка прежнего вида — «дословно» да или нет (до 0055): читается режимом без потерь. */
+function withModeFromVerbatim(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || "mode" in value || !("verbatim" in value)) return value;
+  const { verbatim, ...rest } = value as { verbatim: unknown };
+  return typeof verbatim === "boolean" ? { ...rest, mode: verbatim ? "verbatim" : "own_words" } : value;
+}
+
+/**
+ * Заготовка эксперта: готовый текст, который консультант берёт по своему решению. `stateId` — этап доски; `null` —
+ * общая шпаргалка возражений, доступна на любом этапе.
+ */
+const salesCardObject = z.object({
   id: z.string().min(1),
   stateId: z.string().min(1).nullable(),
   title: z
@@ -33,12 +47,14 @@ export const salesCardSchema = z.object({
     .trim()
     .min(1, "У заготовки должен быть текст")
     .max(SALES_CARD_TEXT_MAX_LENGTH, `Текст заготовки — не длиннее ${SALES_CARD_TEXT_MAX_LENGTH} знаков`),
-  verbatim: z.boolean(),
+  mode: z.enum(SALES_CARD_MODES, "Режим заготовки — дословно, своими словами или по формуле"),
 });
+
+export const salesCardSchema = z.preprocess(withModeFromVerbatim, salesCardObject);
 
 export const salesCardsSchema = z.array(salesCardSchema).max(SALES_CARDS_MAX_COUNT, `Заготовок — не больше ${SALES_CARDS_MAX_COUNT}`);
 
-export type SalesCard = z.infer<typeof salesCardSchema>;
+export type SalesCard = z.infer<typeof salesCardObject>;
 
 /** Короткий id новой заготовки: его видит модель в списке, длинный id — лишние знаки на каждом ходе. */
 export function newSalesCardId(taken: Iterable<string> = []): string {

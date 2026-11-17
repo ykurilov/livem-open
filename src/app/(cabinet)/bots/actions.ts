@@ -59,6 +59,16 @@ export async function saveNoCodeAction(botId: string, _previous: BotSettingsStat
   return { saved: true };
 }
 
+/** Свой текст автоответа бота; пустое поле — текст по умолчанию. */
+export async function saveAutoreplyAction(botId: string, _previous: BotSettingsState, formData: FormData): Promise<BotSettingsState> {
+  await requireUser();
+  const text = formData.get("autoreplyText");
+  const result = await createBotServiceFromEnv().updateAutoreplyText(botId, typeof text === "string" ? text : "");
+  if (!result.ok) return { error: result.error };
+  revalidatePath(`/bots/${botId}`);
+  return { saved: true };
+}
+
 /** Новый ключ бота ВК — так боту добавляют право «Фотографии». У нового ключа его тоже нет — эксперт узнаёт сразу. */
 export async function replaceBotTokenAction(botId: string, _previous: BotSettingsState, formData: FormData): Promise<BotSettingsState> {
   await requireUser();

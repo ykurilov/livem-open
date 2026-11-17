@@ -2,6 +2,7 @@ import type { FlowTransitionEvent } from "@ykurilov/agent-chat-flows";
 import { integer, jsonb, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { appSchema } from "../platform/app-schema";
 import { leadMagnets } from "../lead-magnets/schema";
+import type { HandoffMessenger } from "../messenger-handoff/setting";
 
 /** Кто перевёл на этап: консультант по условию или приложение по дню программы. */
 export type StageChangedBy = "model" | "day";
@@ -109,5 +110,9 @@ export const previewConversations = appSchema.table("preview_conversations", {
   saleAnswer: jsonb("sale_answer").$type<SaleAnswer>(),
   sideTasks: jsonb("side_tasks").$type<PassageSideTasks>().notNull().default({}),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
+  /** Консультант показал кнопки мессенджеров (`offer_messenger`): поле ввода закрыто, пока эксперт не нажмёт кнопку. */
+  messengerOfferedAt: timestamp("messenger_offered_at", { withTimezone: true }),
+  /** Эксперт нажал кнопку мессенджера: дальше разговор идёт как в мессенджере. */
+  messengerChannel: text("messenger_channel").$type<HandoffMessenger>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

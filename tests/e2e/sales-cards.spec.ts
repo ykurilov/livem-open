@@ -31,13 +31,15 @@ async function openBoard(page: Page, id: string): Promise<Locator> {
   return board;
 }
 
+const FORMULA = "[Признай сомнение человека]. Есть рассрочка на 3 месяца — [сколько выйдет в месяц под его тариф].";
+
 /** Заполнить окно заготовки и сохранить: окно закрывается, когда сервер записал заготовку. */
-async function fillCard(page: Page, card: { title: string; when: string; text: string; verbatim: boolean }) {
+async function fillCard(page: Page, card: { title: string; when: string; text: string; mode: "verbatim" | "own_words" | "formula" }) {
   const dialog = page.getByRole("dialog", { name: "Новая заготовка" });
   await dialog.getByLabel("Название").fill(card.title);
   await dialog.getByLabel("Когда уместна").fill(card.when);
   await dialog.getByRole("textbox", { name: /^Текст/ }).fill(card.text);
-  await dialog.getByRole("radio", { name: card.verbatim ? /^Дословно/ : /^Своими словами/ }).check();
+  await dialog.getByRole("radio", { name: { verbatim: /^Дословно/, own_words: /^Своими словами/, formula: /^По формуле/ }[card.mode] }).check();
   return dialog;
 }
 
@@ -53,7 +55,7 @@ test("эксперт добавляет заготовку этапа и шпа�
   const section = board.getByRole("region", { name: "Заготовки этапа", exact: true });
   await section.scrollIntoViewIfNeeded();
   await section.getByRole("button", { name: "Добавить заготовку" }).click();
-  const dialog = await fillCard(page, { title: "Цена", when: "Человек спрашивает, сколько стоит", text: "Курс стоит 9 900 ₽.", verbatim: true });
+  const dialog = await fillCard(page, { title: "Цена", when: "Человек спрашивает, сколько стоит", text: "Курс стоит 9 900 ₽.", mode: "verbatim" });
   await page.screenshot({ path: test.info().outputPath("cards-dialog.png"), animations: "disabled" });
   await dialog.getByRole("button", { name: "Сохранить" }).click();
   await expect(dialog).toBeHidden({ timeout: 30_000 });
@@ -66,16 +68,18 @@ test("эксперт добавляет заготовку этапа и шпа�
   const common = board.getByRole("region", { name: "Шпаргалка возражений", exact: true });
   await common.scrollIntoViewIfNeeded();
   await common.getByRole("button", { name: "Добавить заготовку" }).click();
-  const commonDialog = await fillCard(page, { title: "Дорого", when: "Человек сомневается из-за цены", text: "Есть рассрочка на 3 месяца.", verbatim: false });
+  const commonDialog = await fillCard(page, { title: "Дорого", when: "Человек сомневается из-за цены", text: FORMULA, mode: "formula" });
+  await expect(commonDialog.getByText(/Пропуски — в \[квадратных скобках\]/)).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath("cards-formula-dialog.png"), animations: "disabled" });
   await commonDialog.getByRole("button", { name: "Сохранить" }).click();
   await expect(commonDialog).toBeHidden({ timeout: 30_000 });
-  await expect(common.getByRole("button", { name: /Дорого/ })).toBeVisible();
+  await expect(common.getByRole("button", { name: /Дорого/ })).toContainText("по формуле");
   await page.screenshot({ path: test.info().outputPath("cards-common.png") });
 
   await expect
     .poll(async () => (await getLeadMagnet(connection.db, lead.id))!.draft.salesCards, { timeout: 30_000 })
     .toEqual([
-      expect.objectContaining({ stateId: stage.id, title: "Цена", when: "Человек спрашивает, сколько стоит", text: "Курс стоит 9 900 ₽.", verbatim: true }),
-      expect.objectContaining({ stateId: null, title: "Дорого", text: "Есть рассрочка на 3 месяца.", verbatim: false }),
+      expect.objectContaining({ stateId: stage.id, title: "Цена", when: "Человек спрашивает, сколько стоит", text: "Курс стоит 9 900 ₽.", mode: "verbatim" }),
+      expect.objectContaining({ stateId: null, title: "Дорого", text: FORMULA, mode: "formula" }),
     ]);
 });

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { index, integer, jsonb, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { leadMagnets } from "../lead-magnets/schema";
 import { appSchema } from "../platform/app-schema";
+import type { CorrectionIntent } from "./intent";
 import type { AnswerKind, CorrectionAgentRole, CorrectionContextLine, CorrectionOutcome, CorrectionSource, CorrectionStatus } from "./types";
 
 /**
@@ -24,6 +25,7 @@ export const answerCorrections = appSchema.table(
     originalText: text("original_text").notNull(),
     correctedText: text("corrected_text").notNull(),
     reason: text("reason"),
+    intent: text("intent").$type<CorrectionIntent>().notNull().default("auto"),
     context: jsonb("context").$type<CorrectionContextLine[]>().notNull(),
     actions: jsonb("actions").$type<string[]>().notNull(),
     stageId: text("stage_id"),

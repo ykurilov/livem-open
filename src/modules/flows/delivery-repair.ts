@@ -2,7 +2,7 @@ import type { AgentFlowHandle, FlowResumeDeliveryResult } from "@ykurilov/agent-
 import { and, eq, isNull, like, or, sql } from "drizzle-orm";
 import { BOT_REPAIR_RESEND_WINDOW_DAYS } from "../channels/outbound";
 import { bots, outboundMessages } from "../channels/schema";
-import { passages } from "../conversations/schema";
+import { chatOwnerOf, passages } from "../conversations/schema";
 import type { Database } from "../platform/db";
 
 /** Сценарий ответил, что такого ожидания уже нет или касание устарело: запись закрывается без отправки. */
@@ -28,7 +28,7 @@ export async function resumeOutreachAwaitingRepair(deps: OutreachRepairDependenc
   const summary: OutreachRepairSummary = { resumed: 0, pending: 0, busy: 0, not_found: 0, dropped: 0, error: 0 };
   const windowPassed = sql<boolean>`${outboundMessages.createdAt} <= now() - make_interval(days => ${BOT_REPAIR_RESEND_WINDOW_DAYS})`;
   const waiting = await deps.db
-    .select({ id: outboundMessages.id, personId: outboundMessages.personId, chatId: passages.chatId, idempotencyKey: outboundMessages.idempotencyKey })
+    .select({ id: outboundMessages.id, personId: passages.personId, chatOwnerId: passages.chatOwnerId, chatId: passages.chatId, idempotencyKey: outboundMessages.idempotencyKey })
     .from(outboundMessages)
     .innerJoin(passages, eq(passages.id, outboundMessages.passageId))
     .leftJoin(bots, eq(bots.id, outboundMessages.botId))
@@ -46,7 +46,7 @@ export async function resumeOutreachAwaitingRepair(deps: OutreachRepairDependenc
   for (const row of waiting) {
     const messageId = row.idempotencyKey!.slice("flow:".length);
     try {
-      const result = await deps.flow.resumeDelivery({ ownerId: row.personId, chatId: row.chatId, messageId });
+      const result = await deps.flow.resumeDelivery({ ownerId: chatOwnerOf(row), chatId: row.chatId, messageId });
       summary[result] += 1;
       if (result === "dropped" || result === "not_found") {
         await deps.db

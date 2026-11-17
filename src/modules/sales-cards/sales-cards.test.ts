@@ -3,7 +3,7 @@ import { InvalidLeadMagnetSettingsError, validateLeadMagnetSettings } from "../l
 import { buildConsultantInstruction } from "../consultant/instruction";
 import { leadMagnetKnownTexts } from "../consultant/known-texts";
 import { commonCardsSection, SALES_CARDS_BLOCK_KEY, stageCardsBlock, withoutSalesCard, withSalesCard } from "./sales-cards";
-import { doubtCard, priceCard, settingsWithCards } from "./test-settings";
+import { doubtCard, formulaCard, priceCard, settingsWithCards } from "./test-settings";
 
 describe("заготовки эксперта: хранение в настройках", () => {
   it("настройки без поля читаются с пустым списком заготовок", () => {
@@ -20,6 +20,18 @@ describe("заготовки эксперта: хранение в настро�
     expect(() => validateLeadMagnetSettings(settingsWithCards([{ ...priceCard, title: " " }]))).toThrow(InvalidLeadMagnetSettingsError);
     expect(() => validateLeadMagnetSettings(settingsWithCards([{ ...priceCard, when: "" }]))).toThrow(/когда/i);
     expect(() => validateLeadMagnetSettings(settingsWithCards([{ ...priceCard, text: "" }]))).toThrow(/текст/i);
+  });
+
+  it("формула — третий режим: сохраняется как есть, неизвестный режим — ошибка", () => {
+    expect(validateLeadMagnetSettings(settingsWithCards([formulaCard])).salesCards).toEqual([formulaCard]);
+    expect(() => validateLeadMagnetSettings(settingsWithCards([{ ...formulaCard, mode: "poem" as never }]))).toThrow(InvalidLeadMagnetSettingsError);
+  });
+
+  it("заготовки прежнего вида («дословно» да или нет) читаются без потерь", () => {
+    const { mode: _price, ...oldPrice } = priceCard;
+    const { mode: _doubt, ...oldDoubt } = doubtCard;
+    const old = settingsWithCards([{ ...oldPrice, verbatim: true }, { ...oldDoubt, verbatim: false }] as never);
+    expect(validateLeadMagnetSettings(old).salesCards).toEqual([priceCard, doubtCard]);
   });
 
   it("id заготовок не повторяются", () => {
@@ -82,7 +94,7 @@ describe("заготовки в контексте консультанта", ()
 
 describe("заготовки эксперта: добавить, поправить, убрать", () => {
   const stages = new Set(["intro", "sale"]);
-  const input = { stateId: "sale", title: "Цена", when: "Спросили цену", text: "9 900 ₽", verbatim: true };
+  const input = { stateId: "sale", title: "Цена", when: "Спросили цену", text: "9 900 ₽", mode: "verbatim" as const };
 
   it("новая заготовка — в конец, с новым id", () => {
     const result = withSalesCard([doubtCard], stages, input);

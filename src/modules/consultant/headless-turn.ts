@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { MessengerHandoffPort } from "../messenger-handoff/tool";
 import {
   ChatBusyError,
   createChatService,
@@ -37,11 +38,10 @@ import { createTurnTails } from "../platform/turn-tails";
 import { consultantStepContext } from "./step-context";
 import { nameUsedRecently, profileNameForTail } from "./profile-name";
 import { botSendsNoPhotos } from "./bot-photos";
-import { PURCHASE_USAGE_SOURCE } from "../purchases/outreach-keys";
 import type { FirstMessageWriter } from "../purchases/reactions";
 
 /** Имя служебного сообщения события приложения для модели и «Лога». */
-const APP_EVENT_NOTICE = "app_event";
+export const APP_EVENT_NOTICE = "app_event";
 
 export interface HeadlessConsultantOptions {
   db: Database;
@@ -51,6 +51,8 @@ export interface HeadlessConsultantOptions {
   registry?: RunningAnswerRegistry;
   /** Куда инструменты пишут состояние разговора. */
   store: ConversationStore;
+  /** Переход из веб-чата в мессенджер (инструмент `offer_messenger`); нет — инструмента нет. */
+  messengerHandoff?: MessengerHandoffPort;
   /** Картинки чатов работника: фото клиента. Служба версии получает их, только если лидмагнит их принимает (`clientImages`). */
   attachments?: Attachments;
   /** Модель консультанта по настройкам снимка. */
@@ -325,6 +327,7 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
             stepContext,
             dayOf,
             knowledge,
+            ...(options.messengerHandoff && { messengerHandoff: options.messengerHandoff }),
           }),
         }),
       );
@@ -533,7 +536,7 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
       return text;
     },
 
-    async writeFirst({ ownerId, chatId, deliveryKey, title, timeZone }) {
+    async writeFirst({ ownerId, chatId, deliveryKey, title, usageSource, timeZone }) {
       const service = await serviceOfChat(chatId);
       // Хвост прошлого хода человека (отсчёт, вложения) к событию не относится
       tails.set(chatId, null);
@@ -544,8 +547,8 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
         wakeAgent: true,
         awaitAnswer: true,
         deliveryKey,
-        // Пишет первым по покупке (поздравление, напоминание об оплате), не касание программы — своя строка расхода
-        usageSource: PURCHASE_USAGE_SOURCE,
+        // Пишет первым по событию (покупка, переход в мессенджер), не касание программы — своя строка расхода
+        usageSource,
         ...(timeZone && { timeZone }),
       });
       if (result.status === "busy") return { kind: "busy" };

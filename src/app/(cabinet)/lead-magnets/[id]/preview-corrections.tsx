@@ -3,8 +3,10 @@
 import { AgentChat, type AnswerEditorFields, type AnswerTextEditing, type MessageAction } from "@ykurilov/agent-chat-react";
 import { ArrowCounterClockwiseIcon, CardsIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { Radio, RadioGroup } from "@ykurilov/ds-react";
 import { Field, Textarea } from "@/ui/primitives";
-import { salesCardLabels } from "@/ui/flow-labels";
+import { correctionIntentLabels, salesCardLabels } from "@/ui/flow-labels";
+import { shownCorrectionIntent, type CorrectionIntent } from "@/modules/corrections/intent";
 import type { SalesCardInput } from "@/modules/sales-cards/sales-cards";
 import { salesCardFromCorrectionAction, saveSalesCardAction } from "../actions";
 import { SalesCardDialog } from "./sales-cards-board";
@@ -14,6 +16,8 @@ interface EditedAnswer {
   messageId: string;
   correctionId: string;
   pending: boolean;
+  /** Только у ответов консультанта. */
+  intent?: CorrectionIntent;
 }
 
 type AgentChatProps = ComponentProps<typeof AgentChat>;
@@ -38,6 +42,31 @@ function ReasonField({ data, setData, disabled }: AnswerEditorFields) {
   );
 }
 const renderReasonField = (fields: AnswerEditorFields) => <ReasonField {...fields} />;
+
+const INTENT_CHOICES = ["auto", "principles", "formula", "card"] as const satisfies readonly CorrectionIntent[];
+
+type IntentFieldProps = AnswerEditorFields & {
+  /** Выбор неразобранной правки этого ответа: повторная правка его сохранит, если эксперт не выберет другое. */
+  pendingIntent: CorrectionIntent | undefined;
+  /** Что сейчас выбрано в окне правки ответа `messageId`. */
+  onShown(messageId: string, intent: CorrectionIntent): void;
+};
+
+/** «Что сделать с правкой»: выбор уходит в правку полем `intent`, конструктор ему следует. */
+function IntentField({ data, setData, disabled, message, pendingIntent, onShown }: IntentFieldProps) {
+  const labels = correctionIntentLabels;
+  const value = shownCorrectionIntent(data, pendingIntent);
+  useEffect(() => onShown(message.id, value), [message.id, onShown, value]);
+  return (
+    <RadioGroup label={labels.title} value={value} disabled={disabled} onValueChange={(intent) => setData({ ...data, intent })}>
+      {INTENT_CHOICES.map((intent) => (
+        <Radio key={intent} value={intent}>
+          {labels[intent]} <span className="app-muted">— {labels[`${intent}Hint`]}</span>
+        </Radio>
+      ))}
+    </RadioGroup>
+  );
+}
 
 type CorrectablePreviewChatProps = AgentChatProps & {
   api: string;
@@ -67,14 +96,37 @@ export function CorrectablePreviewChat({ onCorrectionsChanged, reloadKey, onFeed
   const [cardDraft, setCardDraft] = useState<SalesCardInput | null>(null);
   // Исправленные ответы, о которых метки уже спрошены: новая правка в ленте — повод перечитать метки и счёт
   const known = useRef(new Set<string>());
+  // Что выбрано в «Что сделать с правкой» по id исправляемого ответа: сохранённая с «Сделать заготовку» правка сразу
+  // открывает окно заготовки — по выбору на экране, а не по тому, успели ли прочитаться метки
+  const shownIntents = useRef(new Map<string, CorrectionIntent>());
+  const rememberShownIntent = useCallback((messageId: string, intent: CorrectionIntent) => {
+    shownIntents.current.set(messageId, intent);
+  }, []);
 
-  const loadEdited = useCallback(async () => {
+  const loadEdited = useCallback(async (): Promise<EditedAnswer[]> => {
     const response = await fetch(correctionsUrl(api, chatId), { cache: "no-store" });
-    if (!response.ok) return;
+    if (!response.ok) return [];
     const body = (await response.json()) as { edited: EditedAnswer[] };
     for (const answer of body.edited) known.current.add(answer.messageId);
     setEdited(body.edited);
+    return body.edited;
   }, [api, chatId]);
+
+  /** Окно заготовки из исправленного ответа: название и «когда уместна» подсказывает модель. */
+  const openCardFromCorrection = useCallback(
+    async (correctionId: string) => {
+      if (!salesCards) return;
+      setRemoveError(null);
+      try {
+        const result = await salesCardFromCorrectionAction(salesCards.leadMagnetId, correctionId);
+        if ("card" in result) setCardDraft(result.card);
+        else setRemoveError(result.error);
+      } catch {
+        setRemoveError("Нет связи — заготовка не подготовлена. Попробуйте ещё раз.");
+      }
+    },
+    [salesCards],
+  );
 
   useEffect(() => {
     loadEdited().catch(() => {});
@@ -85,17 +137,40 @@ export function CorrectablePreviewChat({ onCorrectionsChanged, reloadKey, onFeed
       onFeedChange?.(feed);
       const fresh = feed.messages.filter((message) => message.metadata?.answerEdit && !known.current.has(message.id));
       if (fresh.length === 0) return;
-      for (const message of fresh) known.current.add(message.id);
+      const forCard = new Set<string>();
+      for (const message of fresh) {
+        known.current.add(message.id);
+        const source = message.metadata?.answerEdit?.sourceMessageId;
+        if (!source || !shownIntents.current.has(source)) continue;
+        if (shownIntents.current.get(source) === "card") forCard.add(message.id);
+        shownIntents.current.delete(source);
+      }
       // Правку записывает сервер, метки он же и сверяет с лентой: после ответа счёт уже верный
-      loadEdited().then(onCorrectionsChanged, () => {});
+      loadEdited().then((answers) => {
+        onCorrectionsChanged();
+        // «Сделать заготовку»: окно заготовки — сразу после сохранения правки
+        const saved = answers.find((answer) => forCard.has(answer.messageId));
+        if (saved) void openCardFromCorrection(saved.correctionId);
+      }, () => {});
     },
-    [loadEdited, onCorrectionsChanged, onFeedChange],
+    [loadEdited, onCorrectionsChanged, onFeedChange, openCardFromCorrection],
   );
 
-  const answerEditor = useMemo<AnswerTextEditing>(
-    () => ({ renderFields: renderReasonField, edits: new Map(edited.map((answer) => [answer.messageId, EDITED_MARK])) }),
-    [edited],
-  );
+  const answerEditor = useMemo<AnswerTextEditing>(() => {
+    const pendingIntents = new Map(edited.flatMap((answer) => (answer.pending && answer.intent ? [[answer.messageId, answer.intent] as const] : [])));
+    return {
+      // Выбор «Что сделать с правкой» — только у ответов консультанта «Проверки»: в «Поменяемся ролями» заготовок нет
+      renderFields: salesCards
+        ? (fields: AnswerEditorFields) => (
+            <>
+              <ReasonField {...fields} />
+              <IntentField {...fields} pendingIntent={pendingIntents.get(fields.message.id)} onShown={rememberShownIntent} />
+            </>
+          )
+        : renderReasonField,
+      edits: new Map(edited.map((answer) => [answer.messageId, EDITED_MARK])),
+    };
+  }, [edited, rememberShownIntent, salesCards]);
 
   const messageActions = useMemo<MessageAction[]>(() => {
     const pending = new Map(edited.filter((answer) => answer.pending).map((answer) => [answer.messageId, answer.correctionId]));
@@ -110,15 +185,7 @@ export function CorrectablePreviewChat({ onCorrectionsChanged, reloadKey, onFeed
             // Пока модель подсказывает название и повод, модуль чата держит кнопку занятой
             onRun: async ({ messageId }) => {
               const correctionId = corrections.get(messageId);
-              if (!correctionId) return;
-              setRemoveError(null);
-              try {
-                const result = await salesCardFromCorrectionAction(salesCards.leadMagnetId, correctionId);
-                if ("card" in result) setCardDraft(result.card);
-                else setRemoveError(result.error);
-              } catch {
-                setRemoveError("Нет связи — заготовка не подготовлена. Попробуйте ещё раз.");
-              }
+              if (correctionId) await openCardFromCorrection(correctionId);
             },
           },
         ]
@@ -154,7 +221,7 @@ export function CorrectablePreviewChat({ onCorrectionsChanged, reloadKey, onFeed
         },
       },
     ];
-  }, [api, chatId, edited, loadEdited, onCorrectionsChanged, salesCards]);
+  }, [api, chatId, edited, loadEdited, onCorrectionsChanged, openCardFromCorrection, salesCards]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

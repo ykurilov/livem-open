@@ -1,6 +1,6 @@
 import { and, desc, eq, gt, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { outboundMessages, recordOutbound, scheduleOutboundSend } from "../channels";
-import { inboundMessages, passages } from "../conversations/schema";
+import { chatOwnerOf, inboundMessages, passages } from "../conversations/schema";
 import { getVersion } from "../lead-magnets";
 import { people } from "../people/schema";
 import { addDays, atLocalTime, localDate } from "../program/calendar";
@@ -11,7 +11,7 @@ import { sentImagePath, type ShownImage } from "../images";
 import type { ShownVideoLink } from "../videos/shown-video";
 import { productLinksOf, tagPassageText } from "./outgoing";
 import { hasEverPaid, hasPaidOrder, markPurchased, ordersOfPassage, unmarkPurchased, type RecordedOrder } from "./orders";
-import { paymentReminderKey, purchaseCongratulationKey } from "./outreach-keys";
+import { PURCHASE_USAGE_SOURCE, paymentReminderKey, purchaseCongratulationKey } from "./outreach-keys";
 import { formatMoney } from "./money";
 import { orderKindOf } from "./getcourse";
 import { productOfCampaign, type ProductLink } from "./product-links";
@@ -40,7 +40,8 @@ const RECOVERY_BATCH = 100;
 
 /** Агент пишет первым по событию приложения: служебное сообщение в историю, ход, готовый проверенный ответ. */
 export interface FirstMessageWriter {
-  writeFirst(input: { ownerId: string; chatId: string; deliveryKey: string; title: string; timeZone?: string }): Promise<WriteFirstResult>;
+  /** `usageSource` — строка журнала расхода SDK для этого хода: покупка, продолжение после перехода. */
+  writeFirst(input: { ownerId: string; chatId: string; deliveryKey: string; title: string; usageSource: string; timeZone?: string }): Promise<WriteFirstResult>;
 }
 
 /** `no_turn` — хода не было (лимит расходов, чат закрыт): уходит готовый текст. */
@@ -202,6 +203,8 @@ export const reminderFallback = (product: ProductLink | null) =>
 interface PassageForMessage {
   passageId: string;
   personId: string;
+  /** Владелец чата в SDK: у разговора, перешедшего от поглощённой записи человека, — прежняя запись. */
+  ownerId: string;
   botId: string;
   chatId: string;
   timeZone: string | null;
@@ -211,7 +214,7 @@ interface PassageForMessage {
 
 async function passageForMessage(db: Database, passageId: string): Promise<PassageForMessage | null> {
   const [row] = await db
-    .select({ personId: passages.personId, chatId: passages.chatId, snapshotId: passages.snapshotId, botId: people.botId, timeZone: people.timeZone, blockedAt: people.blockedAt })
+    .select({ personId: passages.personId, chatOwnerId: passages.chatOwnerId, chatId: passages.chatId, snapshotId: passages.snapshotId, botId: people.botId, timeZone: people.timeZone, blockedAt: people.blockedAt })
     .from(passages)
     .innerJoin(people, eq(people.id, passages.personId))
     .where(eq(passages.id, passageId));
@@ -220,6 +223,7 @@ async function passageForMessage(db: Database, passageId: string): Promise<Passa
   return {
     passageId,
     personId: row.personId,
+    ownerId: chatOwnerOf(row),
     botId: row.botId,
     chatId: row.chatId,
     timeZone: row.timeZone,
@@ -241,10 +245,11 @@ export async function congratulatePurchase(deps: PurchaseDependencies & { writer
   const { paid } = await ordersOfPassage(deps.db, passageId);
   const product = productOf(target.products, paid);
   const written = await deps.writer.writeFirst({
-    ownerId: target.personId,
+    ownerId: target.ownerId,
     chatId: target.chatId,
     deliveryKey: `purchase:${passageId}`,
     title: congratulationNotice(product, paid),
+    usageSource: PURCHASE_USAGE_SOURCE,
     ...(target.timeZone && { timeZone: target.timeZone }),
   });
   if (written.kind === "busy") {
@@ -365,10 +370,11 @@ export async function remindPayment(deps: PurchaseDependencies & { writer: First
   try {
     const product = productOf(target.products, unpaid);
     const written = await deps.writer.writeFirst({
-      ownerId: target.personId,
+      ownerId: target.ownerId,
       chatId: target.chatId,
       deliveryKey: key,
       title: reminderNotice(product),
+      usageSource: PURCHASE_USAGE_SOURCE,
       ...(target.timeZone && { timeZone: target.timeZone }),
     });
     if (written.kind === "busy") {

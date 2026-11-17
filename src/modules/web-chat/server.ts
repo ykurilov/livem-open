@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { createChannelAdapters } from "../channels/adapters";
 import { getDatabase } from "../platform/db";
 import { systemClock } from "../platform/clock";
 import { createTokenCipher } from "../platform/crypto";
@@ -12,7 +13,13 @@ export { WEB_CHAT_COOKIE };
 const COOKIE_MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
 
 export async function webChatDependencies(): Promise<WebChatDependencies> {
-  return { db: getDatabase().db, queue: await getWebQueue(), clock: systemClock, cipher: createTokenCipher(requireEnv("BOT_TOKEN_KEY")) };
+  return {
+    db: getDatabase().db,
+    queue: await getWebQueue(),
+    clock: systemClock,
+    cipher: createTokenCipher(requireEnv("BOT_TOKEN_KEY")),
+    adapters: createChannelAdapters(),
+  };
 }
 
 export async function readVisitorToken(): Promise<string | null> {

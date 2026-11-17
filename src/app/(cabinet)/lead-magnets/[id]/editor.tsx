@@ -36,7 +36,9 @@ import type { RoleSwapState } from "@/modules/role-swap";
 import type { FieldDefinition } from "@/modules/people";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui";
 import { IconButton } from "@/ui/icon-button";
-import { advancePreviewAction, advancePreviewToReminderAction, nextPreviewDayAction, reopenPreviewAction, restartPreviewAction, suggestPreviewReplyAction } from "../actions";
+import { advancePreviewAction, advancePreviewToReminderAction, nextPreviewDayAction, reopenPreviewAction, restartPreviewAction, suggestPreviewReplyAction, takePreviewMessengerHandoffAction } from "../actions";
+import { PreviewMessengerHandoffPanel } from "./preview-messenger-handoff";
+import type { HandoffMessenger } from "@/modules/messenger-handoff/setting";
 import { pendingCorrectionsCount } from "./corrections-actions";
 import { OUTREACH_REQUEST_TEXT } from "@/modules/consultant/outreach-request";
 import { hasUnsavedFlowEdit, keepBoardLayout } from "@/modules/flows/board-draft";
@@ -574,6 +576,8 @@ export function Editor({
       onDone?.(shifted);
       router.refresh();
     });
+  const takeMessengerHandoff = (channel: HandoffMessenger) =>
+    shiftPreview(() => takePreviewMessengerHandoffAction(leadMagnetId, channel), "Не получилось перейти в мессенджер. Попробуйте ещё раз.");
   const nextDay = () =>
     shiftPreview(() => nextPreviewDayAction(leadMagnetId, browserTimeZone()), "Не получилось перейти к следующему дню. Попробуйте ещё раз.");
   const nextReminder = () =>
@@ -602,8 +606,11 @@ export function Editor({
 
   // Лента «Разговора» перечитывается без пересоздания чата (недописанная реплика остаётся в поле): на новом дне и при
   // возврате на вкладку — тот же разговор мог идти в тестовом чате доски
-  const [previewFeed, setPreviewFeed] = useState({ day: preview.day, version: 0 });
-  if (previewFeed.day !== preview.day) setPreviewFeed({ day: preview.day, version: previewFeed.version + 1 });
+  // Переход в мессенджер в «Проверке» тоже меняет ленту: консультант пишет первым
+  const handoffState = preview.messengerHandoff?.state ?? null;
+  const [previewFeed, setPreviewFeed] = useState({ day: preview.day, handoff: handoffState, version: 0 });
+  if (previewFeed.day !== preview.day || previewFeed.handoff !== handoffState)
+    setPreviewFeed({ day: preview.day, handoff: handoffState, version: previewFeed.version + 1 });
   const switchTab = (next: string) => {
     if (next === "preview" && tab !== "preview") setPreviewFeed((current) => ({ ...current, version: current.version + 1 }));
     setTab(next);
@@ -727,6 +734,9 @@ export function Editor({
                 <p role="alert" className="text-[length:var(--yk-text-small-size)] text-[var(--yk-danger)]">
                   {nextDayError}
                 </p>
+              ) : null}
+              {hasDraft && preview.messengerHandoff && !answeringAsConsultant ? (
+                <PreviewMessengerHandoffPanel handoff={preview.messengerHandoff} onTake={takeMessengerHandoff} taking={shiftingDay} />
               ) : null}
               <ConversationRoleContext.Provider value={hasDraft ? { role: answeringAsConsultant ? "consultant" : "client", choose: switchConversationMode } : null}>
               {hasDraft ? (

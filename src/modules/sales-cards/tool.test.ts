@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AppStateAccess } from "@ykurilov/agent-chat-core";
 import { createSalesCardTool, SALES_CARD_TOOL } from "./tool";
-import { doubtCard, priceCard, settingsWithCards } from "./test-settings";
+import { doubtCard, formulaCard, priceCard, settingsWithCards } from "./test-settings";
 
 /** Состояние ветки чата, как его даёт ядро инструментам. */
 function branchState(): AppStateAccess & { values: Record<string, unknown> } {
@@ -25,7 +25,7 @@ const call = (tool: ReturnType<typeof createSalesCardTool>, id: string) =>
   tool.execute!({ id }, { toolCallId: "call", messages: [] } as never) as Promise<Record<string, unknown>>;
 
 describe(`инструмент ${SALES_CARD_TOOL}`, () => {
-  const settings = settingsWithCards([priceCard, doubtCard]);
+  const settings = settingsWithCards([priceCard, doubtCard, formulaCard]);
 
   it("отдаёт полный текст и как его использовать: «дословно» — как есть", async () => {
     const answer = await call(createSalesCardTool(settings, branchState()), priceCard.id);
@@ -37,6 +37,20 @@ describe(`инструмент ${SALES_CARD_TOOL}`, () => {
     const answer = await call(createSalesCardTool(settings, branchState()), doubtCard.id);
     expect(answer).toMatchObject({ ok: true, text: doubtCard.text });
     expect(String(answer.use)).toMatch(/своими словами/);
+  });
+
+  it("формула — каркас: заполнить пропуски в квадратных скобках по разговору, порядок и остальной текст сохранить", async () => {
+    const answer = await call(createSalesCardTool(settings, branchState()), formulaCard.id);
+    expect(answer).toMatchObject({ ok: true, text: formulaCard.text });
+    const use = String(answer.use);
+    expect(use).toMatch(/формул/);
+    expect(use).toMatch(/квадратн/);
+    expect(use).toMatch(/порядок/);
+    expect(use).not.toMatch(/дословно, без правок/);
+  });
+
+  it("описание инструмента называет все три способа", () => {
+    expect(createSalesCardTool(settings, branchState()).description).toMatch(/формул/);
   });
 
   it("одна заготовка — не больше раза за разговор: повторный запрос говорит, что она уже использована", async () => {

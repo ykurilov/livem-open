@@ -1,3 +1,5 @@
+import type { CorrectionIntent } from "./intent";
+
 /** Откуда правка: «Проверка» или разговор «Поменяемся ролями»; позже — «Входящие». */
 export type CorrectionSource = "preview" | "role_swap";
 /**
@@ -34,6 +36,8 @@ export interface AnswerCorrection {
   correctedText: string;
   /** «Почему так лучше». */
   reason: string | null;
+  /** «Что сделать с правкой»: выбор эксперта, `auto` — решает конструктор. */
+  intent: CorrectionIntent;
   context: CorrectionContextLine[];
   /** Действия консультанта в ответе понятными словами. */
   actions: string[];
@@ -65,6 +69,8 @@ export interface RecordCorrectionInput {
   correctedMessageId: string;
   correctedText: string;
   reason?: string | null;
+  /** Нет — у новой правки `auto`, у повторной остаётся прежний выбор. */
+  intent?: CorrectionIntent;
   answerKind: AnswerKind;
   context: CorrectionContextLine[];
   actions: string[];
@@ -116,4 +122,6 @@ export interface EditedAnswer {
   messageId: string;
   correctionId: string;
   pending: boolean;
+  /** Выбор «Что сделать с правкой» — только у ответов консультанта: окно «Поправить» показывает его при повторной правке. */
+  intent?: CorrectionIntent;
 }

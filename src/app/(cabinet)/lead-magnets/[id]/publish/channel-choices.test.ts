@@ -9,6 +9,7 @@ const bot = (fields: Partial<BotSummary> & Pick<BotSummary, "id" | "title" | "us
   canSendPhotos: true,
   noCodeMode: "nothing",
   defaultLeadMagnetId: null,
+  autoreplyText: null,
   createdAt: new Date(0),
   ...fields,
 });

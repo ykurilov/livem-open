@@ -58,7 +58,7 @@ export default async function LeadMagnetPage({ params }: { params: Promise<{ id:
       draftVersionId={lead.draftVersionId}
       constructorChatId={constructorChatId}
       constructorHasMessages={constructorHasMessages}
-      preview={status ?? { chatId: previewChatId, stageName: null, day: null, days: null, finished: false }}
+      preview={status ?? { chatId: previewChatId, stageName: null, day: null, days: null, finished: false, messengerHandoff: null }}
       versions={versions.map((version) => ({ ...version, createdAt: version.createdAt.toISOString() }))}
       fields={fields}
       videos={videos.map(({ id, title, description }) => ({ id, title, description }))}

@@ -11,6 +11,16 @@ export const LEAD_MAGNET_TOOLS = {
   personLinkView: "person_link_view",
 } as const;
 
+/** События приложения для выходов сценария (`{ type: "event", event: "app", name }`). */
+export const LEAD_MAGNET_EVENTS = {
+  /** Человек нажал «Старт» в мессенджере по кнопке из веб-чата: разговор продолжается там. */
+  messengerHandoff: "messenger_handoff",
+} as const;
+
+const LEAD_MAGNET_EVENT_LABELS: Record<(typeof LEAD_MAGNET_EVENTS)[keyof typeof LEAD_MAGNET_EVENTS], string> = {
+  messenger_handoff: "Перешёл в мессенджер",
+};
+
 /** Названия инструментов на доске: в сценарии и при работе остаются служебные имена. */
 const LEAD_MAGNET_TOOL_LABELS: Record<(typeof LEAD_MAGNET_TOOLS)[keyof typeof LEAD_MAGNET_TOOLS], string> = {
   finish_dialog: "Завершить разговор",
@@ -45,8 +55,8 @@ export function clientCardFieldOf(field: FieldDefinition): ClientCardField {
 
 /**
  * Что приложение объявляет сценарию: одно и то же для доски, конструктора, `lm.sh` и проверки при сохранении.
- * `fields` — словарь «Базы»: доска предлагает из него поля карточки. Своих событий нет: день программы — таймер SDK.
+ * `fields` — словарь «Базы»: доска предлагает из него поля карточки. День программы — таймер SDK, не событие.
  */
 export function leadMagnetFlowCatalog(fields: readonly FieldDefinition[] = []): FlowCatalog {
-  return { tools: Object.values(LEAD_MAGNET_TOOLS), toolLabels: LEAD_MAGNET_TOOL_LABELS, events: [], widgets: [], fields: fields.map(catalogFieldOf) };
+  return { tools: Object.values(LEAD_MAGNET_TOOLS), toolLabels: LEAD_MAGNET_TOOL_LABELS, events: Object.values(LEAD_MAGNET_EVENTS).map((name) => ({ name, label: LEAD_MAGNET_EVENT_LABELS[name] })), widgets: [], fields: fields.map(catalogFieldOf) };
 }

@@ -315,6 +315,26 @@ describe("ссылка с подставленным текстом", () => {
   });
 });
 
+describe("переход из веб-чата в мессенджер", () => {
+  const handoff = { enabled: true, when: "Человек согласился на программу", channels: ["vk", "telegram"] as ("vk" | "telegram")[] };
+
+  it("set_messenger_handoff сохраняет настройку, видна в обзоре; без «когда» или мессенджеров — отказ; null убирает", async () => {
+    expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_messenger_handoff", messengerHandoff: handoff }] })).toMatchObject({ ok: true });
+    const saved = { ...handoff, channels: ["telegram", "vk"] };
+    expect((await getLeadMagnet(deps.db, lead.id))!.draft.messengerHandoff).toEqual(saved);
+    expect(((await viewLeadMagnet(deps, lead.id, { sections: ["overview"] })) as { overview: Record<string, unknown> }).overview).toMatchObject({ messengerHandoff: saved });
+
+    const noWhen = await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_messenger_handoff", messengerHandoff: { ...handoff, when: "" } }] });
+    expect(noWhen).toMatchObject({ ok: false });
+    if (!noWhen.ok) expect(noWhen.error).toMatch(/когда предложить/);
+    const noChannels = await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_messenger_handoff", messengerHandoff: { ...handoff, channels: [] } }] });
+    expect(noChannels).toMatchObject({ ok: false });
+
+    expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_messenger_handoff", messengerHandoff: null }] })).toMatchObject({ ok: true });
+    expect((await getLeadMagnet(deps.db, lead.id))!.draft.messengerHandoff).toBeUndefined();
+  });
+});
+
 describe("схема edit_lead_magnet для модели", () => {
   const schema = () => asSchema(createConstructorTools(deps, lead.id).edit_lead_magnet!.inputSchema);
   const setName = [{ op: "set", field: "name", value: "Марафон" }];

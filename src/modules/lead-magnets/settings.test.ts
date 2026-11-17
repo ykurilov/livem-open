@@ -31,6 +31,15 @@ describe("проверка настроек лидмагнита", () => {
     expect(validateLeadMagnetSettings(saved).voiceInput).toBe(false);
   });
 
+  it("«Если человек вернулся после конца программы» по умолчанию — «Входящие»; настройки, записанные до поля, — тоже", () => {
+    const settings = newLeadMagnetSettings("Разбор");
+    expect(settings.returnAfterProgram).toBe("inbox");
+    expect(validateLeadMagnetSettings({ ...settings, returnAfterProgram: "restart" }).returnAfterProgram).toBe("restart");
+    const { returnAfterProgram: _skipped, ...saved } = settings;
+    expect(validateLeadMagnetSettings(saved).returnAfterProgram).toBe("inbox");
+    expect(() => validateLeadMagnetSettings({ ...settings, returnAfterProgram: "anything" })).toThrow();
+  });
+
   it("«Описание клиентов» сохраняется; настройки, записанные до поля, читаются с пустым описанием", () => {
     const settings = newLeadMagnetSettings("Разбор");
     expect(settings.clientPortrait).toBe("");

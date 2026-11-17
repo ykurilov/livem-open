@@ -19,6 +19,8 @@ import { describeInvalidModelChoice } from "@/modules/platform/model-choice";
 import { isUuid } from "@/modules/platform/uuid";
 import { PreviewReopenRefused } from "@/modules/consultant/preview-endpoint";
 import { PreviewRefusal } from "@/modules/consultant/preview-flow-test";
+import { MESSENGER_KINDS } from "@/modules/channels/channel";
+import type { HandoffMessenger } from "@/modules/messenger-handoff/setting";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 /** Ошибка сохранения сценария: общий текст и замечания с путём в сценарии (для подсказок на доске). */
@@ -161,6 +163,19 @@ export async function advancePreviewAction(leadMagnetId: string, ms: number, tim
 /** К ближайшему сообщению сценария первым. */
 export async function advancePreviewToReminderAction(leadMagnetId: string, timeZone?: string): Promise<PreviewClockResult> {
   return shiftPreviewClock(async () => (await getEditorServices()).preview.advanceToNextFirstMessage(leadMagnetId, timeZone));
+}
+
+/** Кнопка мессенджера в «Проверке»: как «Старт» в боте — консультант продолжает разговор первым. */
+export async function takePreviewMessengerHandoffAction(leadMagnetId: string, channel: HandoffMessenger): Promise<{ error?: string }> {
+  await requireUser();
+  if (!MESSENGER_KINDS.includes(channel)) return { error: "Такого мессенджера нет." };
+  try {
+    await (await getEditorServices()).preview.takeMessengerHandoff(leadMagnetId, channel);
+  } catch (error) {
+    console.error(`Переход в мессенджер в «Проверке» не удался (лидмагнит ${leadMagnetId}):`, error instanceof Error ? error.message : error);
+    return { error: "Не получилось перейти в мессенджер. Обновите страницу и попробуйте ещё раз." };
+  }
+  return {};
 }
 
 /** «Продолжить разговор»; сценарий не открывается (вышел срок программы) — `error` со словами, что делать. */

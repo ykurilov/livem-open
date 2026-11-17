@@ -9,7 +9,7 @@ import { applyChatMigration } from "../flows/chat-migration";
 import { createFirstMessageDelivery, sendTargetOf } from "../flows/delivery";
 import { createLeadMagnetFlow, type LeadMagnetFlow } from "../flows/runtime";
 import type { LeadMagnetSettings } from "../lead-magnets";
-import { markPersonBlocked } from "../people";
+import { getPerson, markPersonBlocked } from "../people";
 import type { Clock } from "../platform/clock";
 import type { TokenCipher } from "../platform/crypto";
 import type { Database } from "../platform/db";
@@ -23,11 +23,12 @@ import {
   type BudgetStatus,
 } from "../spending";
 import { congratulatePurchase, remindPayment } from "../purchases/reactions";
+import { continueInMessenger, offerMessengerHandoff } from "../messenger-handoff/handoff";
 import { endActivePassages } from "./passage-end";
 import { createPassageConversationStore } from "./passage-store";
 import { routeInboundMessage } from "./router";
 import type { SenlerApi } from "../senler";
-import { passages } from "./schema";
+import { chatOwnerOf, passages } from "./schema";
 import { sweepStuckWork } from "./sweep";
 import { releaseBurstTurn, reserveBurstTurn, runPassageTurn, settleUnattendedTurn, type TurnSpending } from "./turn";
 import { acceptWebhook, type WebhookResponse } from "./webhook";
@@ -100,6 +101,8 @@ export interface LiveDialog {
   congratulatePurchase(passageId: string): Promise<void>;
   /** Задача `payment-reminder`: одно напоминание об оплате, если её так и нет. */
   remindPayment(passageId: string): Promise<void>;
+  /** Задача `messenger-handoff-continue`: разговор продолжается в мессенджере после «Старта» по кнопке веб-чата. */
+  continueInMessenger(handoffId: string): Promise<void>;
 }
 
 export function createLiveDialog(deps: LiveDialogDependencies): LiveDialog {
@@ -134,6 +137,10 @@ export function createLiveDialog(deps: LiveDialogDependencies): LiveDialog {
     ...(deps.env && { env: deps.env }),
     ...(deps.registry && { registry: deps.registry }),
     store: createPassageConversationStore(db, clock, deps.queue),
+    messengerHandoff: {
+      inWebChat: async ({ ownerId }) => (await getPerson(db, ownerId))?.channel === "web",
+      offer: (chat) => offerMessengerHandoff(db, deps.adapters, chat),
+    },
     ...(deps.chatImages && { attachments: deps.chatImages }),
     modelChoice: deps.modelChoice,
     limits,
@@ -167,17 +174,17 @@ export function createLiveDialog(deps: LiveDialogDependencies): LiveDialog {
         await markPersonBlocked(tx, message.personId, at);
         await endActivePassages(tx, eq(passages.personId, message.personId), "blocked", at);
       });
-      if (active) await flow.end({ ownerId: message.personId, chatId: active, reason: "blocked" });
+      if (active) await flow.end({ ownerId: active.ownerId, chatId: active.chatId, reason: "blocked" });
     },
     onPermanentFailure: (message, error) => reportSendFailure(botHealth, message.botId, error),
   };
 
-  async function activeChatOf(personId: string): Promise<string | null> {
+  async function activeChatOf(personId: string): Promise<{ ownerId: string; chatId: string } | null> {
     const [active] = await db
-      .select({ chatId: passages.chatId })
+      .select({ chatId: passages.chatId, personId: passages.personId, chatOwnerId: passages.chatOwnerId })
       .from(passages)
       .where(and(eq(passages.personId, personId), eq(passages.status, "active")));
-    return active?.chatId ?? null;
+    return active ? { ownerId: chatOwnerOf(active), chatId: active.chatId } : null;
   }
 
   return {
@@ -192,14 +199,15 @@ export function createLiveDialog(deps: LiveDialogDependencies): LiveDialog {
       await applyChatMigration({ db, flow }, input);
     },
     async noteStaffReply({ personId }) {
-      const chatId = await activeChatOf(personId);
-      if (chatId) await flow.noteStaffReply({ ownerId: personId, chatId });
+      const active = await activeChatOf(personId);
+      if (active) await flow.noteStaffReply(active);
     },
     recoverAnswers: () => consultant.recoverAnswers(),
     tickBursts: () => consultant.tickBursts(),
     settled: () => consultant.settled(),
     flush: (options) => consultant.flush(options),
     congratulatePurchase: (passageId) => congratulatePurchase({ db, queue: deps.queue, clock, writer: consultant }, passageId),
+    continueInMessenger: (handoffId) => continueInMessenger({ db, queue: deps.queue, clock, writer: consultant, flow }, handoffId),
     remindPayment: (passageId) => remindPayment({ db, queue: deps.queue, clock, writer: consultant }, passageId),
   };
 }

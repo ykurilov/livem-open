@@ -15,7 +15,7 @@ import { outboundMessages } from "../channels/schema";
 import { mediaSentWith } from "../consultant/sent-media";
 import { sentImagePath } from "../images";
 import { releaseHeldMessages } from "../conversations/passage-end";
-import { inboundMessages, passages } from "../conversations/schema";
+import { chatOwnerOf, inboundMessages, passages } from "../conversations/schema";
 import { tagPassageText } from "../purchases/outgoing";
 import { getPerson, markPersonBlocked } from "../people";
 import type { Clock } from "../platform/clock";
@@ -89,10 +89,10 @@ export function createFirstMessageDelivery(deps: FirstMessageDeliveryDependencie
   const { db, clock } = deps;
   return async (message) => {
     const [passage] = await db
-      .select({ id: passages.id, personId: passages.personId, status: passages.status })
+      .select({ id: passages.id, personId: passages.personId, chatOwnerId: passages.chatOwnerId, status: passages.status })
       .from(passages)
       .where(eq(passages.chatId, message.chatId));
-    const person = passage?.personId === message.ownerId ? await getPerson(db, passage.personId) : null;
+    const person = passage && chatOwnerOf(passage) === message.ownerId ? await getPerson(db, passage.personId) : null;
     if (!passage || !person) {
       deps.logError?.(`[сценарий] чат=${message.chatId}: не разговор с человеком в мессенджере, сообщение первым не отправлено`);
       return { status: "failed" };

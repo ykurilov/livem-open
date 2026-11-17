@@ -26,6 +26,8 @@ export interface BotSummary {
   /** Что бот делает, если человек пришёл без кода лидмагнита. */
   noCodeMode: NoCodeMode;
   defaultLeadMagnetId: string | null;
+  /** Свой текст автоответа; `null` — текст по умолчанию. */
+  autoreplyText: string | null;
   createdAt: Date;
 }
 
@@ -46,6 +48,8 @@ export interface BotService {
   replaceBotToken(botId: string, token: string): Promise<BotActionResult>;
   /** Поведение без кода. Лидмагнит по умолчанию — один из привязанных к этому боту. */
   updateNoCodeSettings(botId: string, settings: NoCodeSettings): Promise<BotActionResult>;
+  /** Свой текст автоответа тем, кто пишет после конца разговора. Пустой — текст по умолчанию. */
+  updateAutoreplyText(botId: string, text: string): Promise<BotActionResult>;
   /** Сколько разговоров сейчас идёт на боте: при удалении они закроются. */
   countActiveConversations(botId: string): Promise<number>;
   /**
@@ -63,6 +67,17 @@ export interface NoCodeSettings {
 export type BotActionResult = { ok: true } | { ok: false; error: string };
 
 const BOT_NOT_FOUND = "Бот не найден: возможно, его уже удалили";
+
+/** Автоответ человеку, который пишет после завершённого лидмагнита, если эксперт не задал свой в настройках бота. */
+export const AUTOREPLY_TEXT = "Спасибо за сообщение! Помощь по программе уже закончилась.";
+
+/** Текст автоответа бота: свой из настроек, пустой — по умолчанию. */
+export function autoreplyTextOf(bot: Pick<BotRow, "autoreplyText">): string {
+  return bot.autoreplyText?.trim() || AUTOREPLY_TEXT;
+}
+
+/** Предел своего текста автоответа: короткое сообщение, а не письмо. */
+export const AUTOREPLY_TEXT_MAX_LENGTH = 1000;
 
 export interface BotServiceDependencies {
   db: Database;
@@ -117,6 +132,7 @@ function toSummary(row: BotRow): BotSummary {
     canSendPhotos: row.canSendPhotos,
     noCodeMode: row.noCodeMode,
     defaultLeadMagnetId: row.defaultLeadMagnetId,
+    autoreplyText: row.autoreplyText,
     createdAt: row.createdAt,
   };
 }
@@ -276,6 +292,19 @@ export function createBotService(deps: BotServiceDependencies): BotService {
       const [updated] = await db
         .update(bots)
         .set({ noCodeMode: settings.mode, defaultLeadMagnetId })
+        .where(and(eq(bots.id, botId), isNull(bots.deletedAt)))
+        .returning({ id: bots.id });
+      return updated ? { ok: true } : { ok: false, error: BOT_NOT_FOUND };
+    },
+
+    async updateAutoreplyText(botId, text) {
+      const autoreplyText = text.trim() || null;
+      if (autoreplyText && autoreplyText.length > AUTOREPLY_TEXT_MAX_LENGTH)
+        return { ok: false, error: `Автоответ — не длиннее ${AUTOREPLY_TEXT_MAX_LENGTH} знаков` };
+      if (!isUuid(botId)) return { ok: false, error: BOT_NOT_FOUND };
+      const [updated] = await db
+        .update(bots)
+        .set({ autoreplyText })
         .where(and(eq(bots.id, botId), isNull(bots.deletedAt)))
         .returning({ id: bots.id });
       return updated ? { ok: true } : { ok: false, error: BOT_NOT_FOUND };

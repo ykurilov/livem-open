@@ -6,7 +6,7 @@ import type { AgentFlowHandle } from "@ykurilov/agent-chat-flows";
 import { and, asc, eq, gt, gte, inArray, max } from "drizzle-orm";
 import type { Pool } from "pg";
 import { outboundMessages } from "../channels/schema";
-import { passages } from "../conversations/schema";
+import { chatOwnerOf, passages } from "../conversations/schema";
 import { getVersion, type LeadMagnetSettings } from "../lead-magnets";
 import { people } from "../people/schema";
 import type { Clock } from "../platform/clock";
@@ -155,7 +155,7 @@ async function legacyColumnsOf(
   const day = programDay({ startDate, now, timeZone });
   const today = addDays(startDate, day - 1);
   const sentToday = await db.$count(outboundMessages, and(sentFirst, gte(outboundMessages.sentAt, dayStartsAt(startDate, day, timeZone))));
-  const run = await input.flow.readRun(passage.personId, passage.chatId);
+  const run = await input.flow.readRun(chatOwnerOf(passage), passage.chatId);
   return {
     reminderStep: step,
     reminderChainStartedAt: later(lastReplyAt, lastTouchAt),

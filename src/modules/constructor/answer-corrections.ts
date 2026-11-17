@@ -1,7 +1,7 @@
 import { inArray } from "drizzle-orm";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
-import { listCorrections, resolveCorrections, type AnswerCorrection, type AnswerKind, type CorrectionContextLine, type CorrectionOutcome } from "../corrections";
+import { listCorrections, resolveCorrections, type AnswerCorrection, type AnswerKind, type CorrectionContextLine, type CorrectionIntent, type CorrectionOutcome } from "../corrections";
 import { getLeadMagnet } from "../lead-magnets";
 import { leadMagnetVersions } from "../lead-magnets/schema";
 import type { Database } from "../platform/db";
@@ -16,6 +16,14 @@ const STATUSES = ["pending", "resolved", "all"] as const;
 type StatusFilter = (typeof STATUSES)[number];
 
 const KIND: Record<AnswerKind, string> = { reply: "ответ", first_message: "первое сообщение", farewell: "ответ с прощанием" };
+/** Выбор эксперта «Что сделать с правкой»; «пусть конструктор решит» строки не даёт. Как следовать выбору — в инструкции конструктора. */
+const INTENT: Record<Exclude<CorrectionIntent, "auto">, string> = {
+  principles: "поправить принципы",
+  formula: "сделать формулу",
+  card: "эксперт делает заготовку сам",
+};
+const intentLine = (correction: AnswerCorrection) => (correction.intent === "auto" ? [] : [`Что сделать: ${INTENT[correction.intent]}`]);
+
 const NONE: Record<StatusFilter, string> = { pending: "Неразобранных правок нет.", resolved: "Разобранных правок нет.", all: "Правок нет." };
 
 const time = new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short", timeZone: AGENT_TIME_ZONE });
@@ -85,6 +93,7 @@ export async function readAnswerCorrections(db: Database, leadMagnetId: string, 
       `Было: ${correction.originalText}`,
       `Стало: ${correction.correctedText}`,
       `Почему: ${correction.reason ?? "не написано"}`,
+      ...intentLine(correction),
       ...outcome(correction),
     ].join("\n");
   };

@@ -6,8 +6,9 @@ import { createVoiceInput } from "@ykurilov/agent-chat-voice";
 import { Banner, Button, ChatHeader, Textarea } from "@ykurilov/ds-react";
 import dynamic from "next/dynamic";
 import { forwardRef, Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import type { WebChatElsewhere, WebChatItem } from "@/modules/web-chat/web-chat";
+import type { WebChatElsewhere, WebChatHandoffState, WebChatItem } from "@/modules/web-chat/web-chat";
 import { useRememberedDraft } from "@/ui/remembered-draft";
+import { MessengerLogo } from "@/ui/messenger-logos";
 import { webChatVoiceChatId } from "@/modules/voice/access";
 
 /** Как часто открытая страница спрашивает новые сообщения. */
@@ -47,6 +48,7 @@ type PushOffer = "none" | "ask" | "ios-install";
  * `initialItems` — лента вернувшегося посетителя, собранная сервером вместе со страницей: видна до загрузки скриптов.
  * `closed` — этот чат закончен, идёт другой разговор: ни ленты, ни поля ввода, только переход в текущий.
  * `voice` — у лидмагнита включён голосовой ввод и на сервере есть ключ Soniox: в поле есть кнопка микрофона.
+ * `initialHandoff` — агент позвал в мессенджер или человек уже там: вместо поля ввода кнопки мессенджеров.
  */
 export function WebChat({
   code,
@@ -54,12 +56,14 @@ export function WebChat({
   initialItems,
   closed = null,
   voice = false,
+  initialHandoff = null,
 }: {
   code: string;
   title: string;
   initialItems: WebChatItem[];
   closed?: WebChatElsewhere["current"] | null;
   voice?: boolean;
+  initialHandoff?: WebChatHandoffState | null;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
@@ -67,6 +71,7 @@ export function WebChat({
 
   const [status, setStatus] = useState<Status>(closed ? { kind: "closed", current: closed } : { kind: "loading" });
   const [items, setItems] = useState<WebChatItem[]>(initialItems);
+  const [handoff, setHandoff] = useState<WebChatHandoffState | null>(initialHandoff);
   // Набранное переживает перезагрузку страницы: черновик лежит в браузере, пока сообщение не уйдёт
   const [draft, setDraft] = useRememberedDraft(`${DRAFT_KEY}${code}`);
   // Сказанное дописывается к набранному; после «стоп» сервер чистит его моделью, заменяется только надиктованный кусок
@@ -99,11 +104,13 @@ export function WebChat({
   const poll = useCallback(async () => {
     const last = itemsRef.current.at(-1);
     const since = last ? new Date(new Date(last.at).getTime() - POLL_OVERLAP_MS).toISOString() : null;
-    const response = await fetch(`/api/web-chat/messages${since ? `?since=${encodeURIComponent(since)}` : ""}`, {
+    const query = new URLSearchParams({ code, ...(since && { since }) });
+    const response = await fetch(`/api/web-chat/messages?${query}`, {
       cache: "no-store",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     }).catch(() => null);
-    const items = response?.ok ? ((await response.json().catch(() => null)) as { items: WebChatItem[] } | null)?.items : undefined;
+    const body = response?.ok ? ((await response.json().catch(() => null)) as { items: WebChatItem[]; handoff?: WebChatHandoffState | null } | null) : null;
+    const items = body?.items;
     if (!items) {
       // Вход потерян (браузер стёр cookie) — опрос сам не починится; сеть или сервер — после нескольких сбоев подряд
       if (response?.status === 401) setPollProblem("Чат перестал обновляться. Обновите страницу.");
@@ -114,7 +121,8 @@ export function WebChat({
     pollFailures.current = 0;
     setPollProblem(null);
     merge(items);
-  }, [merge]);
+    setHandoff(body.handoff ?? null);
+  }, [code, merge]);
 
   // Вход: cookie посетителя, первый разговор, затем опрос, пока страница видна
   useEffect(() => {
@@ -236,6 +244,8 @@ export function WebChat({
       const body = (await response?.json().catch(() => null)) as { error?: string; current?: WebChatElsewhere["current"] } | null;
       // Идёт другой разговор: обновить страницу в веб-приложении нечем — переход и возврат здесь же, черновик остаётся
       if (body?.current) return setStatus({ kind: "elsewhere", current: body.current });
+      // Разговор ушёл в мессенджер, пока страница не обновлялась: опрос принесёт кнопки вместо поля
+      if (response?.status === 409) void poll().catch(() => {});
       setSendError(body?.error ?? "Не получилось отправить. Проверьте интернет и попробуйте ещё раз.");
       return;
     }
@@ -279,6 +289,9 @@ export function WebChat({
   }
 
   const last = items.at(-1);
+  // Кнопки мессенджеров (или где идёт разговор) заменяют поле ввода: здесь разговор не продолжается. Сервер отдаёт их
+  // только когда закрывает поле, иначе `null`
+  const messenger = status.kind === "ready" ? handoff : null;
   // Приветствие ещё готовится или ответ на сообщение человека в пути; ушло эксперту без автоответа — бот молчит
   const waitingForGreeting = status.kind === "ready" && !last && readyAt !== null && now - readyAt < TYPING_MS;
   const waitingForReply =
@@ -328,7 +341,7 @@ export function WebChat({
           {/* Лента общая: под названием этого чата, когда идёт другой, она читалась бы как чужая */}
           {status.kind !== "elsewhere" && items.map((item) => <ChatBubble key={item.id} item={item} />)}
           {/* Готовые ответы — только под последним сообщением консультанта: ответил человек — их нет */}
-          {status.kind === "ready" && last?.from === "bot" && last.quickReplies && (
+          {status.kind === "ready" && !messenger && last?.from === "bot" && last.quickReplies && (
             <div className="web-chat__quick-replies" role="group" aria-label="Быстрые ответы">
               {last.quickReplies.map((reply) => (
                 <Button key={reply} type="button" size="sm" variant="secondary" className="web-chat__quick-reply" disabled={sending} onClick={() => void send(undefined, reply)}>
@@ -374,7 +387,8 @@ export function WebChat({
           )}
         </div>
       </div>
-      {status.kind !== "closed" && status.kind !== "elsewhere" && (
+      {messenger && <MessengerHandoff handoff={messenger} />}
+      {status.kind !== "closed" && status.kind !== "elsewhere" && !messenger && (
         <form className="web-chat__composer" onSubmit={send}>
           <div className="web-chat__column">
             {sendError && <p className="web-chat__error" role="alert">{sendError}</p>}
@@ -413,6 +427,51 @@ export function WebChat({
           </div>
         </form>
       )}
+    </div>
+  );
+}
+
+/**
+ * Вместо поля ввода: кнопки мессенджеров; после перехода — где продолжается разговор и кнопка туда же; человек уже в
+ * мессенджере, где есть и этот лидмагнит, — кнопка туда.
+ */
+function MessengerHandoff({ handoff }: { handoff: WebChatHandoffState }) {
+  return (
+    <div className="web-chat__composer">
+      <div className="web-chat__column">
+        <div className="web-chat__offer web-chat__handoff" role="group" aria-label="Продолжение в мессенджере">
+          {handoff.state === "offered" ? (
+            <>
+              <p>Продолжим в мессенджере — выберите удобный. Разговор пойдёт с того же места.</p>
+              <div className="web-chat__messengers">
+                {handoff.buttons.map((button) => (
+                  <a key={button.channel} className="web-chat__messenger" href={button.url} target="_blank" rel="noreferrer" aria-label={`Открыть ${button.title}`}>
+                    <MessengerLogo channel={button.channel} size={40} />
+                    <span>{button.title}</span>
+                  </a>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="web-chat__handoff-moved">
+                <MessengerLogo channel={handoff.channel} size={32} />
+                <p>
+                  {handoff.state === "taken"
+                    ? `Разговор продолжается в ${handoff.title}. Ответы и напоминания приходят туда.`
+                    : `Мы уже на связи в ${handoff.title} — продолжим этот разговор там.`}
+                </p>
+              </div>
+              {handoff.url && (
+                <a className="web-chat__messenger web-chat__messenger--wide" href={handoff.url} target="_blank" rel="noreferrer">
+                  <MessengerLogo channel={handoff.channel} size={24} />
+                  <span>{`Перейти в ${handoff.title}`}</span>
+                </a>
+              )}
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

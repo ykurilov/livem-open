@@ -19,7 +19,7 @@ export const priceCard: SalesCard = {
   title: "Цена курса",
   when: "Человек спросил, сколько стоит курс",
   text: "Курс стоит 9 900 ₽, оплата по ссылке https://pay.example.com/course",
-  verbatim: true,
+  mode: "verbatim",
 };
 
 export const doubtCard: SalesCard = {
@@ -28,5 +28,14 @@ export const doubtCard: SalesCard = {
   title: "Не уверен, что получится",
   when: "Человек сомневается, что справится",
   text: "Первые две недели куратор разбирает каждое задание лично.",
-  verbatim: false,
+  mode: "own_words",
+};
+
+export const formulaCard: SalesCard = {
+  id: "c-formula",
+  stateId: "intro",
+  title: "Разбор задачи",
+  when: "Человек описал свою задачу и ждёт, с чего начать",
+  text: "[Назови задачу человека его словами]. Начните с [первый шаг под его задачу] — так вы [что это даст].",
+  mode: "formula",
 };

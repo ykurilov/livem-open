@@ -91,6 +91,24 @@ describe("хранение правок ответов", () => {
     });
   });
 
+  it("выбор «Что сделать с правкой»: без выбора — решает конструктор; повторная правка с выбором его меняет, без выбора — сохраняет", async () => {
+    const lead = await newLead();
+    const plain = await recordCorrection(database.db, input(lead));
+    expect(plain).toMatchObject({ kind: "created", correction: { intent: "auto" } });
+
+    const first = input(lead, { intent: "formula" });
+    expect(await recordCorrection(database.db, first)).toMatchObject({ kind: "created", correction: { intent: "formula" } });
+    const again = { chatId: first.chatId, editedMessageId: first.correctedMessageId, editedText: first.correctedText };
+    expect(await recordCorrection(database.db, input(lead, { ...again, correctedMessageId: randomUUID(), correctedText: "Ещё короче" }))).toMatchObject({
+      kind: "updated",
+      correction: { intent: "formula" },
+    });
+    const [latest] = (await listCorrections(database.db, lead.id)).filter((one) => one.chatId === first.chatId);
+    expect(
+      await recordCorrection(database.db, input(lead, { chatId: first.chatId, editedMessageId: latest!.correctedMessageId, editedText: latest!.correctedText, correctedMessageId: randomUUID(), correctedText: "Совсем коротко", intent: "card" })),
+    ).toMatchObject({ kind: "updated", correction: { intent: "card" } });
+  });
+
   it("повторная правка исправленного ответа находит правку по исправленному ответу и обновляет «стало»", async () => {
     const lead = await newLead();
     const first = input(lead);
@@ -294,15 +312,15 @@ describe("хранение правок ответов", () => {
     const lead = await newLead();
     const chatId = randomUUID();
     const [pending, resolved] = await seedCorrections(database.db, lead.id, [
-      { chatId, originalText: "а", correctedText: "б" },
+      { chatId, originalText: "а", correctedText: "б", intent: "card" },
       { chatId, originalText: "в", correctedText: "г", status: "resolved", outcome: "applied", resolvedAt: new Date() },
       { originalText: "д", correctedText: "е" },
     ]);
 
     expect(await countPending(database.db, lead.id)).toBe(2);
     expect(await editedAnswersOfChat(database.db, chatId, "consultant")).toEqual([
-      { messageId: pending!.correctedMessageId, correctionId: pending!.id, pending: true },
-      { messageId: resolved!.correctedMessageId, correctionId: resolved!.id, pending: false },
+      { messageId: pending!.correctedMessageId, correctionId: pending!.id, pending: true, intent: "card" },
+      { messageId: resolved!.correctedMessageId, correctionId: resolved!.id, pending: false, intent: "auto" },
     ]);
     expect(await editedAnswersOfChat(database.db, randomUUID(), "consultant")).toEqual([]);
   });

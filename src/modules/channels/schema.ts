@@ -33,6 +33,8 @@ export const bots = appSchema.table(
     canSendPhotos: boolean("can_send_photos").notNull().default(true),
     noCodeMode: text("no_code_mode").$type<NoCodeMode>().notNull().default("nothing"),
     defaultLeadMagnetId: uuid("default_lead_magnet_id").references(() => leadMagnets.id),
+    /** Свой текст автоответа тем, кто пишет после конца разговора; `null` — текст по умолчанию (`AUTOREPLY_TEXT`). */
+    autoreplyText: text("autoreply_text"),
     /** Бот удалён экспертом: не принимает сообщений и не виден. Запись остаётся — на неё ссылаются люди и переписка. */
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

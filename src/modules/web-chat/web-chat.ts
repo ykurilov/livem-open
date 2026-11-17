@@ -1,11 +1,15 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, count, desc, eq, gt, gte, inArray, isNull, max, ne, sql, type SQL } from "drizzle-orm";
 import { embedUrl, parseVideoUrl } from "@ykurilov/agent-chat-videos";
-import type { ChannelEvent } from "../channels/channel";
+import type { ChannelAdapters, ChannelEvent } from "../channels/channel";
+import { handedOffPerson, handoffStateForVisitor, type WebChatHandoffState } from "../messenger-handoff/handoff";
+
+export type { WebChatHandoffState };
 import { bots, outboundMessages } from "../channels/schema";
-import { programEnded, publishedByCode } from "../conversations/router";
+import { returnGoesToInbox } from "../conversations/program-return";
+import { publishedByCode } from "../conversations/router";
 import { loadWithoutCodeHistory, whoWritesWithoutCode } from "../conversations/returning";
-import { inboundMessages, passages } from "../conversations/schema";
+import { chatOwnerOf, inboundMessages, passages } from "../conversations/schema";
 import { acceptChannelEvents } from "../conversations/webhook";
 import { afterStartOver } from "../conversations/start-over";
 import { findEntryLinkByCode } from "../lead-magnets/links";
@@ -48,6 +52,8 @@ export interface WebChatDependencies {
   queue: JobEnqueuer;
   clock: Clock;
   cipher: TokenCipher;
+  /** Адаптеры мессенджеров: кнопки перехода и ссылки в бот вместо поля ввода. */
+  adapters: ChannelAdapters;
 }
 
 export type WebChatVisitor = typeof webChatVisitors.$inferSelect;
@@ -87,7 +93,7 @@ export interface WebChatItem {
 export type WebChatSendResult =
   /** `item` — сообщение человека для ленты: страница показывает его сразу, не дожидаясь опроса. */
   | { ok: true; item: WebChatItem | null }
-  | { ok: false; reason: "empty" | "too_long" | "too_fast" | "too_many" | "retry"; error: string }
+  | { ok: false; reason: "empty" | "too_long" | "too_fast" | "too_many" | "retry" | "messenger"; error: string }
   /** `current` — разговор, который идёт сейчас: страница предложит перейти в него или вернуться сюда. */
   | { ok: false; reason: "other_chat"; error: string; current: WebChatElsewhere["current"] };
 
@@ -215,8 +221,13 @@ export async function openWebChat(
   const person = await findPerson(deps.db, visitor.id);
   const timeZone = input.timeZone?.trim();
   // До начала разговора: дата старта программы и ночь считаются по поясу человека
-  if (timeZone && !person?.timeZone && isValidTimeZone(timeZone)) await rememberBrowserTimeZone(deps.db, bot.id, visitor.id, timeZone);
+  // Человек ушёл в мессенджер — его запись уже не веб-чата: вторую запись под поясом браузера не заводим
+  const webPerson = !person || person.channel === "web";
+  if (timeZone && webPerson && !person?.timeZone && isValidTimeZone(timeZone)) await rememberBrowserTimeZone(deps.db, bot.id, visitor.id, timeZone);
   const history = person ? await passageHistory(deps.db, person, target.leadMagnetId) : null;
+  // Человек перешёл в мессенджер, где опубликован и этот лидмагнит: страница зовёт туда, здесь разговор не начинается
+  const inMessenger =
+    person && !webPerson ? await handoffStateForVisitor(deps.db, deps.adapters, { visitorId: visitor.id, leadMagnetId: target.leadMagnetId, code }) : null;
   const continuing = person ? await continuingChat(deps.db, person, now) : null;
   const otherContinues = continuing !== null && continuing.leadMagnetId !== target.leadMagnetId;
   const token = issuedToken ?? input.token ?? "";
@@ -225,7 +236,7 @@ export async function openWebChat(
   if (elsewhere) return { kind: "closed", token, issued: issuedToken !== null, ...elsewhere };
   if (visitor.lastCode !== code) await deps.db.update(webChatVisitors).set({ lastCode: code }).where(eq(webChatVisitors.id, visitor.id));
   // Продолжается другой разговор (идёт или брошен недавно) — сообщение отсюда ушло бы в него: этот начинается, как по ссылке
-  if (!history?.hadThis || otherContinues) {
+  if ((!history?.hadThis || otherContinues) && !inMessenger) {
     // Новое положение дел (другой разговор начался, сброс) — новое событие; то же самое — повтор отсекается
     const latest = history?.latest;
     const start: ChannelEvent = {
@@ -283,6 +294,9 @@ export async function sendWebChatMessage(
   const dedupeKey = `web:${visitor.id}:${clientId}`;
   const repeated = await sentPersonItem(deps.db, dedupeKey);
   if (repeated) return { ok: true, item: repeated };
+  // Вместо поля ввода кнопки мессенджеров или ссылка в бот, где человек уже есть: здесь разговор не продолжается
+  if (await webChatMessengerHandoff(deps.db, deps.adapters, visitor, input.code ?? visitor.lastCode ?? ""))
+    return { ok: false, reason: "messenger", error: "Разговор продолжается в мессенджере: нажмите кнопку под сообщениями" };
   const now = deps.clock.now();
   const current = input.code ? await otherContinuingChat(deps.db, visitor, input.code, now) : null;
   if (current) return { ok: false, reason: "other_chat", error: `Сейчас у вас идёт разговор «${current.title}»`, current };
@@ -400,7 +414,7 @@ export async function readWebChat(
     .from(inboundMessages)
     .where(
       and(
-        eq(inboundMessages.botId, person.botId),
+        inArray(inboundMessages.botId, webBotIds(db)),
         eq(inboundMessages.externalUserId, visitor.id),
         eq(inboundMessages.kind, "message"),
         isNull(inboundMessages.startCode),
@@ -411,7 +425,15 @@ export async function readWebChat(
   const outboundQuery = db
     .select()
     .from(outboundMessages)
-    .where(and(eq(outboundMessages.personId, person.id), eq(outboundMessages.status, "sent"), since ? gte(outboundMessages.sentAt, since) : undefined))
+    // Только веб-чата: после перехода в мессенджер ответы идут туда, а здесь остаётся прежняя переписка
+    .where(
+      and(
+        eq(outboundMessages.personId, person.id),
+        inArray(outboundMessages.botId, webBotIds(db)),
+        eq(outboundMessages.status, "sent"),
+        since ? gte(outboundMessages.sentAt, since) : undefined,
+      ),
+    )
     .orderBy(desc(outboundMessages.sentAt), desc(outboundMessages.createdAt));
   // Выборка с конца, чтобы взять последние; дальше — снова по времени: сортировка ниже устойчива при равном времени
   const [inbound, outbound] = (limit ? [await inboundQuery.limit(limit), await outboundQuery.limit(limit)] : [await inboundQuery, await outboundQuery]).map(
@@ -447,11 +469,12 @@ export async function markWebChatAway(db: DatabaseExecutor, visitor: WebChatVisi
 /** Картинка из исходящего — только тому посетителю, кому оно ушло. Иначе `null`. */
 export async function webChatImagePath(db: DatabaseExecutor, visitor: WebChatVisitor, messageId: string): Promise<string | null> {
   if (!isUuid(messageId)) return null;
+  const person = await findPerson(db, visitor.id);
+  if (!person) return null;
   const [row] = await db
     .select({ imagePath: outboundMessages.imagePath })
     .from(outboundMessages)
-    .innerJoin(people, eq(people.id, outboundMessages.personId))
-    .where(and(eq(outboundMessages.id, messageId), eq(people.channel, "web"), eq(people.externalUserId, visitor.id)));
+    .where(and(eq(outboundMessages.id, messageId), eq(outboundMessages.personId, person.id), inArray(outboundMessages.botId, webBotIds(db))));
   return row?.imagePath ?? null;
 }
 
@@ -506,8 +529,8 @@ export async function webChatElsewhere(db: DatabaseExecutor, code: string, visit
   if (!title || !person) return null;
   const continuing = await continuingChat(db, person, now);
   if (!continuing || continuing.leadMagnetId === leadMagnetId) return null;
-  // Опубликованный по ссылке начинается заново, бросая текущий, — кроме законченной программы
-  if (published && !(await programEnded(db, person, published.leadMagnetId))) return null;
+  // Опубликованный по ссылке начинается заново, бросая текущий, — кроме законченной программы с возвратом во «Входящие»
+  if (published && !(await returnGoesToInbox(db, person, published))) return null;
   return { title, current: continuing.current };
 }
 
@@ -547,12 +570,12 @@ export async function webChatVoicePayer(db: DatabaseExecutor, visitorId: string,
   const [leadMagnetId, person] = await Promise.all([leadMagnetIdByCode(db, code), findPerson(db, visitorId)]);
   if (!leadMagnetId || !person) return null;
   const [passage] = await db
-    .select({ chatId: passages.chatId })
+    .select({ chatId: passages.chatId, personId: passages.personId, chatOwnerId: passages.chatOwnerId })
     .from(passages)
     .where(and(eq(passages.personId, person.id), eq(passages.leadMagnetId, leadMagnetId)))
     .orderBy(desc(passages.startedAt))
     .limit(1);
-  return passage ? { ownerId: person.id, chatId: passage.chatId } : null;
+  return passage ? { ownerId: chatOwnerOf(passage), chatId: passage.chatId } : null;
 }
 
 async function leadMagnetIdByCode(db: DatabaseExecutor, code: string): Promise<string | null> {
@@ -573,15 +596,32 @@ async function leadMagnetTitle(db: DatabaseExecutor, leadMagnetId: string): Prom
   return row?.settings.name.trim() || "Чат";
 }
 
+const webBotIds = (db: DatabaseExecutor) => db.select({ id: bots.id }).from(bots).where(eq(bots.channel, "web"));
+
+/** Человек посетителя: в веб-чате, а после перехода в мессенджер — та же запись, уже с аккаунтом мессенджера. */
 async function findPerson(db: DatabaseExecutor, visitorId: string) {
-  const webBots = db.select({ id: bots.id }).from(bots).where(eq(bots.channel, "web"));
   const [person] = await db
     .select()
     .from(people)
-    .where(and(inArray(people.botId, webBots), eq(people.externalUserId, visitorId)))
+    .where(and(inArray(people.botId, webBotIds(db)), eq(people.externalUserId, visitorId)))
     .orderBy(desc(people.createdAt))
     .limit(1);
-  return person ?? null;
+  return person ?? (await handedOffPerson(db, visitorId));
+}
+
+/**
+ * Что страница показывает вместо поля ввода: кнопки мессенджеров, где продолжается разговор или ссылка в бот, где
+ * человек уже есть. `null` — поле ввода; сервер принимает сообщения ровно тогда же.
+ */
+export async function webChatMessengerHandoff(
+  db: DatabaseExecutor,
+  adapters: ChannelAdapters,
+  visitor: WebChatVisitor,
+  code: string,
+): Promise<WebChatHandoffState | null> {
+  const trimmed = code.trim();
+  const leadMagnetId = await leadMagnetIdByCode(db, trimmed);
+  return leadMagnetId ? handoffStateForVisitor(db, adapters, { visitorId: visitor.id, leadMagnetId, code: trimmed }) : null;
 }
 
 function botItems(row: typeof outboundMessages.$inferSelect): WebChatItem[] {

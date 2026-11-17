@@ -13,6 +13,7 @@ export {
   saveWebChatSubscription,
   sendWebChatMessage,
   webChatImagePath,
+  webChatMessengerHandoff,
   webChatResumeCode,
   webChatElsewhere,
   webChatTitle,

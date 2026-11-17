@@ -90,6 +90,7 @@ async function recordLocked(tx: DatabaseExecutor, input: RecordCorrectionInput):
         correctedMessageId: input.correctedMessageId,
         correctedText: input.correctedText,
         reason: reason ?? pending.reason,
+        intent: input.intent ?? pending.intent,
         announcedAt: null,
         updatedAt: now,
       })
@@ -117,6 +118,7 @@ async function recordLocked(tx: DatabaseExecutor, input: RecordCorrectionInput):
       originalText: input.editedText,
       correctedText: input.correctedText,
       reason,
+      intent: input.intent ?? "auto",
       context: input.context,
       actions: input.actions,
       stageId: input.stageId ?? null,
@@ -230,11 +232,17 @@ export async function countPending(db: DatabaseExecutor, leadMagnetId: string): 
  */
 export async function editedAnswersOfChat(db: DatabaseExecutor, chatId: string, agentRole: CorrectionAgentRole): Promise<EditedAnswer[]> {
   const rows = await db
-    .select({ messageId: answerCorrections.correctedMessageId, correctionId: answerCorrections.id, status: answerCorrections.status })
+    .select({ messageId: answerCorrections.correctedMessageId, correctionId: answerCorrections.id, status: answerCorrections.status, intent: answerCorrections.intent })
     .from(answerCorrections)
     .where(and(eq(answerCorrections.chatId, chatId), eq(answerCorrections.agentRole, agentRole)))
     .orderBy(asc(answerCorrections.createdAt), asc(answerCorrections.id));
-  return rows.map(({ messageId, correctionId, status }) => ({ messageId, correctionId, pending: status === "pending" }));
+  // У реплик клиента из «Поменяемся ролями» выбора нет: там правка всегда отдаётся конструктору как есть
+  return rows.map(({ messageId, correctionId, status, intent }) => ({
+    messageId,
+    correctionId,
+    pending: status === "pending",
+    ...(agentRole === "consultant" ? { intent } : {}),
+  }));
 }
 
 /**

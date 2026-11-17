@@ -1,0 +1,1 @@
+ALTER TABLE "app"."bots" ADD COLUMN "autoreply_text" text;

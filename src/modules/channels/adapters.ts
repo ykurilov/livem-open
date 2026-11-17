@@ -8,7 +8,7 @@ import { createWebChatAdapter, type WebChatNotifier } from "./web/adapter";
 
 /**
  * Адаптеры мессенджеров, подключённые в приложении.
- * `STUB_CHANNEL=fake` — для сквозных проверок: вместо Telegram подделка в памяти, в продакшене запрещена.
+ * `STUB_CHANNEL=fake` — для сквозных проверок: вместо Telegram и ВКонтакте подделки в памяти, в продакшене запрещена.
  * Веб-чат есть всегда; `webChatNotifier` — уведомления закрытой странице (их шлёт только работник).
  */
 export function createChannelAdapters(
@@ -19,7 +19,7 @@ export function createChannelAdapters(
   if (env.STUB_CHANNEL === "fake") {
     if (env.NODE_ENV === "production")
       throw new Error("STUB_CHANNEL задана в продакшене: подделка мессенджера только для проверок. Уберите переменную.");
-    return { telegram: new FakeChannel(), web };
+    return { telegram: new FakeChannel(), vk: new FakeChannel({ kind: "vk" }), web };
   }
   return {
     web,

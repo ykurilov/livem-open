@@ -72,7 +72,7 @@ describe("маршрутизация входящих", () => {
 
     await say("Ещё вопрос");
     expect(kit.textsTo(person).slice(sentAfterFinish)).toEqual([AUTOREPLY_TEXT]);
-    expect(AUTOREPLY_TEXT).toBe("Спасибо! Сейчас пока не могу говорить, но в ближайшее время я с вами свяжусь!");
+    expect(AUTOREPLY_TEXT).toBe("Спасибо за сообщение! Помощь по программе уже закончилась.");
 
     await say("И ещё");
     expect(kit.textsTo(person).slice(sentAfterFinish)).toHaveLength(1);
@@ -95,6 +95,21 @@ describe("маршрутизация входящих", () => {
     await say("Спасибо за ответ");
     expect(kit.textsTo(person).slice(sentAfterFinish)).toHaveLength(2);
     expect(kit.calls).toHaveLength(callsAfterFinish);
+  });
+
+  it("автоответ — свой текст из настроек бота; пустой или из пробелов — текст по умолчанию", async () => {
+    const lead = await kit.publish();
+    await start(lead.code);
+    await say("Я готов, спасибо");
+    const sent = kit.textsTo(person).length;
+
+    await database.db.update(bots).set({ autoreplyText: "Программа закончилась. Напишу вам сам в течение дня." }).where(eq(bots.id, kit.bot.id));
+    await say("Ещё вопрос");
+    kit.clock.advance(DAY);
+    await database.db.update(bots).set({ autoreplyText: "   " }).where(eq(bots.id, kit.bot.id));
+    await say("И ещё");
+
+    expect(kit.textsTo(person).slice(sent)).toEqual(["Программа закончилась. Напишу вам сам в течение дня.", AUTOREPLY_TEXT]);
   });
 
   it("ссылка другого лидмагнита посреди разговора — старое прохождение не завершено, новое стартует", async () => {
@@ -326,6 +341,61 @@ describe("маршрутизация входящих", () => {
       kit.clock.advance(DAY);
       await say("Доброе утро");
       expect(kit.textsTo(person).slice(sent)).toEqual([AUTOREPLY_TEXT, AUTOREPLY_TEXT]);
+    });
+
+    describe("настройка «Если человек вернулся после конца программы» — «Начать заново»", () => {
+      const restartSettings = () => ({ ...programSettings(), firstMessage: "Начнём с первого дня", returnAfterProgram: "restart" as const });
+
+      it.each(["completed", "term_ended", "blocked"] as const)(
+        "ссылка после конца программы (%s) — новое прохождение с первого дня, первое сообщение, без автоответа",
+        async (status) => {
+          const lead = await kit.publish(restartSettings());
+          await start(lead.code);
+          await setStatus(status);
+          kit.clock.advance(14 * DAY);
+          const sent = kit.textsTo(person).length;
+
+          await start(lead.code);
+
+          const rows = await kit.passagesOf(person);
+          expect(rows.map((row) => row.status)).toEqual([status, "active"]);
+          expect(rows[1]).toMatchObject({ leadMagnetId: lead.leadMagnetId, snapshotId: lead.snapshotId, entryLinkId: rows[0]!.entryLinkId });
+          expect(rows[1]!.programStartDate).toBe(programStartDate(kit.clock.now(), null));
+          expect(rows[1]!.chatId).not.toBe(rows[0]!.chatId);
+          const texts = kit.textsTo(person).slice(sent);
+          expect(texts).toHaveLength(1);
+          expect(texts[0]).toContain("Начнём с первого дня");
+          expect(texts).not.toContain(AUTOREPLY_TEXT);
+          expect((await kit.inboundOf(person)).at(-1)).toMatchObject({ route: "passage", startedPassage: true, autoreply: false });
+          expect(kit.calls).toHaveLength(0);
+        },
+      );
+
+      it("вернувшийся без кода — как раньше: «Входящие» с автоответом, программа заново не начинается", async () => {
+        const lead = await kit.publish(restartSettings());
+        await start(lead.code);
+        await setStatus("term_ended");
+        kit.clock.advance(14 * DAY);
+        const sent = kit.textsTo(person).length;
+
+        await say("Здравствуйте, я снова тут");
+
+        expect(await kit.passagesOf(person)).toHaveLength(1);
+        expect(kit.textsTo(person).slice(sent)).toEqual([AUTOREPLY_TEXT]);
+        expect((await kit.inboundOf(person)).at(-1)).toMatchObject({ route: "inbox", autoreply: true });
+      });
+
+      it("по умолчанию («Передать мне во „Входящие“») ссылка после конца программы — во «Входящие» с автоответом", async () => {
+        const lead = await kit.publish(programSettings());
+        expect((await getVersion(database.db, lead.snapshotId))?.settings.returnAfterProgram).toBe("inbox");
+        await start(lead.code);
+        await setStatus("term_ended");
+
+        await start(lead.code);
+
+        expect(await kit.passagesOf(person)).toHaveLength(1);
+        expect((await kit.inboundOf(person)).at(-1)).toMatchObject({ route: "inbox", autoreply: true });
+      });
     });
 
     it("закончившаяся программа лидмагнита без программы по-прежнему перезапускается ссылкой", async () => {

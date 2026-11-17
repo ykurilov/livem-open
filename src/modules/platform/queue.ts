@@ -23,6 +23,8 @@ export interface JobPayloads {
   "payment-reminder": { passageId: string };
   /** Пришёл по ссылке лидмагнита в бот ВК с Senler: добавить в группу подписчиков Senler. */
   "senler-subscribe": { passageId: string };
+  /** Человек нажал «Старт» в мессенджере по кнопке из веб-чата: событие сценария и продолжение разговора там. */
+  "messenger-handoff-continue": { handoffId: string };
   /** Уведомление посетителю веб-чата о новом сообщении (Web Push); временный сбой службы — повтор. */
   "web-chat-push": { visitorId: string; body: string };
 }
@@ -44,6 +46,7 @@ export const JOB_NAMES: JobName[] = [
   "purchase-congratulate",
   "payment-reminder",
   "senler-subscribe",
+  "messenger-handoff-continue",
   "web-chat-push",
 ];
 

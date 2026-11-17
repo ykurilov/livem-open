@@ -311,6 +311,7 @@ export async function createLiveDialogKit(database: TestDatabase, options: LiveD
     "budget-check": async () => void (await dialog.checkBudget()),
     "stuck-sweep": () => dialog.sweepStuck(),
     "purchase-congratulate": ({ passageId }) => dialog.congratulatePurchase(passageId),
+    "messenger-handoff-continue": ({ handoffId }) => dialog.continueInMessenger(handoffId),
     "payment-reminder": ({ passageId }) => dialog.remindPayment(passageId),
     "senler-subscribe": async ({ passageId }) => {
       if (!options.senler) throw new Error("Задача Senler в наборе без Senler");

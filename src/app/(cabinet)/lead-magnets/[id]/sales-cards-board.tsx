@@ -13,6 +13,7 @@ import {
   SALES_CARD_WHEN_MAX_LENGTH,
   type SalesCard,
   type SalesCardInput,
+  type SalesCardMode,
 } from "@/modules/sales-cards/sales-cards";
 
 type SaveResult = { ok: true; card: SalesCard } | { ok: false; error: string };
@@ -59,7 +60,8 @@ function SalesCardsSection({ stateId }: { stateId: string | null }) {
               >
                 <span className="flex items-center gap-2">
                   <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--yk-text)]">{card.title}</span>
-                  {card.verbatim && <Badge variant="cool">{labels.verbatimBadge}</Badge>}
+                  {card.mode === "verbatim" && <Badge variant="cool">{labels.verbatimBadge}</Badge>}
+                  {card.mode === "formula" && <Badge variant="cool">{labels.formulaBadge}</Badge>}
                 </span>
                 <span className="line-clamp-2 text-xs text-[var(--yk-muted)]">{card.when}</span>
               </button>
@@ -72,7 +74,7 @@ function SalesCardsSection({ stateId }: { stateId: string | null }) {
         size="sm"
         className="self-start"
         disabled={board.locked}
-        onClick={() => setOpened({ stateId, title: "", when: "", text: "", verbatim: false })}
+        onClick={() => setOpened({ stateId, title: "", when: "", text: "", mode: "own_words" })}
       >
         <Plus aria-hidden="true" className="size-3.5" />
         {labels.add}
@@ -169,20 +171,23 @@ export function SalesCardDialog({
         <Field label={labels.when} hint={labels.whenHint} required>
           <Textarea rows={2} value={card.when} maxLength={SALES_CARD_WHEN_MAX_LENGTH} disabled={locked} onChange={(event) => edit({ when: event.target.value })} />
         </Field>
-        <Field label={labels.text} required>
+        <Field label={labels.text} hint={card.mode === "formula" ? labels.formulaTextHint : undefined} required>
           <Textarea rows={6} value={card.text} maxLength={SALES_CARD_TEXT_MAX_LENGTH} disabled={locked} onChange={(event) => edit({ text: event.target.value })} />
         </Field>
         <RadioGroup
           label={labels.mode}
-          value={card.verbatim ? "verbatim" : "own"}
-          onValueChange={(value) => edit({ verbatim: value === "verbatim" })}
+          value={card.mode}
+          onValueChange={(value) => edit({ mode: value as SalesCardMode })}
           disabled={locked}
         >
           <Radio value="verbatim">
             {labels.verbatim} <span className="app-muted">— {labels.verbatimHint}</span>
           </Radio>
-          <Radio value="own">
+          <Radio value="own_words">
             {labels.ownWords} <span className="app-muted">— {labels.ownWordsHint}</span>
+          </Radio>
+          <Radio value="formula">
+            {labels.formula} <span className="app-muted">— {labels.formulaHint}</span>
           </Radio>
         </RadioGroup>
         <Field label={labels.place}>
