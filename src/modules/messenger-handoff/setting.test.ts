@@ -8,6 +8,9 @@ describe("настройка «Переход в мессенджер»", () => 
     const settings = newLeadMagnetSettings("Тест");
     expect(leadMagnetSettingsSchema.parse(settings).messengerHandoff).toBeUndefined();
     expect(enabledMessengerHandoff(settings)).toBeNull();
+    // Сохранённые до «Как пригласить» читаются с пустым полем: агент приглашает сам
+    const saved = { enabled: true, when: "Когда выбрал идею", channels: ["vk"] };
+    expect(leadMagnetSettingsSchema.parse({ ...settings, messengerHandoff: saved }).messengerHandoff?.how).toBe("");
   });
 
   it("включённой нужны «когда предложить» и хотя бы один мессенджер", () => {
@@ -22,9 +25,9 @@ describe("настройка «Переход в мессенджер»", () => 
   });
 
   it("включённая настройка доходит до агента; ошибка — в проверке публикации", () => {
-    const settings = { ...newLeadMagnetSettings("Тест"), messengerHandoff: { enabled: true, when: "Когда согласился", channels: ["telegram" as const] } };
+    const settings = { ...newLeadMagnetSettings("Тест"), messengerHandoff: { enabled: true, when: "Когда согласился", how: "", channels: ["telegram" as const] } };
     expect(enabledMessengerHandoff(settings)).toEqual(settings.messengerHandoff);
-    const broken = { ...settings, messengerHandoff: { enabled: true, when: "", channels: ["telegram" as const] } };
+    const broken = { ...settings, messengerHandoff: { enabled: true, when: "", how: "", channels: ["telegram" as const] } };
     expect(() => validateLeadMagnetSettings(broken)).toThrow(/Переход в мессенджер/);
   });
 });

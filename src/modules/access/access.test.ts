@@ -29,7 +29,7 @@ describe("список разрешённых адресов", () => {
 });
 
 describe("открытые адреса", () => {
-  it.each(["/api/health", "/api/auth/login", "/api/auth/silent", "/api/auth/callback", "/login", "/api/webhooks/telegram/abc", "/api/integrations/getcourse/secret", "/i/K7mP2xQ", "/c/K7mP2xQ", "/api/web-chat/messages", "/web-chat-sw.js", "/web-chat/icon-192.png"])(
+  it.each(["/api/health", "/api/auth/login", "/api/auth/silent", "/api/auth/callback", "/login", "/api/webhooks/telegram/abc", "/api/integrations/getcourse/secret", "/i/K7mP2xQ", "/c/K7mP2xQ", "/api/web-chat/messages", "/web-chat-sw.js", "/web-chat/icon-192.png", "/api/v1/chats/K7mP2xQ/session", "/widget.js", "/docs/api"])(
     "%s открыт без входа",
     (pathname) => expect(isPublicPath(pathname)).toBe(true),
   );

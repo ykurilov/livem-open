@@ -7,6 +7,8 @@ import { LEAD_MAGNET_TOOLS } from "../flows/catalog";
 import { TEXT_LINK_TOOL } from "../text-links/tool";
 import { knowledgeInstructionSection, type KnowledgeText } from "../knowledge/instruction-section";
 import { QUICK_REPLIES_TOOL } from "./quick-replies";
+import { enabledMessengerHandoff } from "../messenger-handoff/setting";
+import { OFFER_MESSENGER_TOOL } from "../messenger-handoff/tool";
 import { commonCardsSection } from "../sales-cards/sales-cards";
 
 /**
@@ -75,6 +77,8 @@ export function buildConsultantInstruction(settings: LeadMagnetSettings, knowled
   }
   if (viewsLinks(settings) && seesLinkSnapshots(settings)) parts.push(LINK_VIEWS_RULE);
   if (settings.textLink) parts.push(textLinkRule(settings.textLink.template));
+  const handoff = enabledMessengerHandoff(settings);
+  if (handoff) parts.push(messengerHandoffRule(handoff));
   // Правило и общая шпаргалка неизменны на версию; список этапа — блоком контекста рядом с карточкой этапа
   parts.push(commonCardsSection(settings.salesCards ?? []));
   parts.push(
@@ -174,9 +178,21 @@ export const TIME_ZONE_RULE =
 
 /** Кнопки готовых ответов: постоянное правило, инструмент SDK тоже постоянный — кэш цел. */
 export const QUICK_REPLIES_RULE =
-  `Если твой вопрос с понятными вариантами ответа, особенно в начале разговора, вызови ${QUICK_REPLIES_TOOL} с двумя-четырьмя короткими ответами от лица человека: он сможет нажать кнопку вместо того, чтобы печатать. ` +
+  `Каждый раз, когда твой вопрос с понятными вариантами ответа — выбор между названными тобой вариантами или ответ да либо нет, — вызови ${QUICK_REPLIES_TOOL} с двумя-четырьмя короткими ответами от лица человека: он нажмёт кнопку вместо того, чтобы печатать. Не пропускай это ни в одном таком вопросе. ` +
   "Варианты — из самого вопроса, без выдуманных фактов. Кнопки встают под твой ответ, а не вместо него: ответ, как обычно, отвечает человеку и задаёт тот один вопрос, к которому они. " +
-  "На открытый вопрос о положении, опыте или чувствах человека кнопок не давай: на такой вопрос человек отвечает своими словами.";
+  "На открытый вопрос о положении, опыте или чувствах человека и на вопрос об имени кнопок не давай: на такой вопрос человек отвечает своими словами.";
+
+/**
+ * Условие перехода в мессенджер — в постоянной инструкции, а не только в описании инструмента: там его перебивала
+ * карточка этапа (ссылка на сервис в веб-чате, вызова ни разу — прод 19–24.11). Неизменно на версию — кэш цел.
+ */
+export const messengerHandoffRule = ({ when, how }: { when: string; how?: string }) =>
+  `Переход в мессенджер. Пока у тебя есть инструмент ${OFFER_MESSENGER_TOOL}, человек пишет в веб-чате, а эксперт хочет продолжить разговор в мессенджере. ` +
+  `Условие эксперта: «${when.trim()}». ` +
+  (how?.trim() ? `Как пригласить, по словам эксперта: «${how.trim()}». Приглашая, передай этот смысл своими словами, к месту разговора. ` : "") +
+  `Пока человек в веб-чате, это условие и всё, что эксперт в нём велит или запрещает, главнее инструкции этапа и сценария. ` +
+  `Как только условие выполнено, вызови ${OFFER_MESSENGER_TOOL} в этом же ходе. Сколько сообщений прислал человек, сказано в конце запроса. ` +
+  "Когда инструмента нет, человек уже в мессенджере: веди разговор по этапу.";
 
 /** Ссылка с подставленным текстом: постоянное правило версии с `textLink`. */
 export const textLinkRule = (template: string) =>

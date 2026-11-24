@@ -1,0 +1,74 @@
+/*
+ * Виджет лидмагнита в теневом корне элемента `livem-chat`. Унаследованные от сайта свойства сброшены: сайт меняет виджет
+ * только переменными `--livem-*` на элементе и частями `::part(...)`.
+ */
+:host { all: initial; display: block; }
+:host([mode="button"]), :host(:not([mode])) { display: contents; }
+[hidden] { display: none !important; }
+*, *::before, *::after { box-sizing: border-box; }
+button, input, textarea, select { font: inherit; color: inherit; }
+img, svg, iframe { max-width: 100%; }
+
+.livem-root {
+  --yk-ink: var(--livem-color, #141414);
+  --yk-accent: var(--livem-color, #EE6A3C);
+  --yk-on-ink: var(--livem-color-text, #FFFFFF);
+  --yk-text: var(--livem-text, #141414);
+  --yk-bg: var(--livem-background, #FFFFFF);
+  --yk-surface: var(--livem-background, #FFFFFF);
+  --yk-font-sans: var(--livem-font, system-ui, -apple-system, "SF Pro Text", "Inter", sans-serif);
+  --yk-radius-message: var(--livem-radius, 16px);
+  font-family: var(--yk-font-sans);
+  font-size: var(--yk-text-body-size);
+  line-height: var(--yk-text-body-line-height);
+  color: var(--yk-text);
+  text-align: left;
+  -webkit-font-smoothing: antialiased;
+}
+.web-chat { height: 100%; }
+.web-chat p { margin: 0; }
+.web-chat .web-chat__offer p { margin: 0 0 var(--yk-space-3); }
+
+/* Блок в секции сайта: ширина по контейнеру, высота заданная */
+.livem-inline {
+  height: var(--livem-window-height, 600px);
+  border: 1px solid var(--yk-border);
+  border-radius: var(--livem-radius, 18px);
+  overflow: hidden;
+  background: var(--yk-bg);
+}
+
+/* Кнопка в углу и окно над ней */
+.livem-launcher {
+  position: fixed; z-index: var(--livem-z-index, 2147483000);
+  bottom: var(--livem-offset-y, 20px); right: var(--livem-offset-x, 20px);
+  width: var(--livem-button-size, 56px); height: var(--livem-button-size, 56px);
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 50%; padding: 0; cursor: pointer;
+  background: var(--yk-ink); color: var(--yk-on-ink);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+  transition: transform 120ms;
+}
+.livem-root--left .livem-launcher { right: auto; left: var(--livem-offset-x, 20px); }
+@media (hover: hover) { .livem-launcher:hover { transform: scale(1.05); } }
+.livem-launcher:focus-visible { outline: 2px solid var(--yk-ink); outline-offset: 3px; }
+
+.livem-window {
+  position: fixed; z-index: var(--livem-z-index, 2147483000);
+  right: var(--livem-offset-x, 20px);
+  bottom: calc(var(--livem-offset-y, 20px) + var(--livem-button-size, 56px) + 12px);
+  width: min(var(--livem-window-width, 380px), calc(100vw - 2 * var(--livem-offset-x, 20px)));
+  height: min(var(--livem-window-height, 600px), calc(100vh - var(--livem-offset-y, 20px) - var(--livem-button-size, 56px) - 32px));
+  border: 1px solid var(--yk-border);
+  border-radius: var(--livem-radius, 18px);
+  overflow: hidden;
+  background: var(--yk-bg);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.18);
+}
+.livem-root--left .livem-window { right: auto; left: var(--livem-offset-x, 20px); }
+
+/* Телефон: окно на весь экран, кнопка под ним не нужна — закрывает крестик в шапке */
+@media (max-width: 480px) {
+  .livem-window { inset: 0; width: 100%; height: 100%; height: 100dvh; border: 0; border-radius: 0; }
+  .livem-root--open .livem-launcher { display: none; }
+}

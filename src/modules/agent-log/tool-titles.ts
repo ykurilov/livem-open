@@ -11,6 +11,7 @@ export const TOOL_TITLES: Readonly<Record<string, string>> = {
   reopen_test_conversation: "Продолжение тестового разговора",
   read_answer_corrections: "Чтение правок ответов",
   resolve_answer_corrections: "Разбор правок ответов",
+  app_help: "Справка по приложению",
   finish_dialog: "Завершение разговора",
   sale_answer: "Отказ от продукта",
   payment_promised: "Обещание оплатить",
@@ -24,6 +25,9 @@ export const TOOL_TITLES: Readonly<Record<string, string>> = {
   suggest_replies: "Кнопки с ответами",
   sales_card: "Заготовка эксперта",
   offer_messenger: "Кнопки мессенджеров",
+  call_free_times: "Свободное время для созвона",
+  book_call: "Запись на созвон",
+  change_call: "Перенос или отмена созвона",
   ...webToolTitles,
 };
 

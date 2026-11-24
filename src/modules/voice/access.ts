@@ -6,6 +6,10 @@ const WEB_CHAT_PREFIX = "web-"; // без двоеточия: сервер го�
 /** Чат, который веб-чат называет серверу голоса (`?chat=`): по нему сервер узнаёт лидмагнит ссылки. */
 export const webChatVoiceChatId = (code: string) => `${WEB_CHAT_PREFIX}${code}`;
 
+/** Код ссылки из чата веб-чата (`?chat=`); чат «Проверки» или пусто — `null`. */
+export const webChatCodeOfVoiceChat = (chat: string | null | undefined): string | null =>
+  chat?.startsWith(WEB_CHAT_PREFIX) ? chat.slice(WEB_CHAT_PREFIX.length) || null : null;
+
 /** Откуда допуск к голосу узнаёт человека и включён ли голос у лидмагнита. */
 export interface VoiceAccessPorts {
   /** Посетитель веб-чата по cookie запроса; нет — `null`. */

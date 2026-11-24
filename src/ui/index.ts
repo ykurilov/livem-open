@@ -1,6 +1,6 @@
 // Переписку с оформлением чата (AgentMessage) берут напрямую из "@/ui/agent-message": отсюда она ушла бы на все страницы
 export { BrandLogo } from "./brand-logo";
-export { CABINET_SECTIONS, KNOWLEDGE_TABS, PEOPLE_TABS, SETTINGS_SECTION, SETTINGS_TABS, isSectionActive } from "./cabinet-sections";
+export { CABINET_SECTIONS, CALLS_TABS, KNOWLEDGE_TABS, PEOPLE_TABS, SETTINGS_SECTION, SETTINGS_TABS, isSectionActive } from "./cabinet-sections";
 export type { CabinetSection, SectionTab } from "./cabinet-sections";
 export { SectionTabs } from "./section-tabs";
 export { DataTable } from "./data-table";

@@ -1,7 +1,7 @@
 import { systemClock } from "@/modules/platform/clock";
 import { getDatabase } from "@/modules/platform/db";
 import { createChannelAdapters } from "@/modules/channels";
-import { readWebChat, sendWebChatMessage, webChatMessengerHandoff } from "@/modules/web-chat";
+import { readSentMessage, readWebChat, sendWebChatMessage, webChatMessengerHandoff, webChatSendAnswer } from "@/modules/web-chat";
 import { clientAddress, currentVisitor, jsonResponse, webChatDependencies } from "@/modules/web-chat/server";
 
 export const dynamic = "force-dynamic";
@@ -26,20 +26,13 @@ export async function GET(request: Request) {
   return jsonResponse({ items, handoff });
 }
 
-/** Сообщение посетителя. */
+/** Сообщение посетителя: JSON или форма с фото. */
 export async function POST(request: Request) {
   const visitor = await currentVisitor();
   if (!visitor) return jsonResponse(NO_VISITOR, 401);
-  const body = (await request.json().catch(() => null)) as { text?: unknown; clientId?: unknown; code?: unknown } | null;
-  if (typeof body?.text !== "string" || typeof body.clientId !== "string") return jsonResponse({ error: "Напишите сообщение" }, 400);
-  const result = await sendWebChatMessage(await webChatDependencies(), visitor, {
-    text: body.text,
-    clientId: body.clientId,
-    address: clientAddress(request.headers),
-    ...(typeof body.code === "string" && { code: body.code }),
-  });
-  if (result.ok) return jsonResponse({ ok: true, item: result.item });
-  const status =
-    result.reason === "too_fast" || result.reason === "too_many" ? 429 : result.reason === "retry" ? 503 : result.reason === "other_chat" || result.reason === "messenger" ? 409 : 400;
-  return jsonResponse({ error: result.error, ...(result.reason === "other_chat" && { current: result.current }) }, status);
+  const message = await readSentMessage(request);
+  if (!message.ok) return jsonResponse({ error: message.error }, message.status);
+  const result = await sendWebChatMessage(await webChatDependencies(), visitor, { ...message, address: clientAddress(request.headers) });
+  const answer = webChatSendAnswer(result);
+  return jsonResponse(answer.body, answer.status);
 }

@@ -5,6 +5,7 @@ import { PASSAGE_STATUSES, passages, type PassageStatus } from "../conversations
 import { entryLinks, leadMagnets } from "../lead-magnets/schema";
 import type { DatabaseExecutor } from "../platform/db";
 import { people } from "./schema";
+import { firstArrivalCondition } from "./sources";
 
 const ids = z.array(z.uuid()).optional();
 
@@ -26,6 +27,10 @@ const peopleFilterSchema = z.strictObject({
   statuses: z.array(z.enum(PASSAGE_STATUSES)).optional(),
   fieldConditions: z.array(fieldConditionSchema).optional(),
   withoutActivePassage: z.boolean().optional(),
+  /** Пришли впервые в лидмагнит по этой ссылке (`null` — без ссылки) с этого дня по Москве: число «Пришли» в «Откуда пришли». */
+  arrival: z
+    .strictObject({ leadMagnetId: z.uuid(), linkId: z.uuid().nullable(), sinceDay: z.iso.date().optional() })
+    .optional(),
 });
 
 /** Условие по полю словаря. Вид условия задаёт тип поля: да/нет, выбор из списка, число, текст. */
@@ -96,6 +101,8 @@ export function peopleFilterCondition(filter: PeopleFilter): SQL | undefined {
   if (filled(filter.statuses)) passageParts.push(inArray(passages.status, [...filter.statuses]));
   if (passageParts.length > 0)
     parts.push(sql`exists (select 1 from ${passages} where ${and(eq(passages.personId, people.id), ...passageParts)})`);
+
+  if (filter.arrival) parts.push(firstArrivalCondition(filter.arrival, people.id));
 
   if (filter.withoutActivePassage)
     parts.push(sql`not exists (select 1 from ${passages} where ${and(eq(passages.personId, people.id), eq(passages.status, "active"))})`);

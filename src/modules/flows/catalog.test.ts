@@ -12,12 +12,15 @@ const field = (patch: Partial<FieldDefinition>): FieldDefinition => ({
 });
 
 describe("каталог сценария лидмагнита", () => {
-  it("инструменты приложения: итог разговора, ответ на продажу, просмотр ссылки; своё событие одно — переход в мессенджер; день программы — таймер SDK", () => {
+  it("инструменты приложения: итог разговора, ответ на продажу, просмотр ссылки; свои события — переход в мессенджер и запись на созвон; день программы — таймер SDK", () => {
     expect(LEAD_MAGNET_TOOLS).toEqual({ finishDialog: "finish_dialog", saleAnswer: "sale_answer", personLinkView: "person_link_view" });
     expect(leadMagnetFlowCatalog([])).toEqual({
       tools: ["finish_dialog", "sale_answer", "person_link_view"],
       toolLabels: { finish_dialog: "Завершить разговор", sale_answer: "Записать отказ от продукта", person_link_view: "Открыть ссылку человека" },
-      events: [{ name: "messenger_handoff", label: "Перешёл в мессенджер" }],
+      events: [
+        { name: "messenger_handoff", label: "Перешёл в мессенджер" },
+        { name: "call_booked", label: "Записался на созвон" },
+      ],
       widgets: [],
       fields: [],
     });

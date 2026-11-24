@@ -1,21 +1,34 @@
 import { InvalidPeopleFilterError, parsePeopleFilter, type PeopleFilter } from "@/modules/people";
 
+import { ARRIVED_WITHOUT_LINK } from "./filter-url";
+
 export { searchParamsFromFilter } from "./filter-url";
 
 export type SearchParams = Record<string, string | string[] | undefined>;
 
 const list = (value: string | string[] | undefined) => (value === undefined ? [] : Array.isArray(value) ? value : [value]);
 
-/** Фильтр базы из адреса страницы: `bot`, `lead`, `link`, `status`, `fields` (условия по полям в JSON). */
+/**
+ * Фильтр базы из адреса страницы: `bot`, `lead`, `link`, `status`, `fields` (условия по полям в JSON);
+ * приход из «Откуда пришли» — `arrivedLead`, `arrivedLink` (`none` — без ссылки), `arrivedSince`.
+ */
 export function filterFromSearchParams(params: SearchParams): { filter: PeopleFilter; error?: string } {
   try {
     const fields = list(params.fields)[0];
+    const [arrivedLead, arrivedLink, arrivedSince] = [params.arrivedLead, params.arrivedLink, params.arrivedSince].map((value) => list(value)[0]);
     const filter = parsePeopleFilter({
       botIds: list(params.bot),
       leadMagnetIds: list(params.lead),
       linkIds: list(params.link),
       statuses: list(params.status),
       ...(fields && { fieldConditions: JSON.parse(fields) }),
+      ...(arrivedLead !== undefined && {
+        arrival: {
+          leadMagnetId: arrivedLead,
+          linkId: arrivedLink === ARRIVED_WITHOUT_LINK ? null : arrivedLink,
+          ...(arrivedSince !== undefined && { sinceDay: arrivedSince }),
+        },
+      }),
     });
     return { filter };
   } catch (error) {

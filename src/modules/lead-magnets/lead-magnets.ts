@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { DatabaseExecutor } from "../platform/db";
 import { systemClock, type Clock } from "../platform/clock";
-import { leadMagnets, leadMagnetVersions, type ManualEditNote, type VersionSource } from "./schema";
+import { constructorChats, leadMagnets, leadMagnetVersions, type ManualEditNote, type VersionSource } from "./schema";
 import { averagePassageCosts } from "./stats";
 import { newLeadMagnetSettings, validateLeadMagnetSettings, type LeadMagnetSettings } from "./settings";
 import { TEST_CLIENT_MAX_CHARS } from "./test-client-limit";
@@ -186,9 +186,14 @@ export async function listLeadMagnetCards(db: DatabaseExecutor): Promise<LeadMag
   }));
 }
 
+/** Лидмагнит, к которому привязан чат конструктора (любой из его чатов). */
 export async function findLeadMagnetByConstructorChat(db: DatabaseExecutor, chatId: string): Promise<LeadMagnet | null> {
-  const [row] = await db.select().from(leadMagnets).where(eq(leadMagnets.constructorChatId, chatId));
-  return row ? asLeadMagnet(row) : null;
+  const [row] = await db
+    .select({ lead: leadMagnets })
+    .from(constructorChats)
+    .innerJoin(leadMagnets, eq(leadMagnets.id, constructorChats.leadMagnetId))
+    .where(eq(constructorChats.chatId, chatId));
+  return row ? asLeadMagnet(row.lead) : null;
 }
 
 export async function findLeadMagnetByPreviewChat(db: DatabaseExecutor, chatId: string): Promise<LeadMagnet | null> {
@@ -196,14 +201,24 @@ export async function findLeadMagnetByPreviewChat(db: DatabaseExecutor, chatId: 
   return row ? asLeadMagnet(row) : null;
 }
 
-/** Привязывает чат конструктора, если его ещё нет. Возвращает чат, который в итоге привязан. */
-export async function attachConstructorChat(db: DatabaseExecutor, leadMagnetId: string, chatId: string): Promise<string> {
-  await db
-    .update(leadMagnets)
-    .set({ constructorChatId: chatId })
-    .where(and(eq(leadMagnets.id, leadMagnetId), sql`${leadMagnets.constructorChatId} is null`));
-  const lead = await requireLeadMagnet(db, leadMagnetId);
-  return lead.constructorChatId!;
+/** Чаты конструктора лидмагнита в порядке привязки. */
+export async function listConstructorChatIds(db: DatabaseExecutor, leadMagnetId: string): Promise<string[]> {
+  const rows = await db
+    .select({ chatId: constructorChats.chatId })
+    .from(constructorChats)
+    .where(eq(constructorChats.leadMagnetId, leadMagnetId))
+    .orderBy(constructorChats.createdAt, constructorChats.chatId);
+  return rows.map((row) => row.chatId);
+}
+
+/** Привязывает новый чат конструктора к лидмагниту. */
+export async function addConstructorChat(db: DatabaseExecutor, leadMagnetId: string, chatId: string): Promise<void> {
+  await db.insert(constructorChats).values({ chatId, leadMagnetId });
+}
+
+/** Отвязывает удалённый чат конструктора. */
+export async function removeConstructorChat(db: DatabaseExecutor, chatId: string): Promise<void> {
+  await db.delete(constructorChats).where(eq(constructorChats.chatId, chatId));
 }
 
 /** Текущий тестовый разговор; «Начать заново» ставит новый. */

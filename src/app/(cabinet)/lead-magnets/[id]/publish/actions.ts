@@ -18,6 +18,7 @@ import {
 import { systemClock } from "@/modules/platform/clock";
 import { getDatabase } from "@/modules/platform/db";
 import { getWebQueue } from "@/modules/platform/queue";
+import { issueChatApiKey, parseSiteList, revokeChatApiKey, saveAllowedSites } from "@/modules/chat-api";
 import { NO_BOT } from "./no-bot";
 
 export interface PublishState {
@@ -141,4 +142,59 @@ export async function migrateChatsAction(leadMagnetId: string, map: StateMap): P
     if (error instanceof LeadMagnetNotFoundError) return { error: LEAD_MAGNET_GONE };
     throw error;
   }
+}
+
+export interface AllowedSitesState {
+  error?: string;
+  saved?: boolean;
+}
+
+/** Сайты, где работает виджет и свой чат эксперта. Строки, в которых не узнать домен, не сохраняются — список остаётся прежним. */
+export async function saveAllowedSitesAction(leadMagnetId: string, _previous: AllowedSitesState, formData: FormData): Promise<AllowedSitesState> {
+  await requireUser();
+  const text = formData.get("sites");
+  if (typeof text !== "string") return { error: "Форма устарела — обновите страницу" };
+  const { invalid } = parseSiteList(text);
+  if (invalid.length > 0) return { error: `Не похоже на адрес сайта: ${invalid.join(", ")}. Впишите домен, например example.ru или *.example.ru.` };
+  try {
+    await saveAllowedSites(getDatabase().db, leadMagnetId, text);
+  } catch (error) {
+    if (isMissingLeadMagnet(error)) return { error: LEAD_MAGNET_GONE };
+    throw error;
+  }
+  revalidatePath(`/lead-magnets/${leadMagnetId}/publish`);
+  return { saved: true };
+}
+
+export interface ApiKeyState {
+  error?: string;
+  /** Новый ключ — показывается один раз, в базе только его хэш. */
+  key?: string;
+}
+
+/** Новый ключ API лидмагнита; прежний перестаёт работать сразу. */
+export async function issueApiKeyAction(leadMagnetId: string): Promise<ApiKeyState> {
+  await requireUser();
+  try {
+    const issued = await issueChatApiKey(getDatabase().db, leadMagnetId);
+    revalidatePath(`/lead-magnets/${leadMagnetId}/publish`);
+    return { key: issued.key };
+  } catch (error) {
+    if (isMissingLeadMagnet(error)) return { error: LEAD_MAGNET_GONE };
+    throw error;
+  }
+}
+
+/** Отзыв ключа: запросы с ним с этой минуты отклоняются. */
+export async function revokeApiKeyAction(leadMagnetId: string): Promise<ApiKeyState> {
+  await requireUser();
+  await revokeChatApiKey(getDatabase().db, leadMagnetId);
+  revalidatePath(`/lead-magnets/${leadMagnetId}/publish`);
+  return {};
+}
+
+/** Лидмагнит удалили, пока страница была открыта: запись о нём не прошла по внешнему ключу. */
+function isMissingLeadMagnet(error: unknown): boolean {
+  const code = (error as { code?: string; cause?: { code?: string } } | null)?.cause?.code ?? (error as { code?: string } | null)?.code;
+  return code === "23503";
 }

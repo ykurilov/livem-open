@@ -15,10 +15,13 @@ export const LEAD_MAGNET_TOOLS = {
 export const LEAD_MAGNET_EVENTS = {
   /** Человек нажал «Старт» в мессенджере по кнопке из веб-чата: разговор продолжается там. */
   messengerHandoff: "messenger_handoff",
+  /** Агент записал человека на созвон с экспертом (не перенос). */
+  callBooked: "call_booked",
 } as const;
 
 const LEAD_MAGNET_EVENT_LABELS: Record<(typeof LEAD_MAGNET_EVENTS)[keyof typeof LEAD_MAGNET_EVENTS], string> = {
   messenger_handoff: "Перешёл в мессенджер",
+  call_booked: "Записался на созвон",
 };
 
 /** Названия инструментов на доске: в сценарии и при работе остаются служебные имена. */

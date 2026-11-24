@@ -16,9 +16,9 @@ FROM deps AS build
 COPY . .
 # Сборка загружает маршруты входа, а они проверяют настройки при загрузке. Заглушки — только на эту команду,
 # в образ не попадают: при запуске настоящие значения приходят из .env
-RUN AUTH_URL=https://auth.build.invalid AUTH_APP_URL=https://app.build.invalid \
-    AUTH_COOKIE_SECRET=build-time-placeholder-not-a-real-secret \
-    pnpm build && pnpm server:build && pnpm worker:build && pnpm cli:build
+RUN export AUTH_URL=https://auth.build.invalid AUTH_APP_URL=https://app.build.invalid \
+    AUTH_COOKIE_SECRET=build-time-placeholder-not-a-real-secret && \
+    pnpm widget:build && pnpm build && pnpm server:build && pnpm worker:build && pnpm cli:build
 
 FROM base AS runtime
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0

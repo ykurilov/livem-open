@@ -21,6 +21,8 @@ import { FLOW_STATE_KEY } from "@ykurilov/agent-chat-flows";
 import { stageCardsBlock } from "../sales-cards/sales-cards";
 import { enabledMessengerHandoff } from "../messenger-handoff/setting";
 import { createMessengerHandoffTool, IN_WEB_CHAT, type MessengerHandoffPort } from "../messenger-handoff/tool";
+import { enabledCallBooking } from "../booking/setting";
+import { createCallBookingTools, type CallBookingPort } from "../booking/tool";
 
 /** Общие на процесс: настройки пересоздаются каждый ход, а помнить показанный ролик и картинку надо весь ответ. */
 const limitVideosPerReply = oneVideoPerReply();
@@ -47,6 +49,8 @@ export function consultantAgentSettings(input: {
   knowledge?: readonly KnowledgeBaseWithText[];
   /** Переход из веб-чата в мессенджер; нужен, только если он включён в настройках. */
   messengerHandoff?: MessengerHandoffPort;
+  /** Запись на созвон; нужна, только если она включена в настройках. */
+  callBooking?: CallBookingPort;
 }): AgentSettings {
   const personLink = viewsLinks(input.settings) ? (input.personLink ?? null) : null;
   const appDomains = appDomainsIn(leadMagnetKnownTexts(input.settings));
@@ -54,6 +58,8 @@ export function consultantAgentSettings(input: {
   const imageLibrary = input.settings.imageIds.length > 0 ? createImageLibrary({ source: input.images }) : null;
   const handoffSetting = enabledMessengerHandoff(input.settings);
   const handoff = handoffSetting && input.messengerHandoff ? { setting: handoffSetting, port: input.messengerHandoff } : null;
+  const callSetting = enabledCallBooking(input.settings);
+  const callBooking = callSetting && input.callBooking ? { setting: callSetting, port: input.callBooking } : null;
   return {
     instructions: buildConsultantInstruction(input.settings, input.knowledge),
     tools: (model) =>
@@ -70,6 +76,7 @@ export function consultantAgentSettings(input: {
           ...(imageLibrary && limitImagesPerReply(imageLibrary.tools(model), model)),
           ...(personLink && personLink(model, { appDomains })),
           ...(handoff && model.viewer?.[IN_WEB_CHAT] === true && createMessengerHandoffTool(handoff.setting, () => handoff.port.offer({ ownerId: model.ownerId, chatId: model.chatId }))),
+          ...(callBooking && createCallBookingTools(callBooking.setting, callBooking.port, { ownerId: model.ownerId, chatId: model.chatId })),
         },
         model.chatId,
       ),

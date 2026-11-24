@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  AgentChat,
   ChatLabelsProvider,
+  type ChatListSkin,
   russianLabels,
   type ChatSkin,
   type ComposerHelper,
@@ -54,6 +54,7 @@ import { PreviewProductLinks, withTaggedProductLinks } from "./product-links-ski
 import { CorrectablePreviewChat } from "./preview-corrections";
 import { SidebarSimpleIcon, SparkleIcon, XIcon } from "@phosphor-icons/react";
 import { CONSTRUCTOR_PANEL_COOKIE } from "./constructor-panel-cookie";
+import { ConstructorChats } from "./constructor-chats";
 import { RoleSwapPanel } from "./role-swap-panel";
 import { ConversationBar } from "./conversation-bar";
 import { ConversationRoleContext, ConversationRoleMenu, type ConversationRole } from "./conversation-role";
@@ -101,10 +102,11 @@ const editorLabels = chatLabelsWithToolTitles(russianLabels);
 const constructorLabels = {
   ...editorLabels,
   composerPlaceholder: "Опишите, что поменять…",
+  chatListDeleteBody: (title: string) => `Чат «${title}» и вся его переписка будут удалены насовсем. Лидмагнит и его черновик не изменятся.`,
 };
 // Черновика ещё нет: менять нечего, конструктор ждёт описание лидмагнита
 const emptyConstructorLabels = {
-  ...editorLabels,
+  ...constructorLabels,
   composerPlaceholder: "Опишите лидмагнит, который нужен…",
 };
 const previewLabels = {
@@ -118,7 +120,7 @@ const previewLabels = {
 const ConstructorSendBlock = createContext<string | null>(null);
 const SEND_BLOCK_HINT_ID = "constructor-send-block";
 
-/** Пустой ли чат конструктора: пока да, над полем ввода — приветствие и подсказки. */
+/** Пустой ли открытый чат конструктора (сообщает SDK через `Layout.empty`): пока да, над полем ввода — приветствие и подсказки. */
 const ConstructorChatEmpty = createContext(false);
 
 const CONSTRUCTOR_SUGGESTIONS = [
@@ -334,11 +336,15 @@ const correctionsComposerActions = (count: number, queued: boolean, onQueuedSent
     );
   };
 
-const constructorSkin: ChatSkin = {
+const constructorSkin: ChatSkin & ChatListSkin = {
   ...oduvanchikSkin,
   Composer: ConstructorComposer,
-  // The app already provides its own introduction and starter examples by the composer.
-  Layout: (props) => <oduvanchikSkin.Layout {...props} empty={false} />,
+  // Своё приветствие с примерами — у поля ввода, вместо приветствия скина
+  Layout: (props) => (
+    <ConstructorChatEmpty.Provider value={props.empty ?? false}>
+      <oduvanchikSkin.Layout {...props} empty={false} />
+    </ConstructorChatEmpty.Provider>
+  ),
 };
 
 /** Служебная просьба «напиши первым» лежит в истории для модели; эксперт её в проверке не видит, как и человек в мессенджере. */
@@ -381,8 +387,6 @@ export interface EditorProps {
   leadMagnetId: string;
   draft: LeadMagnetSettings;
   draftVersionId: string;
-  constructorChatId: string;
-  constructorHasMessages: boolean;
   preview: PreviewStatus;
   versions: VersionRow[];
   fields: FieldDefinition[];
@@ -408,8 +412,6 @@ export function Editor({
   leadMagnetId,
   draft,
   draftVersionId,
-  constructorChatId,
-  constructorHasMessages,
   preview,
   versions,
   fields,
@@ -428,9 +430,6 @@ export function Editor({
   const [reopening, startReopen] = useTransition();
   const [refreshing, startRefresh] = useTransition();
   const [constructorBusy, setConstructorBusy] = useState(false);
-  const [constructorStarted, setConstructorStarted] = useState(
-    constructorHasMessages,
-  );
   const [tab, setTab] = useState("preview");
   const [testClient, setTestClient] = useState(initialTestClient);
   const testClientState = useMemo(() => ({ leadMagnetId, description: testClient, saved: setTestClient }), [leadMagnetId, testClient]);
@@ -471,10 +470,7 @@ export function Editor({
     (chat: "constructor" | "preview") => (busy: boolean) => {
       if (wasBusy.current[chat] && !busy) startRefresh(() => router.refresh());
       wasBusy.current[chat] = busy;
-      if (chat === "constructor") {
-        setConstructorBusy(busy);
-        if (busy) setConstructorStarted(true);
-      }
+      if (chat === "constructor") setConstructorBusy(busy);
     },
     [router],
   );
@@ -493,9 +489,14 @@ export function Editor({
       if (request === correctionsCountRequest.current) setCorrectionsCount(count);
     }, () => {});
   }, [leadMagnetId]);
-  const [onConstructorBusy] = useState(() => {
+  // Занятость открытого чата конструктора приходит с каждой сменой ленты: реагируем только на её смену
+  const [onConstructorFeed] = useState(() => {
     const watch = watchTurns("constructor");
-    return (busy: boolean) => {
+    // Чат открывается свободным: первое «свободен» — не конец хода
+    let last = false;
+    return ({ busy }: { busy: boolean }) => {
+      if (busy === last) return;
+      last = busy;
       if (!busy) reloadCorrectionsCount();
       watch(busy);
     };
@@ -746,6 +747,18 @@ export function Editor({
               {hasDraft && preview.messengerHandoff && !answeringAsConsultant ? (
                 <PreviewMessengerHandoffPanel handoff={preview.messengerHandoff} onTake={takeMessengerHandoff} taking={shiftingDay} />
               ) : null}
+              {hasDraft && preview.callBooking && !answeringAsConsultant ? (
+                // Запись «Проверки» тестовая: реальное время не занято, уведомлений нет — эксперт видит, что получил бы человек
+                <p
+                  role="status"
+                  data-testid="preview-call-booking"
+                  className="rounded-[var(--yk-radius-md)] border border-[var(--yk-border)] bg-[var(--yk-surface)] px-3 py-2 text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]"
+                >
+                  <span className="font-medium text-[var(--yk-text)]">Тестовая запись на созвон: {preview.callBooking.label}.</span> Живого человека бот записал бы так
+                  же, вам пришло бы уведомление, а ему — напоминание за час{preview.callBooking.meetingLink ? " со ссылкой на встречу" : ""}. Время в календаре
+                  не занято.
+                </p>
+              ) : null}
               <ConversationRoleContext.Provider value={hasDraft ? { role: answeringAsConsultant ? "consultant" : "client", choose: switchConversationMode } : null}>
               {hasDraft ? (
                 <div className={cn("min-h-0 flex-1", !answeringAsConsultant && "hidden")}>
@@ -898,25 +911,19 @@ export function Editor({
             boardFull && "lg:py-1.5 lg:pr-3",
           )}
         >
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="font-semibold">Конструктор</span>
-            <IconButton label="Закрыть конструктор" icon={XIcon} size="sm" onClick={togglePanel} />
-          </div>
           <div className="min-h-0 flex-1">
             <ConstructorSendBlock.Provider value={constructorSendBlock}>
-              <ConstructorChatEmpty.Provider value={!constructorStarted}>
-                <ChatLabelsProvider labels={hasDraft ? constructorLabels : emptyConstructorLabels}>
-                  <AgentChat
-                    key={constructorChatId}
-                    api="/api/constructor"
-                    chatId={constructorChatId}
-                    skin={constructorSkin}
-                    composerActions={constructorComposerActions}
-                    attachments={attachmentsClient}
-                    onBusyChange={onConstructorBusy}
-                  />
-                </ChatLabelsProvider>
-              </ConstructorChatEmpty.Provider>
+              <ChatLabelsProvider labels={hasDraft ? constructorLabels : emptyConstructorLabels}>
+                <ConstructorChats
+                  leadMagnetId={leadMagnetId}
+                  busy={constructorBusy}
+                  onClose={togglePanel}
+                  skin={constructorSkin}
+                  composerActions={constructorComposerActions}
+                  attachments={attachmentsClient}
+                  onFeedChange={onConstructorFeed}
+                />
+              </ChatLabelsProvider>
             </ConstructorSendBlock.Provider>
           </div>
         </section>

@@ -2,6 +2,8 @@ import { createChatService } from "@ykurilov/agent-chat-core";
 import { createVoiceRelay, type VoiceRelay } from "@ykurilov/agent-chat-voice/server";
 import { eq } from "drizzle-orm";
 import { getUser } from "../../auth";
+import { chatVoiceVisitorId } from "../chat-api";
+import { appOriginOf, chatSignaturesFromEnv } from "../chat-api/env";
 import { parseCookies } from "../../auth/cookies";
 import { parseAllowedEmails } from "../access/access";
 import { AccessError, requireUserFromCookie } from "../access/require-user";
@@ -85,6 +87,9 @@ function appVoicePorts(): VoiceAccessPorts {
   const db = () => getDatabase().db;
   return {
     async webChatVisitorId(request) {
+      // Чат на чужом сайте (виджет): cookie туда не доходит, посетитель — по билету из входа и сайту соединения
+      if (new URL(request.url).searchParams.has("ticket"))
+        return chatVoiceVisitorId({ db: db(), signatures: chatSignaturesFromEnv(), appOrigin: appOriginOf(request) }, request);
       const token = parseCookies(request.headers.get("cookie"))[WEB_CHAT_COOKIE];
       return (await findWebChatVisitor(db(), token))?.id ?? null;
     },

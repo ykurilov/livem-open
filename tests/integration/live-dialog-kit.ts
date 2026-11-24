@@ -1,6 +1,9 @@
 import { APICallError } from "ai";
 // Общий набор для тестов живого диалога: база, подделка мессенджера, подставная модель, подменённые часы и очередь.
 import { randomUUID } from "node:crypto";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AgentFlow } from "@ykurilov/agent-chat-flows";
 import { createInMemoryChatStorage, extendCatalog, type ChatStorage, type ModelCatalog, type ModelChoice, type UsageSource } from "@ykurilov/agent-chat-core";
 import { createMemoryAttachmentStorage, type Attachments } from "@ykurilov/agent-chat-attachments";
@@ -125,6 +128,8 @@ export interface LiveDialogKit {
   dialog: LiveDialog;
   /** Адаптеры работника набора: подделка Telegram и веб-чат с адресом `https://lm.test`. */
   dialogAdapters: ChannelAdapters;
+  /** Папка загрузок набора: сюда веб-чат кладёт фото посетителя, отсюда их берёт адаптер веб-чата. */
+  uploadsDir: string;
   /** Уведомления, которые веб-чат отправил бы посетителям (без проверки, открыта ли страница). */
   webNotified: Array<{ to: string; message: OutgoingMessage }>;
   /** Тревоги набора; отправленные тексты копятся в `alertTexts`. */
@@ -272,9 +277,10 @@ export async function createLiveDialogKit(database: TestDatabase, options: LiveD
   };
 
   const webNotified: LiveDialogKit["webNotified"] = [];
+  const uploadsDir = await mkdtemp(join(tmpdir(), "live-dialog-uploads-"));
   const dialogAdapters: ChannelAdapters = {
     [botChannel]: channel,
-    web: createWebChatAdapter({ publicBaseUrl: "https://lm.test", notifier: { notify: async (to, message) => void webNotified.push({ to, message }) } }),
+    web: createWebChatAdapter({ publicBaseUrl: "https://lm.test", uploadsDir, notifier: { notify: async (to, message) => void webNotified.push({ to, message }) } }),
   };
   const alertTexts: string[] = [];
   const alerts = createAlerts({ db, clock, notifier: { send: async (_chatId, text) => void alertTexts.push(text) } });
@@ -313,6 +319,8 @@ export async function createLiveDialogKit(database: TestDatabase, options: LiveD
     "purchase-congratulate": ({ passageId }) => dialog.congratulatePurchase(passageId),
     "messenger-handoff-continue": ({ handoffId }) => dialog.continueInMessenger(handoffId),
     "payment-reminder": ({ passageId }) => dialog.remindPayment(passageId),
+    "call-notice-send": ({ noticeId }) => dialog.sendCallNotice(noticeId),
+    "call-reminder": ({ bookingId }) => dialog.remindCall(bookingId),
     "senler-subscribe": async ({ passageId }) => {
       if (!options.senler) throw new Error("Задача Senler в наборе без Senler");
       await subscribeToSenler({ db, cipher: KIT_CIPHER, api: options.senler }, passageId);
@@ -364,6 +372,7 @@ export async function createLiveDialogKit(database: TestDatabase, options: LiveD
     chatImages,
     dialog,
     dialogAdapters,
+    uploadsDir,
     webNotified,
     alerts,
     alertTexts,

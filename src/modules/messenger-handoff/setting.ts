@@ -9,13 +9,15 @@ export const MESSENGER_HANDOFF_WHEN_MAX_LENGTH = 1000;
 
 /**
  * «Переход в мессенджер»: в веб-чате консультант в уместный момент показывает кнопки мессенджеров вместо поля ввода, и
- * разговор продолжается в боте эксперта. `when` — слова эксперта, когда предложить; `channels` — какие мессенджеры
+ * разговор продолжается в боте эксперта. `when` — слова эксперта, когда предложить; `how` — как пригласить; `channels` — какие мессенджеры
  * предлагать (кнопка есть, только если лидмагнит опубликован в этом мессенджере). В настройках до поля его нет — выключено.
  */
 export const messengerHandoffSchema = z
   .object({
     enabled: z.boolean(),
     when: z.string().max(MESSENGER_HANDOFF_WHEN_MAX_LENGTH, `«Когда предложить» — не длиннее ${MESSENGER_HANDOFF_WHEN_MAX_LENGTH} знаков`),
+    /** Словами эксперта: что сказать, приглашая; агент пересказывает своими словами. Пусто — агент решает сам. */
+    how: z.string().max(MESSENGER_HANDOFF_WHEN_MAX_LENGTH, `«Как пригласить» — не длиннее ${MESSENGER_HANDOFF_WHEN_MAX_LENGTH} знаков`).default(""),
     channels: z.array(z.enum(MESSENGER_KINDS)).transform((channels) => MESSENGER_KINDS.filter((kind) => channels.includes(kind))),
   })
   .superRefine((setting, ctx) => {
@@ -27,7 +29,7 @@ export const messengerHandoffSchema = z
 export type MessengerHandoffSetting = z.infer<typeof messengerHandoffSchema>;
 
 /** Выключено, все мессенджеры отмечены: так блок выглядит, пока эксперт его не трогал. */
-export const DEFAULT_MESSENGER_HANDOFF: MessengerHandoffSetting = { enabled: false, when: "", channels: [...MESSENGER_KINDS] };
+export const DEFAULT_MESSENGER_HANDOFF: MessengerHandoffSetting = { enabled: false, when: "", how: "", channels: [...MESSENGER_KINDS] };
 
 /** Настройка, если переход включён; иначе `null`. */
 export function enabledMessengerHandoff(settings: { messengerHandoff?: MessengerHandoffSetting | undefined }): MessengerHandoffSetting | null {

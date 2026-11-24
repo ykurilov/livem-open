@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../../../tests/integration/db-helper";
 import { createLiveDialogKit, DEFAULT_CONSULTANT_REPLY, KIT_CIPHER, type LiveDialogKit } from "../../../tests/integration/live-dialog-kit";
 import type { AgentFlow } from "@ykurilov/agent-chat-flows/format";
+import { callBookings } from "../booking/schema";
 import { leadMagnetBots } from "../channels/schema";
 import { inboxThreads } from "../inbox/schema";
 import type { LeadMagnetSettings } from "../lead-magnets";
@@ -30,7 +31,7 @@ const CONTINUATION = "Продолжаем здесь: на чём мы оста
 const BUTTONS_REPLY = "Нажмите кнопку мессенджера ниже — продолжим там.";
 
 const HANDOFF: Partial<LeadMagnetSettings> = {
-  messengerHandoff: { enabled: true, when: "Когда человек согласился пройти программу", channels: ["telegram"] },
+  messengerHandoff: { enabled: true, when: "Когда человек согласился пройти программу", how: "", channels: ["telegram"] },
 };
 
 let database: TestDatabase;
@@ -206,6 +207,11 @@ describe("переход из веб-чата в мессенджер", () => {
     await kit.drain();
     const oldPerson = await kit.personOf("tg-gleb");
     const [oldPassage] = await kit.passagesOf("tg-gleb");
+    // Запись на созвон, сделанная в мессенджере, — тоже переходит к общему человеку
+    const [booking] = await kit.db
+      .insert(callBookings)
+      .values({ startsAt: new Date("2030-01-01T10:00:00Z"), endsAt: new Date("2030-01-01T10:30:00Z"), personId: oldPerson!.id })
+      .returning();
 
     const { code, token } = await offered();
     const personId = await webPersonId(token);
@@ -224,6 +230,8 @@ describe("переход из веб-чата в мессенджер", () => {
     expect(kit.textsTo("tg-gleb").at(-1)).toBe(CONTINUATION);
     const threads = await kit.db.select().from(inboxThreads).where(eq(inboxThreads.personId, oldPerson!.id));
     expect(threads).toHaveLength(0);
+    const [movedBooking] = await kit.db.select().from(callBookings).where(eq(callBookings.id, booking!.id));
+    expect(movedBooking!.personId).toBe(personId);
   });
 
   it("инструмент — только в веб-чате и только когда переход включён", async () => {
@@ -238,11 +246,15 @@ describe("переход из веб-чата в мессенджер", () => {
     const webCall = kit.consultantCalls().at(-1)!;
     expect(webCall.toolNames).toContain(OFFER_TOOL);
     expect(JSON.stringify(webCall.options.tools)).toContain("Когда человек согласился пройти программу");
+    // Условие — в постоянной инструкции, счёт сообщений — в хвосте хода: модель не считает сама
+    expect(webCall.system).toContain("Когда человек согласился пройти программу");
+    expect(webCall.lastUserText).toContain("Человек прислал в этом разговоре");
 
     await pressStart("tg-dina", on.code);
     await kit.send("tg-dina", "Привет из телеграма");
     await kit.drain();
     expect(kit.consultantCalls().at(-1)!.toolNames).not.toContain(OFFER_TOOL);
+    expect(kit.consultantCalls().at(-1)!.lastUserText).not.toContain("Человек прислал в этом разговоре");
   });
 
   it("событие сценария «перешёл в мессенджер» переводит разговор в следующую ноду", async () => {

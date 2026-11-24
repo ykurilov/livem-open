@@ -87,12 +87,6 @@ async function pending() {
 }
 
 describe("конструктор узнаёт о ручной правке", () => {
-  it("один чат конструктора на лидмагнит", async () => {
-    const first = await endpoint.ensureChat(lead.id);
-    expect(await endpoint.ensureChat(lead.id)).toBe(first);
-    expect((await getLeadMagnet(database.db, lead.id))?.constructorChatId).toBe(first);
-  });
-
   it("ручная правка — версия «manual» и заметка в очереди", async () => {
     await saveExpertEdit(database.db, lead.id, { settings: { ...lead.draft, firstMessage: "Добрый день!" }, expectedVersionId: lead.draftVersionId });
     expect((await listVersions(database.db, lead.id))[0]!.source).toBe("manual");
@@ -162,6 +156,7 @@ describe("конструктор узнаёт о ручной правке", () 
     const chatId = await endpoint.ensureChat(lead.id);
     await sendToConstructor(chatId, "Привет");
     expect([...calls[0]!.toolNames].sort()).toEqual([
+      "app_help",
       "edit_lead_magnet",
       "read_answer_corrections",
       "read_test_conversation",

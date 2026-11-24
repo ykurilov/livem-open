@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { Tab, TabList, Tabs } from "@ykurilov/ds-react";
-import { isUnder, type SectionTab } from "./cabinet-sections";
+import { activeTabHref, type SectionTab } from "./cabinet-sections";
 import { NavigationProgress } from "./navigation-progress";
 
 /** Вкладки раздела кабинета: каждая — своя страница, выбор вкладки переходит по её адресу. */
@@ -11,7 +11,7 @@ export function SectionTabs({ label, tabs }: { label: string; tabs: SectionTab[]
   const pathname = usePathname();
   const router = useRouter();
   const [opening, startOpening] = useTransition();
-  const current = tabs.find((tab) => isUnder(tab.href, pathname))?.href ?? tabs[0]?.href;
+  const current = activeTabHref(tabs, pathname);
   return (
     <Tabs value={current} onValueChange={(href) => startOpening(() => router.push(href))}>
       <NavigationProgress active={opening} />

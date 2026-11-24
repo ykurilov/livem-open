@@ -120,6 +120,8 @@ test("из веб-чата в мессенджер: настройка, кноп
   const offer = chat.getByRole("group", { name: "Продолжение в мессенджере" });
   const telegram = offer.getByRole("link", { name: "Открыть Telegram" });
   await expect(telegram).toBeVisible({ timeout: 60_000 });
+  // Старая переписка с ботом — «Начать» нет: человек знает, что написать первым придётся ему
+  await expect(offer.getByText("напишите боту любое сообщение")).toBeVisible();
   const vk = offer.getByRole("link", { name: "Открыть ВКонтакте" });
   await expect(offer.getByRole("link")).toHaveCount(2);
   // Подделка ВКонтакте строит ссылку как подделка Telegram: в ней бот ВКонтакте и тот же код перехода

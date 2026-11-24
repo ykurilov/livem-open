@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Alert, Badge, Card, CardContent } from "@/ui/primitives";
 import { requireUser } from "@/modules/access";
 import { CHANNEL_LABELS, CONTACT_SOURCE_LABELS } from "@/modules/channels";
-import { countPeople, listFields, listPeople, listPeopleFilterOptions, type PersonListItem } from "@/modules/people";
+import { countPeople, listFields, listPeople, listPeopleFilterOptions, mskDayStart, type PeopleFilter, type PeopleFilterOptions, type PersonListItem } from "@/modules/people";
 import { getDatabase } from "@/modules/platform/db";
 import { ArrowLink, DataTable, PageHeader, PEOPLE_TABS, SectionTabs, type DataTableColumn } from "@/ui";
 import { filterFromSearchParams, pageFromSearchParams, searchParamsFromFilter, type SearchParams } from "./filter-params";
@@ -15,6 +15,17 @@ export const dynamic = "force-dynamic";
 const PAGE_SIZE = 50;
 
 const dateFormat = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "short", year: "numeric" });
+
+const dayFormat = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long" });
+
+/** Кто в списке, если он открыт из «Откуда пришли»: источник, лидмагнит и первый день периода. */
+function arrivalTitle(arrival: NonNullable<PeopleFilter["arrival"]>, options: PeopleFilterOptions): string {
+  const lead = options.leadMagnets.find((candidate) => candidate.id === arrival.leadMagnetId)?.name ?? "лидмагнит";
+  const label = options.links.find((link) => link.id === arrival.linkId)?.label;
+  const source = arrival.linkId === null ? "без ссылки" : label ? `по метке «${label}»` : "по основной ссылке";
+  const since = arrival.sinceDay ? ` с ${dayFormat.format(mskDayStart(arrival.sinceDay))}` : "";
+  return `Впервые пришли в «${lead}» ${source}${since}`;
+}
 
 const columns: DataTableColumn<PersonListItem>[] = [
   {
@@ -70,6 +81,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
     listPeople(db, filter, { limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
   ]);
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const { arrival: _arrival, ...withoutArrival } = filter;
   const pageLink = (target: number) => `/people?${searchParamsFromFilter(filter, target)}`;
 
   return (
@@ -82,6 +94,14 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
           </CardContent>
         </Card>
         {error ? <Alert variant="warm" title={error} /> : null}
+        {filter.arrival ? (
+          <Alert
+            variant="info"
+            title={arrivalTitle(filter.arrival, options)}
+            action={<ArrowLink href={`/people?${searchParamsFromFilter(withoutArrival)}`}>Убрать</ArrowLink>}
+            data-testid="people-arrival"
+          />
+        ) : null}
         <p className="font-semibold" data-testid="people-count">
           Найдено: {total}
         </p>

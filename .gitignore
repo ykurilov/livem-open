@@ -15,3 +15,6 @@ data/
 # Прогоны eval: переписки и расход, не коммитить
 evals/runs/
 perf-out/
+
+# Виджет для сайтов: собирается `pnpm widget:build` (в dev, e2e и образе — сам)
+public/widget.js

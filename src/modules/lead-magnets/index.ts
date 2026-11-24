@@ -23,8 +23,8 @@ export type { LeadMagnetSettings, OutreachSettings, ProgramSettings, ReturnAfter
 export { VERSION_SOURCES } from "./schema";
 export type { ManualEditNote, VersionSource } from "./schema";
 export {
+  addConstructorChat,
   appendManualEditNotes,
-  attachConstructorChat,
   clearManualEditNotes,
   createLeadMagnet,
   findLeadMagnetByConstructorChat,
@@ -33,9 +33,11 @@ export {
   getVersion,
   LeadMagnetNotFoundError,
   lockLeadMagnet,
+  listConstructorChatIds,
   listLeadMagnetCards,
   listVersions,
   listVersionSummaries,
+  removeConstructorChat,
   rollbackToVersion,
   saveDraft,
   setPreviewChat,

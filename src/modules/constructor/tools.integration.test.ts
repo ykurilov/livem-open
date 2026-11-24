@@ -56,8 +56,9 @@ async function currentDraft() {
 }
 
 describe("набор инструментов конструктора", () => {
-  it("ровно шесть инструментов", () => {
+  it("ровно семь инструментов", () => {
     expect([...CONSTRUCTOR_TOOL_NAMES].sort()).toEqual([
+      "app_help",
       "edit_lead_magnet",
       "read_answer_corrections",
       "read_test_conversation",
@@ -320,7 +321,7 @@ describe("переход из веб-чата в мессенджер", () => {
 
   it("set_messenger_handoff сохраняет настройку, видна в обзоре; без «когда» или мессенджеров — отказ; null убирает", async () => {
     expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_messenger_handoff", messengerHandoff: handoff }] })).toMatchObject({ ok: true });
-    const saved = { ...handoff, channels: ["telegram", "vk"] };
+    const saved = { ...handoff, how: "", channels: ["telegram", "vk"] };
     expect((await getLeadMagnet(deps.db, lead.id))!.draft.messengerHandoff).toEqual(saved);
     expect(((await viewLeadMagnet(deps, lead.id, { sections: ["overview"] })) as { overview: Record<string, unknown> }).overview).toMatchObject({ messengerHandoff: saved });
 
@@ -330,8 +331,32 @@ describe("переход из веб-чата в мессенджер", () => {
     const noChannels = await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_messenger_handoff", messengerHandoff: { ...handoff, channels: [] } }] });
     expect(noChannels).toMatchObject({ ok: false });
 
+    // «Как пригласить»: правка без него не стирает сказанное раньше
+    await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_messenger_handoff", messengerHandoff: { ...handoff, how: "Ссылки не потеряются" } }] });
+    await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_messenger_handoff", messengerHandoff: { ...handoff, when: "Прошло 4 сообщения" } }] });
+    expect((await getLeadMagnet(deps.db, lead.id))!.draft.messengerHandoff).toMatchObject({ when: "Прошло 4 сообщения", how: "Ссылки не потеряются" });
+
     expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_messenger_handoff", messengerHandoff: null }] })).toMatchObject({ ok: true });
     expect((await getLeadMagnet(deps.db, lead.id))!.draft.messengerHandoff).toBeUndefined();
+  });
+});
+
+describe("запись на созвон", () => {
+  const booking = { enabled: true, when: "Человек хочет разобрать свою задачу лично", about: "Созвон 30 минут в Zoom", meetingLink: "https://meet.test/expert" };
+
+  it("set_call_booking сохраняет настройку, видна в обзоре; без «когда» или с плохой ссылкой — отказ; null убирает", async () => {
+    expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_call_booking", callBooking: booking }] })).toMatchObject({ ok: true });
+    expect((await getLeadMagnet(deps.db, lead.id))!.draft.callBooking).toEqual(booking);
+    expect(((await viewLeadMagnet(deps, lead.id, { sections: ["overview"] })) as { overview: Record<string, unknown> }).overview).toMatchObject({ callBooking: booking });
+
+    const noWhen = await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_call_booking", callBooking: { ...booking, when: " " } }] });
+    expect(noWhen).toMatchObject({ ok: false });
+    if (!noWhen.ok) expect(noWhen.error).toMatch(/когда предложить/);
+    const badLink = await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_call_booking", callBooking: { ...booking, meetingLink: "zoom" } }] });
+    expect(badLink).toMatchObject({ ok: false });
+
+    expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_call_booking", callBooking: null }] })).toMatchObject({ ok: true });
+    expect((await getLeadMagnet(deps.db, lead.id))!.draft.callBooking).toBeUndefined();
   });
 });
 

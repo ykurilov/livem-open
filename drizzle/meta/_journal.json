@@ -425,8 +425,36 @@
     {
       "idx": 60,
       "version": "7",
+      "when": 1794913230814,
+      "tag": "0060_preview_turn_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1794922357433,
+      "tag": "0061_call_booking",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1794923314373,
+      "tag": "0062_constructor_chats",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1795514461711,
+      "tag": "0063_chat_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
       "when": 1793256194999,
-      "tag": "0060_password_accounts",
+      "tag": "0064_password_accounts",
       "breakpoints": true
     }
   ]

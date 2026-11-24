@@ -69,7 +69,8 @@ export function PeopleFilterForm(props: {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const activeFilters =
     [props.filter.botIds, props.filter.leadMagnetIds, props.filter.linkIds, props.filter.statuses].filter((list) => list?.length).length +
-    (props.filter.fieldConditions?.length ?? 0);
+    (props.filter.fieldConditions?.length ?? 0) +
+    (props.filter.arrival ? 1 : 0);
   const fieldById = new Map(props.fields.map((field) => [field.id, field]));
 
   const choose = (options: SelectOption[], anyLabel: string) => [{ value: ANY, label: anyLabel }, ...options];
@@ -99,6 +100,8 @@ export function PeopleFilterForm(props: {
       linkIds: pick(linkId),
       statuses: pick(status) as PassageStatus[] | undefined,
       fieldConditions,
+      // Приход из «Откуда пришли» в форме не выбирается: он держится, пока фильтр не сброшен
+      ...(props.filter.arrival && { arrival: props.filter.arrival }),
     };
     return { filter, errors };
   }

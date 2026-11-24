@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { MessengerHandoffPort } from "../messenger-handoff/tool";
+import type { CallBookingPort } from "../booking/tool";
 import {
   ChatBusyError,
   createChatService,
@@ -53,6 +54,8 @@ export interface HeadlessConsultantOptions {
   store: ConversationStore;
   /** Переход из веб-чата в мессенджер (инструмент `offer_messenger`); нет — инструмента нет. */
   messengerHandoff?: MessengerHandoffPort;
+  /** Запись на созвон (инструменты `call_free_times`, `book_call`, `change_call`); нет — инструментов нет. */
+  callBooking?: CallBookingPort;
   /** Картинки чатов работника: фото клиента. Служба версии получает их, только если лидмагнит их принимает (`clientImages`). */
   attachments?: Attachments;
   /** Модель консультанта по настройкам снимка. */
@@ -328,6 +331,7 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
             dayOf,
             knowledge,
             ...(options.messengerHandoff && { messengerHandoff: options.messengerHandoff }),
+            ...(options.callBooking && { callBooking: options.callBooking }),
           }),
         }),
       );

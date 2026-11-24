@@ -172,7 +172,7 @@ export async function reserveBurstTurn(
     }
     const snapshot = await getVersion(tx, passage.snapshotId);
     if (!snapshot) throw new Error(`Снимок ${passage.snapshotId} не найден`);
-    return { tail: tailOf(snapshot.settings, personMessageCount, rows) };
+    return { tail: tailOf(snapshot.settings, personMessageCount, rows, await inWebChatOf(tx, passage.personId)) };
   });
 }
 
@@ -196,8 +196,14 @@ export async function releaseBurstTurn(deps: Pick<TurnDependencies, "db">, input
 }
 
 /** Наш хвост: отсчёт до предела и пометка о вложениях. День, этап, рамки и пояс сценарий допишет сам. */
-function tailOf(settings: LeadMagnetSettings, personMessageCount: number, messages: readonly InboundRow[]): string | null {
-  return [buildConsultantTail({ settings, personMessageCount }), attachmentNoteOf(messages)].filter(Boolean).join("\n") || null;
+function tailOf(settings: LeadMagnetSettings, personMessageCount: number, messages: readonly InboundRow[], inWebChat: boolean): string | null {
+  return [buildConsultantTail({ settings, personMessageCount, inWebChat }), attachmentNoteOf(messages)].filter(Boolean).join("\n") || null;
+}
+
+/** Человек пишет в веб-чате: так же решает инструмент перехода в мессенджер (`inWebChat` живого разговора). */
+async function inWebChatOf(db: DatabaseExecutor, personId: string): Promise<boolean> {
+  const [person] = await db.select({ channel: people.channel }).from(people).where(eq(people.id, personId));
+  return person?.channel === "web";
 }
 
 /**
@@ -559,7 +565,7 @@ async function askConsultant(deps: TurnDependencies, claim: TurnClaim): Promise<
     }),
     ...(turnId && { turnId }),
     // Хвост повтора упавшего хода; у хода на пачку его даёт начало хода (`reserveBurstTurn`) по новому счёту
-    tail: tailOf(settings, passage.personMessageCount, messages),
+    tail: tailOf(settings, passage.personMessageCount, messages, await inWebChatOf(deps.db, passage.personId)),
     expertReplies: await expertRepliesDuring(deps, passage),
     // «Сегодня» в хвосте — по поясу человека; неизвестен — Москва
     ...(timeZone && { timeZone }),

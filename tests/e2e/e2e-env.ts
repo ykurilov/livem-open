@@ -4,7 +4,8 @@ import { TEST_ADMIN_DATABASE_URL } from "../integration/test-database-url";
 // Своя база и свой порт у каждой копии репозитория: соседние worktree не мешают друг другу
 const checkoutTag = createHash("sha1").update(process.cwd()).digest("hex").slice(0, 6);
 
-export const E2E_PORT = 3100 + (parseInt(checkoutTag, 16) % 800);
+// `E2E_PORT` — на машине прогона, где разрешены только свои порты (тестовый загон на сервере)
+export const E2E_PORT = Number(process.env.E2E_PORT) || 3100 + (parseInt(checkoutTag, 16) % 800);
 export const E2E_BASE_URL = `http://localhost:${E2E_PORT}`;
 export const E2E_DATABASE_NAME = `livem_e2e_${checkoutTag}`;
 export const E2E_EMAIL = "e2e@example.com";

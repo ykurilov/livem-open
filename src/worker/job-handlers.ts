@@ -92,6 +92,9 @@ export async function registerJobHandlers({ queue, connection }: JobHandlerConte
   await queue.work("purchase-congratulate", ({ passageId }) => dialog.congratulatePurchase(passageId), concurrency);
   await queue.work("messenger-handoff-continue", ({ handoffId }) => dialog.continueInMessenger(handoffId), concurrency);
   await queue.work("payment-reminder", ({ passageId }) => dialog.remindPayment(passageId), concurrency);
+  // Запись на созвон: уведомления эксперту через его бота и напоминание человеку
+  await queue.work("call-notice-send", ({ noticeId }) => dialog.sendCallNotice(noticeId), concurrency);
+  await queue.work("call-reminder", ({ bookingId }) => dialog.remindCall(bookingId), concurrency);
   // Пришедшие по ссылке в бот ВК с Senler — в группу Senler; сбой Senler повторяет очередь, разговор его не ждёт
   await queue.work("senler-subscribe", ({ passageId }) => subscribeToSenler({ db, cipher, api: senler }, passageId), concurrency);
   if (webPush) await queue.work("web-chat-push", ({ visitorId, body }) => webPush.push(visitorId, body), concurrency);

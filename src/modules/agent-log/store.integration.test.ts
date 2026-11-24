@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../../../tests/integration/db-helper";
 import { createLiveDialogKit } from "../../../tests/integration/live-dialog-kit";
 import { previewConversations } from "../consultant/schema";
-import { attachConstructorChat, createLeadMagnet } from "../lead-magnets";
+import { addConstructorChat, createLeadMagnet } from "../lead-magnets";
 import { AGENT_LOG_KEEP_DAYS, createAgentLogRecorder, deleteOldAgentLog, listAgentLog } from "./store";
 import type { AgentLogEntry } from "./types";
 
@@ -34,7 +34,7 @@ describe("хранение журнала агента", () => {
   it("ход конструктора: записан с пометкой агента, читается новым сверху порциями", async () => {
     const lead = await createLeadMagnet(database.db, { name: "Журнал" });
     const chatId = randomUUID();
-    await attachConstructorChat(database.db, lead.id, chatId);
+    await addConstructorChat(database.db, lead.id, chatId);
     const recorder = createAgentLogRecorder(database.db, {});
 
     const base = Date.now() - 60_000;
@@ -91,7 +91,7 @@ describe("хранение журнала агента", () => {
   it("секреты вычищены перед записью", async () => {
     const lead = await createLeadMagnet(database.db, { name: "Секреты" });
     const chatId = randomUUID();
-    await attachConstructorChat(database.db, lead.id, chatId);
+    await addConstructorChat(database.db, lead.id, chatId);
     const recorder = createAgentLogRecorder(database.db, { PROXY_TOKEN: "very-secret-proxy" });
     const id = randomUUID();
     recorder.startTurn({ id, chatId, startedAt: new Date().toISOString() });
@@ -104,7 +104,7 @@ describe("хранение журнала агента", () => {
   it("записи старше 30 дней удаляются", async () => {
     const lead = await createLeadMagnet(database.db, { name: "Чистка" });
     const chatId = randomUUID();
-    await attachConstructorChat(database.db, lead.id, chatId);
+    await addConstructorChat(database.db, lead.id, chatId);
     const recorder = createAgentLogRecorder(database.db, {});
     const now = new Date();
     const old = randomUUID();

@@ -1,3 +1,4 @@
+import { readClientPhoto } from "../../images/client-photos";
 import type { ChannelAdapter, OutgoingMessage } from "../channel";
 
 /** Уведомление посетителю веб-чата о новом сообщении, когда страница закрыта (Web Push). */
@@ -10,6 +11,8 @@ export interface WebChatAdapterOptions {
   publicBaseUrl: string;
   notifier?: WebChatNotifier;
   logError?: (message: string) => void;
+  /** Папка загрузок: там фото, которые посетитель прислал сам. Нет — фото посетителя не отдаются. */
+  uploadsDir?: string;
 }
 
 const NOT_A_MESSENGER = "Веб-чат не подключается как бот мессенджера";
@@ -31,6 +34,11 @@ export function createWebChatAdapter(options: WebChatAdapterOptions): ChannelAda
     checkConnection: async () => ({ ok: true }),
     parseWebhook: async () => ({ kind: "rejected" }),
     entryLink: (_bot, code) => `${base}/c/${code}`,
+
+    async downloadImage(_bot, ref) {
+      const photo = options.uploadsDir ? await readClientPhoto(ref, options.uploadsDir) : null;
+      return photo ? { ok: true, image: photo } : { ok: false, reason: "permanent", error: "Фото посетителя не найдено" };
+    },
 
     async send(_bot, to, message) {
       if (!message.text.trim() && !message.imagePath && !message.followUps?.some((text) => text.trim()))

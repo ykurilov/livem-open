@@ -17,6 +17,16 @@ describe("фильтр базы в адресе страницы", () => {
     expect(pageFromSearchParams(params)).toBe(2);
   });
 
+  it("приход из «Откуда пришли» — туда и обратно, и для пришедших без ссылки", () => {
+    for (const arrival of [
+      { leadMagnetId: randomUUID(), linkId: randomUUID(), sinceDay: "2026-10-19" },
+      { leadMagnetId: randomUUID(), linkId: null },
+    ]) {
+      const params = Object.fromEntries(searchParamsFromFilter({ arrival }));
+      expect(filterFromSearchParams(params)).toEqual({ filter: { arrival } });
+    }
+  });
+
   it("испорченный адрес — вся база и пояснение", () => {
     expect(filterFromSearchParams({ fields: "{не json" })).toMatchObject({ filter: {}, error: expect.any(String) });
     expect(filterFromSearchParams({ bot: "not-a-uuid" })).toMatchObject({ filter: {}, error: expect.any(String) });

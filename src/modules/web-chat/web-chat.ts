@@ -21,6 +21,8 @@ import type { TokenCipher } from "../platform/crypto";
 import type { Database, DatabaseExecutor } from "../platform/db";
 import type { JobEnqueuer } from "../platform/queue";
 import { isUuid } from "../platform/uuid";
+import { CLIENT_PHOTO_NAME, saveClientPhoto } from "../images/client-photos";
+import { uploadsDir } from "../mailings/images";
 import { isValidTimeZone } from "../program/calendar";
 import type { ShownVideoLink } from "../videos/shown-video";
 import { messagesPerAddress, newVisitorsPerAddress, sessionsPerAddress, takeWebChatLimit } from "./limits";
@@ -54,6 +56,8 @@ export interface WebChatDependencies {
   cipher: TokenCipher;
   /** Адаптеры мессенджеров: кнопки перехода и ссылки в бот вместо поля ввода. */
   adapters: ChannelAdapters;
+  /** Папка загрузок для фото посетителя; по умолчанию — общая папка загрузок приложения. */
+  uploadsDir?: string;
 }
 
 export type WebChatVisitor = typeof webChatVisitors.$inferSelect;
@@ -93,7 +97,7 @@ export interface WebChatItem {
 export type WebChatSendResult =
   /** `item` — сообщение человека для ленты: страница показывает его сразу, не дожидаясь опроса. */
   | { ok: true; item: WebChatItem | null }
-  | { ok: false; reason: "empty" | "too_long" | "too_fast" | "too_many" | "retry" | "messenger"; error: string }
+  | { ok: false; reason: "empty" | "too_long" | "too_fast" | "too_many" | "retry" | "messenger" | "photo"; error: string }
   /** `current` — разговор, который идёт сейчас: страница предложит перейти в него или вернуться сюда. */
   | { ok: false; reason: "other_chat"; error: string; current: WebChatElsewhere["current"] };
 
@@ -136,6 +140,13 @@ async function issueToken(db: DatabaseExecutor, visitorId: string): Promise<stri
   const token = randomBytes(32).toString("base64url");
   await db.insert(webChatTokens).values({ tokenHash: hashToken(token), visitorId });
   return token;
+}
+
+/** Новый посетитель веб-чата и его токен: браузер получает его при первом входе, сервер эксперта — для своего посетителя. */
+export async function createWebChatVisitor(db: DatabaseExecutor, code: string): Promise<{ visitor: WebChatVisitor; token: string }> {
+  const [visitor] = await db.insert(webChatVisitors).values({ lastCode: code }).returning();
+  if (!visitor) throw new Error("Посетитель веб-чата не создался");
+  return { visitor, token: await issueToken(db, visitor.id) };
 }
 
 /**
@@ -211,10 +222,7 @@ export async function openWebChat(
   if (!visitor) {
     if (!(await takeWebChatLimit(deps.db, now, newVisitorsPerAddress(input.address))))
       return { kind: "limited", error: "Слишком много новых чатов с вашего адреса. Попробуйте через час." };
-    const [created] = await deps.db.insert(webChatVisitors).values({ lastCode: code }).returning();
-    if (!created) throw new Error("Посетитель веб-чата не создался");
-    visitor = created;
-    issuedToken = await issueToken(deps.db, visitor.id);
+    ({ visitor, token: issuedToken } = await createWebChatVisitor(deps.db, code));
   }
 
   const bot = await ensureWebChatBot(deps.db, deps.cipher);
@@ -303,14 +311,17 @@ async function passageHistory(db: DatabaseExecutor, person: NonNullable<Awaited<
   };
 }
 
-/** Сообщение посетителя: в общий путь входящих, как из мессенджера. Повтор того же `clientId` второго не создаёт. */
+/**
+ * Сообщение посетителя: в общий путь входящих, как из мессенджера. Повтор того же `clientId` второго не создаёт.
+ * `photo` — фото посетителя (подпись можно пустую): только если лидмагнит принимает картинки клиента.
+ */
 export async function sendWebChatMessage(
   deps: WebChatDependencies,
   visitor: WebChatVisitor,
-  input: { text: string; clientId: string; address: string; code?: string },
+  input: { text: string; clientId: string; address: string; code?: string; photo?: Uint8Array },
 ): Promise<WebChatSendResult> {
   const text = input.text.trim();
-  if (!text) return { ok: false, reason: "empty", error: "Напишите сообщение" };
+  if (!text && !input.photo) return { ok: false, reason: "empty", error: "Напишите сообщение" };
   if (text.length > MESSAGE_MAX_LENGTH)
     return { ok: false, reason: "too_long", error: `Сообщение длиннее ${MESSAGE_MAX_LENGTH} знаков: сократите его` };
   const clientId = input.clientId.slice(0, CLIENT_ID_MAX_LENGTH);
@@ -349,7 +360,22 @@ export async function sendWebChatMessage(
   if (tooFast || !(await takeWebChatLimit(deps.db, now, messagesPerAddress(input.address))))
     return { ok: false, reason: "too_fast", error: "Слишком часто: подождите немного и отправьте снова" };
 
-  const event: ChannelEvent = { type: "message", dedupeKey, userId: visitor.id, userName: webVisitorName(visitor.id), text };
+  let photoRef: string | undefined;
+  if (input.photo) {
+    if (!(await webChatPhotosAccepted(deps.db, input.code ?? visitor.lastCode ?? "")))
+      return { ok: false, reason: "photo", error: "Этот чат не принимает фото: напишите словами" };
+    const saved = await saveClientPhoto(input.photo, deps.uploadsDir ?? uploadsDir());
+    if (!saved.ok) return { ok: false, reason: "photo", error: saved.error };
+    photoRef = saved.fileName;
+  }
+  const event: ChannelEvent = {
+    type: "message",
+    dedupeKey,
+    userId: visitor.id,
+    userName: webVisitorName(visitor.id),
+    text,
+    ...(photoRef && { attachment: "image" as const, imageRef: photoRef }),
+  };
   if ((await acceptChannelEvents(deps, bot.id, [event], { receivedAt: now })) === "retry")
     return { ok: false, reason: "retry", error: "Не получилось отправить: попробуйте ещё раз" };
   return { ok: true, item: await sentPersonItem(deps.db, dedupeKey) };
@@ -365,7 +391,7 @@ async function otherContinuingChat(
   code: string,
   now: Date,
 ): Promise<WebChatElsewhere["current"] | null> {
-  const leadMagnetId = await leadMagnetIdByCode(db, code);
+  const leadMagnetId = await webChatLeadMagnetId(db, code);
   const person = leadMagnetId && (await findPerson(db, visitor.id));
   const continuing = person ? await continuingChat(db, person, now) : null;
   return continuing && continuing.leadMagnetId !== leadMagnetId ? continuing.current : null;
@@ -401,10 +427,15 @@ async function passageChat(db: DatabaseExecutor, where: SQL): Promise<Continuing
 /** Принятое сообщение человека по ключу повтора; куда его отправит разбор, станет известно позже — это покажет опрос. */
 async function sentPersonItem(db: DatabaseExecutor, dedupeKey: string): Promise<WebChatItem | null> {
   const [row] = await db
-    .select({ id: inboundMessages.id, text: inboundMessages.text, at: inboundMessages.receivedAt })
+    .select({ id: inboundMessages.id, text: inboundMessages.text, at: inboundMessages.receivedAt, attachmentKind: inboundMessages.attachmentKind, imageRef: inboundMessages.imageRef })
     .from(inboundMessages)
     .where(eq(inboundMessages.dedupeKey, dedupeKey));
-  return row ? { id: row.id, from: "person", text: row.text ?? "", at: row.at.toISOString() } : null;
+  return row ? { id: row.id, from: "person", text: row.text ?? "", at: row.at.toISOString(), ...personPhoto(row) } : null;
+}
+
+/** Фото, которое посетитель прислал сам: в ленте — ссылкой на картинку этого входящего. */
+function personPhoto(row: { id: string; attachmentKind: string | null; imageRef: string | null }): { imageUrl?: string } {
+  return row.attachmentKind === "image" && row.imageRef && CLIENT_PHOTO_NAME.test(row.imageRef) ? { imageUrl: `/api/web-chat/images/${row.id}` } : {};
 }
 
 /**
@@ -433,6 +464,8 @@ export async function readWebChat(
       route: inboundMessages.route,
       autoreply: inboundMessages.autoreply,
       menu: inboundMessages.menu,
+      attachmentKind: inboundMessages.attachmentKind,
+      imageRef: inboundMessages.imageRef,
     })
     .from(inboundMessages)
     .where(
@@ -475,6 +508,7 @@ export async function readWebChat(
           from: "person" as const,
           text: row.text ?? "",
           at: row.at.toISOString(),
+          ...personPhoto(row),
           ...((row.route === "inbox" || row.route === "ignored") && !row.autoreply && !row.menu && { noReply: true as const }),
         },
       ],
@@ -490,7 +524,7 @@ export async function markWebChatAway(db: DatabaseExecutor, visitor: WebChatVisi
 }
 
 /** Картинка из исходящего — только тому посетителю, кому оно ушло. Иначе `null`. */
-export async function webChatImagePath(db: DatabaseExecutor, visitor: WebChatVisitor, messageId: string): Promise<string | null> {
+export async function webChatImagePath(db: DatabaseExecutor, visitor: Pick<WebChatVisitor, "id">, messageId: string): Promise<string | null> {
   if (!isUuid(messageId)) return null;
   const person = await findPerson(db, visitor.id);
   if (!person) return null;
@@ -498,7 +532,13 @@ export async function webChatImagePath(db: DatabaseExecutor, visitor: WebChatVis
     .select({ imagePath: outboundMessages.imagePath })
     .from(outboundMessages)
     .where(and(eq(outboundMessages.id, messageId), eq(outboundMessages.personId, person.id), inArray(outboundMessages.botId, webBotIds(db))));
-  return row?.imagePath ?? null;
+  if (row?.imagePath) return row.imagePath;
+  // Фото, которое посетитель прислал сам
+  const [inbound] = await db
+    .select({ imageRef: inboundMessages.imageRef })
+    .from(inboundMessages)
+    .where(and(eq(inboundMessages.id, messageId), eq(inboundMessages.externalUserId, visitor.id), inArray(inboundMessages.botId, webBotIds(db)), eq(inboundMessages.attachmentKind, "image")));
+  return inbound?.imageRef && CLIENT_PHOTO_NAME.test(inbound.imageRef) ? inbound.imageRef : null;
 }
 
 /**
@@ -552,7 +592,7 @@ export async function webChatTitle(db: DatabaseExecutor, code: string, visitor: 
 export async function webChatElsewhere(db: DatabaseExecutor, code: string, visitor: WebChatVisitor, now: Date): Promise<WebChatElsewhere | null> {
   if (!code || code.length > CODE_MAX_LENGTH) return null;
   const published = await publishedByCode(db, code);
-  const leadMagnetId = await leadMagnetIdByCode(db, code);
+  const leadMagnetId = await webChatLeadMagnetId(db, code);
   const title = leadMagnetId ? await ownChatTitle(db, visitor, code) : null;
   const person = title ? await findPerson(db, visitor.id) : null;
   if (!title || !person) return null;
@@ -565,7 +605,7 @@ export async function webChatElsewhere(db: DatabaseExecutor, code: string, visit
 
 /** Разговор лидмагнита этой ссылки у посетителя был — название из снимка последнего; не было — `null`. */
 async function ownChatTitle(db: DatabaseExecutor, visitor: WebChatVisitor, code: string): Promise<string | null> {
-  const leadMagnetId = await leadMagnetIdByCode(db, code);
+  const leadMagnetId = await webChatLeadMagnetId(db, code);
   const person = leadMagnetId && (await findPerson(db, visitor.id));
   if (!leadMagnetId || !person) return null;
   const [row] = await db
@@ -578,17 +618,25 @@ async function ownChatTitle(db: DatabaseExecutor, visitor: WebChatVisitor, code:
   return row ? row.settings.name.trim() || "Чат" : null;
 }
 
-/** Лидмагнит ссылки — опубликован он или нет; разбор кода как у `publishedByCode`. */
 /** У опубликованного лидмагнита ссылки включён «Голосовой ввод». Снятый с публикации или чужой код — нет. */
 export async function webChatVoiceInput(db: DatabaseExecutor, code: string): Promise<boolean> {
-  const leadMagnetId = await leadMagnetIdByCode(db, code);
-  if (!leadMagnetId) return false;
+  return (await publishedSettings(db, code))?.voiceInput === true;
+}
+
+/** У опубликованного лидмагнита ссылки включены «Картинки клиента»: человек может прислать фото. */
+export async function webChatPhotosAccepted(db: DatabaseExecutor, code: string): Promise<boolean> {
+  return (await publishedSettings(db, code))?.clientImages === true;
+}
+
+async function publishedSettings(db: DatabaseExecutor, code: string) {
+  const leadMagnetId = await webChatLeadMagnetId(db, code);
+  if (!leadMagnetId) return null;
   const [row] = await db
     .select({ settings: leadMagnetVersions.settings })
     .from(leadMagnets)
     .innerJoin(leadMagnetVersions, eq(leadMagnetVersions.id, leadMagnets.publishedSnapshotId))
     .where(eq(leadMagnets.id, leadMagnetId));
-  return row?.settings.voiceInput === true;
+  return row?.settings ?? null;
 }
 
 /**
@@ -596,7 +644,7 @@ export async function webChatVoiceInput(db: DatabaseExecutor, code: string): Pro
  * переписка с консультантом. Разговора ещё нет — `null`.
  */
 export async function webChatVoicePayer(db: DatabaseExecutor, visitorId: string, code: string): Promise<{ ownerId: string; chatId: string } | null> {
-  const [leadMagnetId, person] = await Promise.all([leadMagnetIdByCode(db, code), findPerson(db, visitorId)]);
+  const [leadMagnetId, person] = await Promise.all([webChatLeadMagnetId(db, code), findPerson(db, visitorId)]);
   if (!leadMagnetId || !person) return null;
   const [passage] = await db
     .select({ chatId: passages.chatId, personId: passages.personId, chatOwnerId: passages.chatOwnerId })
@@ -607,7 +655,8 @@ export async function webChatVoicePayer(db: DatabaseExecutor, visitorId: string,
   return passage ? { ownerId: chatOwnerOf(passage), chatId: passage.chatId } : null;
 }
 
-async function leadMagnetIdByCode(db: DatabaseExecutor, code: string): Promise<string | null> {
+/** Лидмагнит ссылки — опубликован он или нет; разбор кода как у `publishedByCode`. Чужой код — `null`. */
+export async function webChatLeadMagnetId(db: DatabaseExecutor, code: string): Promise<string | null> {
   if (!code || code.length > CODE_MAX_LENGTH) return null;
   const exact = await findEntryLinkByCode(db, code);
   if (exact) return exact.leadMagnetId;
@@ -649,7 +698,7 @@ export async function webChatMessengerHandoff(
   code: string,
 ): Promise<WebChatHandoffState | null> {
   const trimmed = code.trim();
-  const leadMagnetId = await leadMagnetIdByCode(db, trimmed);
+  const leadMagnetId = await webChatLeadMagnetId(db, trimmed);
   return leadMagnetId ? handoffStateForVisitor(db, adapters, { visitorId: visitor.id, leadMagnetId, code: trimmed }) : null;
 }
 

@@ -10,6 +10,13 @@ import { Select } from "@/ui";
 import { Checkbox } from "@/ui/checkbox";
 import { KNOWLEDGE_MAX_CHARS, formatChars } from "@/modules/knowledge/knowledge-file";
 import { CHANNEL_LABELS, MESSENGER_KINDS } from "@/modules/channels/channel";
+import {
+  CALL_BOOKING_ABOUT_MAX_LENGTH,
+  CALL_BOOKING_LINK_MAX_LENGTH,
+  CALL_BOOKING_WHEN_MAX_LENGTH,
+  DEFAULT_CALL_BOOKING,
+  type CallBookingSetting,
+} from "@/modules/booking/setting";
 import { DEFAULT_MESSENGER_HANDOFF, MESSENGER_HANDOFF_WHEN_MAX_LENGTH, type MessengerHandoffSetting } from "@/modules/messenger-handoff/setting";
 import type { AgentFlow } from "@ykurilov/agent-chat-flows/format";
 import { saveSettingsAction, saveSettingsAndFlowAction } from "../actions";
@@ -65,6 +72,7 @@ const editKeyLabels: Partial<Record<SettingsEditKey, string>> = {
   clientImages: "Картинки клиента",
   voiceInput: "Голосовой ввод",
   messengerHandoff: "Переход в мессенджер",
+  callBooking: "Запись на созвон",
 };
 
 /** Ролик архива, который можно разрешить консультанту. */
@@ -337,6 +345,8 @@ export function SettingsTab({ leadMagnetId, draft, draftVersionId, videos, image
         onChange={(messengerHandoff) => update({ messengerHandoff })}
       />
 
+      <CallBookingChoice value={settings.callBooking ?? DEFAULT_CALL_BOOKING} onChange={(callBooking) => update({ callBooking })} />
+
       <div className="flex items-center gap-3">
         <Button type="submit" loading={saving} disabled={!dirty}>
           Сохранить
@@ -386,6 +396,14 @@ function MessengerHandoffChoice({ value, onChange }: { value: MessengerHandoffSe
               onChange={(event) => onChange({ ...value, when: event.target.value })}
             />
           </Field>
+          <Field label="Как пригласить" hint="Что сказать человеку, своими словами. Агент передаст смысл, подстроив под разговор. Пусто — решит сам.">
+            <Textarea
+              rows={2}
+              maxLength={MESSENGER_HANDOFF_WHEN_MAX_LENGTH}
+              value={value.how}
+              onChange={(event) => onChange({ ...value, how: event.target.value })}
+            />
+          </Field>
           <fieldset className="flex flex-col gap-1">
             <legend className="mb-1 text-[length:var(--yk-text-small-size)]">Куда звать</legend>
             {MESSENGER_KINDS.map((channel) => (
@@ -406,6 +424,35 @@ function MessengerHandoffChoice({ value, onChange }: { value: MessengerHandoffSe
               {channelsMissing ? "Отметьте хотя бы один мессенджер." : "Кнопка будет только у мессенджеров, где лидмагнит опубликован."}
             </span>
           </fieldset>
+        </>
+      ) : null}
+    </fieldset>
+  );
+}
+
+/** «Запись на созвон»: агент предлагает свободное время из раздела «Созвоны» и записывает человека. */
+function CallBookingChoice({ value, onChange }: { value: CallBookingSetting; onChange(value: CallBookingSetting): void }) {
+  const whenMissing = value.enabled && !value.when.trim();
+  return (
+    <fieldset className="flex flex-col gap-2" data-testid="call-booking-settings">
+      <legend className="mb-1 text-[length:var(--yk-text-small-size)] font-semibold">Запись на созвон</legend>
+      <Checkbox checked={value.enabled} onCheckedChange={(checked) => onChange({ ...value, enabled: checked === true })}>
+        Записывать на созвон{" "}
+        <span className="text-[var(--yk-muted)]">
+          - агент предлагает свободное время из <a href="/calls" className="underline">календаря созвонов</a>, записывает, переносит и отменяет
+        </span>
+      </Checkbox>
+      {value.enabled ? (
+        <>
+          <Field label="Когда предложить" hint={whenMissing ? "Впишите, когда агенту предложить созвон" : "Агент предложит созвон, когда в разговоре случится это."}>
+            <Textarea rows={2} maxLength={CALL_BOOKING_WHEN_MAX_LENGTH} value={value.when} onChange={(event) => onChange({ ...value, when: event.target.value })} />
+          </Field>
+          <Field label="Что сказать о созвоне" hint="Формат, длительность, что на нём будет. Можно оставить пустым.">
+            <Textarea rows={2} maxLength={CALL_BOOKING_ABOUT_MAX_LENGTH} value={value.about} onChange={(event) => onChange({ ...value, about: event.target.value })} />
+          </Field>
+          <Field label="Ссылка на встречу" hint="Zoom, Телемост или другая. Человек получит её в напоминании за час до созвона.">
+            <Input type="url" maxLength={CALL_BOOKING_LINK_MAX_LENGTH} value={value.meetingLink} onChange={(event) => onChange({ ...value, meetingLink: event.target.value })} />
+          </Field>
         </>
       ) : null}
     </fieldset>

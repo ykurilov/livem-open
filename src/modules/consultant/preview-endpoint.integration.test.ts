@@ -1,4 +1,4 @@
-import { createInMemoryChatStorage, SUGGESTIONS_SHOWN_AFTER_ANSWER, type ChatStorage } from "@ykurilov/agent-chat-core";
+import { createInMemoryChatStorage, loadCurrentBranch, SUGGESTIONS_SHOWN_AFTER_ANSWER, type ChatStorage } from "@ykurilov/agent-chat-core";
 import { createMemoryAttachmentStorage } from "@ykurilov/agent-chat-attachments";
 import { createChatImages } from "../platform/chat-attachments";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,6 +19,10 @@ import { previewConversations } from "./schema";
 import { recordCorrection } from "../corrections";
 import { HANDOFF_NOTICE_MARK } from "../messenger-handoff/notice";
 import { MESSENGER_HANDOFF_EVENT } from "../messenger-handoff/setting";
+import { freeCallTimes } from "../booking/bookings";
+import { saveCallWindow, updateCallCalendar } from "../booking/calendar";
+import { CALL_BOOKED_EVENT } from "../booking/setting";
+import { localDate } from "../program/calendar";
 
 let database: TestDatabase;
 let chatStorage: ChatStorage;
@@ -1115,7 +1119,7 @@ describe("переход в мессенджер в «Проверке»", () =>
       ...lead.draft,
       instruction: "Ты консультант превью.",
       stages: STAGES,
-      messengerHandoff: { enabled: true, when: "Когда человек согласился", channels: ["telegram", "vk"] },
+      messengerHandoff: { enabled: true, when: "Когда человек согласился", how: "", channels: ["telegram", "vk"] },
     };
     const flow = leadMagnetToFlow(settings, []);
     const withEvent = {
@@ -1222,5 +1226,440 @@ describe("переход в мессенджер в «Проверке»", () =>
     await endpoint.flow.settled();
     expect(calls).toHaveLength(1);
     expect((await endpoint.status(lead.id))?.messengerHandoff).toMatchObject({ state: "taken", channel: "telegram" });
+  });
+});
+
+describe("правка в «Проверке» возвращает разговор к месту правки", () => {
+  const STAGES = [
+    { id: "start", name: "Знакомство", instruction: "Узнай идею.", transitionCondition: "Идея есть", startDay: null, isSale: false },
+    { id: "sale", name: "Продажа", instruction: "Предложи курс.", transitionCondition: "", startDay: 2, isSale: true },
+  ];
+  const COFFEE = "Делает приложение для кофейни";
+  const BAKERY = "Делает сайт для пекарни";
+  const summary = { goal: "Курс", stuckAt: "Нет идеи", chosenStep: "Собрать идею", outcome: "agreed" };
+
+  beforeEach(async () => {
+    // Карточка «Проверки» общая на все открытые тестовые разговоры: разговоры прошлых тестов закрыты, иначе их факты
+    // видны консультанту и считаются уже известными
+    await database.pool.query("update app.lead_magnets set preview_chat_id = null where id <> $1", [lead.id]);
+    await saveDraft(database.db, lead.id, { ...lead.draft, instruction: "Ты консультант превью.", stages: STAGES, program: newProgramSettings(3) }, "manual");
+    // Консультант записывает факт о кофейне и пекарне, по «Беру» завершает разговор; судья и прочие запросы — обычный текст
+    reply = (call) => {
+      if (!call.toolNames.includes("flow_note")) return { text: "Расскажите подробнее." };
+      if (call.lastToolResult !== undefined) return { text: "Записал." };
+      if (call.lastUserText.includes("Беру")) return { toolCalls: [{ toolName: "finish_dialog", input: summary }] };
+      if (call.lastUserText.includes("пекарн")) return { toolCalls: [{ toolName: "flow_note", input: { fact: BAKERY } }] };
+      if (call.lastUserText.includes("кофейн")) return { toolCalls: [{ toolName: "flow_note", input: { fact: COFFEE } }] };
+      return { text: "Расскажите подробнее." };
+    };
+  });
+
+  const userMessages = async (chatId: string) => (await loadBranch(chatId)).filter((message) => message.role === "user");
+  const loadBranch = (chatId: string) => loadCurrentBranch(chatStorage, chatId);
+  const edit = async (chatId: string, editedMessageId: string, text: string) => {
+    const response = await endpoint.fetch(
+      new Request(`http://localhost/api/preview/${chatId}/edit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ editedMessageId, message: { id: `m-${++counter}`, role: "user", parts: [{ type: "text", text }] } }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    await response.text();
+    await endpoint.flow.settled();
+  };
+  const regenerate = async (chatId: string, messageId: string) => {
+    const response = await endpoint.fetch(
+      new Request(`http://localhost/api/preview/${chatId}/regenerate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messageId }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    await response.text();
+    await endpoint.flow.settled();
+  };
+  const say = async (chatId: string, text: string) => {
+    await (await send(chatId, text)).text();
+    await endpoint.flow.settled();
+  };
+  /** День 1: факт о кофейне; «Следующий день» — «Продажа» по сроку; день 2: факт о пекарне. */
+  const twoDays = async () => {
+    const chatId = await endpoint.ensurePreview(lead.id);
+    await say(chatId, "Хочу приложение для кофейни");
+    await endpoint.nextDay(lead.id);
+    await endpoint.flow.settled();
+    await say(chatId, "А ещё сайт для пекарни");
+    expect(await endpoint.status(lead.id)).toMatchObject({ day: 2, stageName: "Продажа" });
+    expect((await readPreviewConversation(database.db, chatId))?.facts).toEqual([COFFEE, BAKERY]);
+    return chatId;
+  };
+  /** Что консультант видит в последнем ходе. */
+  const lastPrompt = () => JSON.stringify(calls.filter((call) => call.toolNames.includes("flow_note")).at(-1)!.options.prompt);
+
+  it("законченный многоэтапный разговор: правка первой реплики — день 1, «Знакомство», фактов после неё нет", async () => {
+    const chatId = await twoDays();
+    await say(chatId, "Беру");
+    expect((await endpoint.status(lead.id))?.finished).toBe(true);
+    const [first] = await userMessages(chatId);
+
+    await edit(chatId, first!.id, "Просто смотрю");
+
+    expect(await endpoint.status(lead.id)).toMatchObject({ day: 1, stageName: "Знакомство", finished: false });
+    const prompt = lastPrompt();
+    expect(prompt).toMatch(/День 1 из 3/);
+    expect(prompt).toContain("Узнай идею.");
+    expect(prompt).not.toContain("кофейни");
+    expect(prompt).not.toContain("пекарни");
+    const state = await readPreviewConversation(database.db, chatId);
+    expect(state).toMatchObject({ facts: [], finishedAt: null, summary: null });
+    expect(state?.stageHistory).toEqual([]);
+    const run = await endpoint.flow.readRun(previewOwnerId(chatId), chatId);
+    expect(run).toMatchObject({ state: "start", day: { day: 1 } });
+  });
+
+  it("правка реплики второго дня в законченном разговоре — тот же день 2 и «Продажа», факт о пекарне забыт", async () => {
+    const chatId = await twoDays();
+    await say(chatId, "Беру");
+    const second = (await userMessages(chatId)).at(-2)!;
+
+    await edit(chatId, second.id, "Пока думаю");
+
+    expect(await endpoint.status(lead.id)).toMatchObject({ day: 2, stageName: "Продажа", finished: false });
+    expect((await readPreviewConversation(database.db, chatId))?.facts).toEqual([COFFEE]);
+    const prompt = lastPrompt();
+    expect(prompt).toMatch(/День 2 из 3/);
+    expect(prompt).toContain("кофейни");
+    expect(prompt).not.toContain("пекарни");
+  });
+
+  it("«Переделать ответ» на первую реплику — разговор там, где был этот ответ: день 1, «Знакомство»", async () => {
+    const chatId = await twoDays();
+    await say(chatId, "Беру");
+    const branch = await loadBranch(chatId);
+    const firstUser = branch.findIndex((message) => message.role === "user");
+    const answer = branch.slice(firstUser).find((message) => message.role === "assistant")!;
+
+    await regenerate(chatId, answer.id);
+
+    expect(await endpoint.status(lead.id)).toMatchObject({ day: 1, stageName: "Знакомство", finished: false });
+    // Ответ переделан на ту же реплику: факт о кофейне записан заново, о пекарне — нет
+    expect((await readPreviewConversation(database.db, chatId))?.facts).toEqual([COFFEE]);
+    expect(lastPrompt()).toMatch(/День 1 из 3/);
+  });
+
+  it("незаконченный разговор: правка первой реплики — тоже откат к дню 1 и «Знакомству»", async () => {
+    const chatId = await twoDays();
+    const [first] = await userMessages(chatId);
+
+    await edit(chatId, first!.id, "Просто смотрю");
+
+    expect(await endpoint.status(lead.id)).toMatchObject({ day: 1, stageName: "Знакомство", finished: false });
+    expect((await readPreviewConversation(database.db, chatId))?.facts).toEqual([]);
+    expect(lastPrompt()).not.toContain("пекарни");
+  });
+
+  it("повторная правка: после отката разговор идёт дальше, вторая правка возвращает к началу новой ветки", async () => {
+    const chatId = await twoDays();
+    const [first] = await userMessages(chatId);
+    await edit(chatId, first!.id, "Хочу сайт для пекарни");
+    expect((await readPreviewConversation(database.db, chatId))?.facts).toEqual([BAKERY]);
+    await endpoint.nextDay(lead.id);
+    await endpoint.flow.settled();
+    expect(await endpoint.status(lead.id)).toMatchObject({ day: 2, stageName: "Продажа" });
+
+    const [again] = await userMessages(chatId);
+    await edit(chatId, again!.id, "Просто смотрю");
+
+    expect(await endpoint.status(lead.id)).toMatchObject({ day: 1, stageName: "Знакомство" });
+    expect((await readPreviewConversation(database.db, chatId))?.facts).toEqual([]);
+  });
+
+  it("служба чата правку не приняла — разговор и часы прежние: день 2, «Продажа», оба факта", async () => {
+    const chatId = await twoDays();
+    const [first] = await userMessages(chatId);
+
+    const response = await endpoint.fetch(
+      new Request(`http://localhost/api/preview/${chatId}/edit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ editedMessageId: first!.id, message: { id: `m-${++counter}`, role: "assistant", parts: [{ type: "text", text: "Не реплика" }] } }),
+      }),
+    );
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    await response.text();
+
+    expect(await endpoint.status(lead.id)).toMatchObject({ day: 2, stageName: "Продажа" });
+    expect((await readPreviewConversation(database.db, chatId))?.facts).toEqual([COFFEE, BAKERY]);
+  });
+
+  it("законченный разговор, служба чата правку не приняла — он остаётся законченным, итог на месте", async () => {
+    const chatId = await twoDays();
+    await say(chatId, "Беру");
+    const before = await readPreviewConversation(database.db, chatId);
+    expect(before?.finishedAt).not.toBeNull();
+    const [first] = await userMessages(chatId);
+
+    const response = await endpoint.fetch(
+      new Request(`http://localhost/api/preview/${chatId}/edit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ editedMessageId: first!.id, message: { id: `m-${++counter}`, role: "assistant", parts: [{ type: "text", text: "Не реплика" }] } }),
+      }),
+    );
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    await response.text();
+
+    expect(await readPreviewConversation(database.db, chatId)).toMatchObject({
+      finishedAt: before!.finishedAt,
+      summary: before!.summary,
+      facts: [COFFEE, BAKERY],
+      currentStageId: before!.currentStageId,
+    });
+    expect(await endpoint.status(lead.id)).toMatchObject({ day: 2, finished: true });
+  });
+
+  it("ответ агента ещё идёт — правка получает «занято», разговор и часы не трогаются", async () => {
+    const chatId = await twoDays();
+    const [first] = await userMessages(chatId);
+    // Агент пишет первым, ответ ещё идёт (например, на другой копии сервера): он пишет в тот же тестовый разговор
+    const last = (await loadBranch(chatId)).at(-1)!;
+    await chatStorage.insertMessage({
+      ...last,
+      id: `running-${++counter}`,
+      parentId: last.id,
+      role: "assistant",
+      status: "streaming",
+      parts: [],
+      alive: "now",
+      createdAt: new Date().toISOString(),
+    });
+
+    const response = await endpoint.fetch(
+      new Request(`http://localhost/api/preview/${chatId}/edit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ editedMessageId: first!.id, message: { id: `m-${++counter}`, role: "user", parts: [{ type: "text", text: "Просто смотрю" }] } }),
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { kind: "busy" } });
+
+    expect(await endpoint.status(lead.id)).toMatchObject({ day: 2, stageName: "Продажа" });
+    expect((await readPreviewConversation(database.db, chatId))?.facts).toEqual([COFFEE, BAKERY]);
+  });
+
+  it("снимок — на каждый ход тестового разговора, по id ответа; живые разговоры снимков не пишут (их нет в preview_conversations)", async () => {
+    const chatId = await endpoint.ensurePreview(lead.id);
+    await say(chatId, "Хочу приложение для кофейни");
+    const answers = (await loadBranch(chatId)).filter((message) => message.role === "assistant").map((message) => message.id);
+    const { rows } = await database.pool.query<{ answer_id: string }>("select answer_id from app.preview_turn_snapshots where chat_id = $1", [chatId]);
+    expect(rows.map((row) => row.answer_id).sort()).toEqual(answers.slice(-1));
+    const orphans = await database.pool.query(
+      "select 1 from app.preview_turn_snapshots s where not exists (select 1 from app.preview_conversations p where p.chat_id = s.chat_id)",
+    );
+    expect(orphans.rows).toEqual([]);
+  });
+});
+
+describe("правка в «Проверке» и переход в мессенджер", () => {
+  const STAGES = [
+    { id: "start", name: "Знакомство", instruction: "Узнай задачу.", transitionCondition: "", startDay: null, isSale: false },
+    { id: "messenger", name: "В мессенджере", instruction: "Продолжай в мессенджере.", transitionCondition: "", startDay: null, isSale: false },
+  ];
+
+  beforeEach(async () => {
+    const settings: LeadMagnetSettings = {
+      ...lead.draft,
+      instruction: "Ты консультант превью.",
+      stages: STAGES,
+      messengerHandoff: { enabled: true, when: "Когда человек согласился", how: "", channels: ["telegram", "vk"] },
+    };
+    const flow = leadMagnetToFlow(settings, []);
+    const withEvent = {
+      ...flow,
+      states: flow.states.map((state) =>
+        state.id === "start"
+          ? { ...state, exits: [...state.exits, { id: "start_messenger", when: { type: "event", event: "app", name: MESSENGER_HANDOFF_EVENT }, to: "messenger" }] }
+          : state,
+      ),
+    } as typeof flow;
+    await saveSettings(database.db, lead.id, { ...settings, flow: withEvent }, "manual");
+    reply = (call) => {
+      if (call.lastUserText.includes(HANDOFF_NOTICE_MARK)) return { text: "Продолжаем в мессенджере." };
+      if (call.lastUserText.includes("в мессенджер") && call.toolNames.includes("offer_messenger"))
+        return call.lastToolResult === undefined ? { toolCalls: [{ toolName: "offer_messenger", input: {} }] } : { text: "Нажмите кнопку ниже." };
+      return { text: "Расскажите подробнее." };
+    };
+  });
+
+  /** «Привет» → «Давайте в мессенджер» (кнопки) → нажата ВКонтакте → «Продолжим». */
+  const afterHandoff = async () => {
+    const chatId = await endpoint.ensurePreview(lead.id);
+    for (const text of ["Привет", "Давайте в мессенджер"]) {
+      await (await send(chatId, text)).text();
+      await endpoint.flow.settled();
+    }
+    await endpoint.takeMessengerHandoff(lead.id, "vk");
+    await endpoint.flow.settled();
+    await (await send(chatId, "Продолжим")).text();
+    await endpoint.flow.settled();
+    const users = (await loadCurrentBranch(chatStorage, chatId)).filter((message) => message.role === "user" && JSON.stringify(message.parts).includes('"text"'));
+    return { chatId, users };
+  };
+  const edit = async (chatId: string, editedMessageId: string, text: string) => {
+    const response = await endpoint.fetch(
+      new Request(`http://localhost/api/preview/${chatId}/edit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ editedMessageId, message: { id: `m-${++counter}`, role: "user", parts: [{ type: "text", text }] } }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    await response.text();
+    await endpoint.flow.settled();
+  };
+
+  it("правка реплики до кнопок: кнопок и перехода нет, этап — «Знакомство»", async () => {
+    const { chatId, users } = await afterHandoff();
+    const hello = users.find((message) => JSON.stringify(message.parts).includes("Привет"))!;
+
+    await edit(chatId, hello.id, "Здравствуйте");
+
+    expect(await endpoint.status(lead.id)).toMatchObject({ stageName: "Знакомство", messengerHandoff: null });
+  });
+
+  it("правка реплики после перехода: переход остаётся, этап — «В мессенджере»", async () => {
+    const { chatId, users } = await afterHandoff();
+    const later = users.find((message) => JSON.stringify(message.parts).includes("Продолжим"))!;
+
+    await edit(chatId, later.id, "Продолжаем");
+
+    expect(await endpoint.status(lead.id)).toMatchObject({ stageName: "В мессенджере", messengerHandoff: { state: "taken", channel: "vk" } });
+  });
+});
+
+describe("запись на созвон в «Проверке»", () => {
+  const STAGES = [
+    { id: "start", name: "Знакомство", instruction: "Узнай задачу.", transitionCondition: "", startDay: null, isSale: false },
+    { id: "booked", name: "Записан", instruction: "Человек записан.", transitionCondition: "", startDay: null, isSale: false },
+  ];
+  const callBooking = { enabled: true, when: "Когда человек хочет разобрать задачу с экспертом", about: "Созвон в зуме", meetingLink: "https://meet.test/expert" };
+  const toolOutput = (call: ScriptedCall) => (call.lastToolResult as { value?: { slots?: Array<{ start: string }>; ok?: boolean } } | undefined)?.value;
+
+  const saveWithCallBooking = async (setting: LeadMagnetSettings["callBooking"]) => {
+    const settings: LeadMagnetSettings = { ...lead.draft, instruction: "Ты консультант превью.", stages: STAGES, ...(setting && { callBooking: setting }) };
+    const flow = leadMagnetToFlow(settings, []);
+    const withEvent = {
+      ...flow,
+      states: flow.states.map((state) =>
+        state.id === "start" ? { ...state, exits: [...state.exits, { id: "start_booked", when: { type: "event", event: "app", name: CALL_BOOKED_EVENT }, to: "booked" }] } : state,
+      ),
+    } as typeof flow;
+    await saveSettings(database.db, lead.id, { ...settings, flow: withEvent }, "manual");
+  };
+
+  beforeEach(async () => {
+    await database.pool.query("delete from app.call_notices; delete from app.call_bookings; delete from app.call_windows; delete from app.call_calendar");
+    const now = noonInMoscow.now();
+    await updateCallCalendar(database.db, { timeZone: "Europe/Moscow", callMinutes: 30 }, { now, confirm: true });
+    await saveCallWindow(database.db, { date: localDate(now, "Europe/Moscow"), startTime: "00:00", endTime: "23:30", weekly: true }, { now, confirm: true });
+    reply = (call) => {
+      if (!call.lastUserText.includes("созвон") || !call.toolNames.includes("book_call")) return { text: "Расскажите подробнее." };
+      if (call.lastToolResult === undefined) return { toolCalls: [{ toolName: "call_free_times", input: {} }] };
+      const slots = toolOutput(call)?.slots;
+      if (slots) return { toolCalls: [{ toolName: "book_call", input: { start: slots[0]!.start } }] };
+      return { text: "Записал." };
+    };
+  });
+
+  it("инструменты записи есть, только когда настройка включена", async () => {
+    await saveWithCallBooking(undefined);
+    await (await send(await endpoint.ensurePreview(lead.id), "Привет")).text();
+    expect(calls.at(-1)!.toolNames).not.toContain("call_free_times");
+
+    await saveWithCallBooking({ ...callBooking, enabled: false });
+    await endpoint.restartPreview(lead.id);
+    await (await send(await endpoint.ensurePreview(lead.id), "Привет")).text();
+    expect(calls.at(-1)!.toolNames).not.toContain("book_call");
+
+    await saveWithCallBooking(callBooking);
+    await endpoint.restartPreview(lead.id);
+    await (await send(await endpoint.ensurePreview(lead.id), "Привет")).text();
+    expect(calls.at(-1)!.toolNames).toEqual(expect.arrayContaining(["call_free_times", "book_call", "change_call"]));
+  });
+
+  it("запись тестовая: окно не занято, уведомлений нет, эксперт видит её в статусе, сценарий получает событие", async () => {
+    await saveWithCallBooking(callBooking);
+    const chatId = await endpoint.ensurePreview(lead.id);
+    const freeBefore = (await freeCallTimes(database.db, { now: noonInMoscow.now() })).slots.length;
+    await (await send(chatId, "Хочу на созвон")).text();
+    await endpoint.flow.settled();
+
+    const { rows } = await database.pool.query("select test_chat_id, person_id, meeting_link from app.call_bookings");
+    expect(rows).toEqual([{ test_chat_id: chatId, person_id: null, meeting_link: "https://meet.test/expert" }]);
+    expect((await database.pool.query("select 1 from app.call_notices")).rowCount).toBe(0);
+    expect((await freeCallTimes(database.db, { now: noonInMoscow.now() })).slots).toHaveLength(freeBefore);
+    expect(await endpoint.status(lead.id)).toMatchObject({ callBooking: { label: expect.stringContaining("UTC+3"), meetingLink: "https://meet.test/expert" } });
+
+    // Переход по событию — в начале следующего хода
+    await (await send(chatId, "Спасибо")).text();
+    expect(await endpoint.status(lead.id)).toMatchObject({ stageName: "Записан" });
+  });
+
+  const userMessageWith = async (chatId: string, text: string) =>
+    (await loadCurrentBranch(chatStorage, chatId)).find((message) => message.role === "user" && JSON.stringify(message.parts).includes(text))!;
+  const editMessage = async (chatId: string, editedMessageId: string, text: string) => {
+    const response = await endpoint.fetch(
+      new Request(`http://localhost/api/preview/${chatId}/edit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ editedMessageId, message: { id: `m-${++counter}`, role: "user", parts: [{ type: "text", text }] } }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    await response.text();
+    await endpoint.flow.settled();
+  };
+  const testBookingsOf = async (chatId: string) =>
+    (await database.pool.query<{ status: string }>("select status from app.call_bookings where test_chat_id = $1", [chatId])).rows.map((row) => row.status);
+
+  it("правка реплики до записи: тестовой записи нет, консультант может записать заново", async () => {
+    await saveWithCallBooking(callBooking);
+    const chatId = await endpoint.ensurePreview(lead.id);
+    for (const text of ["Хочу на созвон", "Спасибо"]) {
+      await (await send(chatId, text)).text();
+      await endpoint.flow.settled();
+    }
+    expect(await testBookingsOf(chatId)).toEqual(["booked"]);
+
+    await editMessage(chatId, (await userMessageWith(chatId, "Хочу на созвон")).id, "Привет");
+
+    expect(await testBookingsOf(chatId)).toEqual([]);
+    expect(await endpoint.status(lead.id)).toMatchObject({ callBooking: null, stageName: "Знакомство" });
+    await (await send(chatId, "А теперь запишите на созвон")).text();
+    expect(await testBookingsOf(chatId)).toEqual(["booked"]);
+  });
+
+  it("правка реплики после записи: запись остаётся", async () => {
+    await saveWithCallBooking(callBooking);
+    const chatId = await endpoint.ensurePreview(lead.id);
+    for (const text of ["Хочу на созвон", "Спасибо"]) {
+      await (await send(chatId, text)).text();
+      await endpoint.flow.settled();
+    }
+
+    await editMessage(chatId, (await userMessageWith(chatId, "Спасибо")).id, "Благодарю");
+
+    expect(await testBookingsOf(chatId)).toEqual(["booked"]);
+    expect(await endpoint.status(lead.id)).toMatchObject({ callBooking: { meetingLink: "https://meet.test/expert" } });
+  });
+
+  it("«Начать проверку заново» — тестовой записи нет", async () => {
+    await saveWithCallBooking(callBooking);
+    await (await send(await endpoint.ensurePreview(lead.id), "Хочу на созвон")).text();
+    await endpoint.restartPreview(lead.id);
+    expect((await endpoint.status(lead.id))?.callBooking).toBeNull();
   });
 });

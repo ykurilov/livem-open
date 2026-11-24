@@ -1,20 +1,10 @@
-import { useId } from "react";
-
-/** Знак «Живых лидмагнитов»: облачко разговора с пульсом. Цвет задаёт .brand-logo в globals.css под тему. */
+/** Знак «Живых лидмагнитов»: магнит из трёх кусочков — дуга и два полюса с просветом. Цвета одни для обеих тем. */
 export function BrandLogo({ size = 24 }: { size?: number }) {
-  // Знак стоит и в боковой панели, и в шапке телефона: у каждой копии своя маска
-  const maskId = useId();
   return (
-    <svg className="brand-logo" width={size} height={size} viewBox="0 0 1024 1024" aria-hidden="true">
-      <mask id={maskId}>
-        <rect width="1024" height="1024" fill="#fff" />
-        <polyline points="190,420 340,420 410,250 530,610 610,330 670,420 834,420" fill="none" stroke="#000"
-          strokeWidth="90" strokeLinecap="round" strokeLinejoin="round" />
-      </mask>
-      <g fill="currentColor" mask={`url(#${maskId})`}>
-        <rect x="40" y="90" width="944" height="660" rx="230" />
-        <path d="M200 680 L120 980 L480 730 Z" />
-      </g>
+    <svg className="brand-logo" width={size} height={size} viewBox="0 0 1024 1024" fill="none" strokeWidth="190" aria-hidden="true">
+      <path d="M247 430 V520 A265 265 0 0 0 777 520 V430" stroke="#1C89BF" />
+      <path d="M247 120 V300" stroke="#15B392" />
+      <path d="M777 120 V300" stroke="#225EE3" />
     </svg>
   );
 }

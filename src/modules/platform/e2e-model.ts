@@ -58,6 +58,15 @@ function quickRepliesReply(call: ScriptedCall): ScriptedReply {
   return { text: E2E_SCRIPT.quickRepliesAfterthought };
 }
 
+/** Запись на созвон: свободное время, запись на первое, ответ текстом. */
+function callBookingReply(call: ScriptedCall): ScriptedReply {
+  if (call.lastToolResult === undefined) return { toolCalls: [{ toolName: "call_free_times", input: {} }] };
+  const result = (call.lastToolResult as { value?: { slots?: Array<{ start: string }> } }).value;
+  const first = result?.slots?.[0];
+  if (first) return { toolCalls: [{ toolName: "book_call", input: { start: first.start } }] };
+  return { text: E2E_SCRIPT.callBookedReply };
+}
+
 /** Начало задачи «ты пишешь человеку первым», которую сценарий SDK кладёт в ход по таймеру (утро, переход по сроку, тишина). */
 const FLOW_FIRST_MESSAGE_MARK = "Ты пишешь человеку первым";
 
@@ -68,6 +77,7 @@ function consultantReply(call: ScriptedCall): ScriptedReply {
     return quickRepliesReply(call);
   if (call.lastUserText.toLowerCase().includes(E2E_SCRIPT.handoffTrigger) && call.toolNames.includes("offer_messenger"))
     return call.lastToolResult === undefined ? { toolCalls: [{ toolName: "offer_messenger", input: {} }] } : { text: E2E_SCRIPT.handoffReply };
+  if (call.lastUserText.toLowerCase().includes(E2E_SCRIPT.callTrigger) && call.toolNames.includes("book_call")) return callBookingReply(call);
   if (call.lastUserText.includes(HANDOFF_NOTICE_MARK)) return { text: E2E_SCRIPT.handoffContinuation };
   const finishing = call.lastUserText.toLowerCase().includes(E2E_SCRIPT.finishTrigger);
   if (call.lastToolResult !== undefined) return {};

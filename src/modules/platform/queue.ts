@@ -27,6 +27,10 @@ export interface JobPayloads {
   "messenger-handoff-continue": { handoffId: string };
   /** Уведомление посетителю веб-чата о новом сообщении (Web Push); временный сбой службы — повтор. */
   "web-chat-push": { visitorId: string; body: string };
+  /** Уведомление эксперту о записи на созвон, переносе или отмене — через его бота. */
+  "call-notice-send": { noticeId: string };
+  /** Напоминание человеку за час до созвона. */
+  "call-reminder": { bookingId: string };
 }
 
 export type JobName = keyof JobPayloads;
@@ -48,6 +52,8 @@ export const JOB_NAMES: JobName[] = [
   "senler-subscribe",
   "messenger-handoff-continue",
   "web-chat-push",
+  "call-notice-send",
+  "call-reminder",
 ];
 
 export interface EnqueueOptions {

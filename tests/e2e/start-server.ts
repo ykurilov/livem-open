@@ -1,6 +1,6 @@
 // Сервер для сквозных проверок: пустая база с миграциями, сервер приложения в режиме разработки, подставной Soniox и работник очереди с подставными моделью и мессенджером.
 // Страницы собираются заранее: иначе первая сборка страницы в одном тесте перезагружает вкладку соседнего.
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { request as httpRequest } from "node:http";
 import { Pool } from "pg";
 import { seal } from "@/auth/core/cookie-seal";
@@ -26,6 +26,9 @@ await admin.end();
 const connection = connectDatabase(e2eDatabaseUrl(), { poolSize: 1 });
 await migrateDatabase(connection);
 await connection.close();
+
+// Виджет для сайтов — готовым файлом, как в образе
+execFileSync("pnpm", ["widget:build"], { stdio: "inherit" });
 
 // Собранные при прогреве страницы остаются в памяти до конца прогона (`onDemandEntries` в next.config.mjs)
 const soniox = await startFakeSoniox();
@@ -58,8 +61,8 @@ async function warmUp(): Promise<void> {
   };
   const headers = { cookie: `auth_session=${await seal(session, E2E_COOKIE_SECRET)}` };
   const missing = "00000000-0000-0000-0000-000000000000";
-  const pages = ["/", "/bots", "/settings", "/people", `/people/${missing}`, "/fields", "/videos", "/images", "/inbox", "/knowledge", "/no-such-page", "/mailings", "/mailings/new", `/mailings/${missing}`, `/lead-magnets/${missing}`, `/lead-magnets/${missing}/publish`, `/bots/${missing}`, "/api/preview/models", "/api/constructor/models", "/api/role-swap/models", "/api/images/missing", `/api/inbox/images/in/${missing}`, "/c/missing", "/c/missing/manifest.webmanifest", "/api/web-chat/messages", `/api/web-chat/images/${missing}`];
-  const posts = [`/api/webhooks/telegram/${missing}`, "/api/web-chat/session", "/api/web-chat/away", "/api/web-chat/push"];
+  const pages = ["/", "/bots", "/settings", "/people", "/people/sources", `/people/${missing}`, "/fields", "/videos", "/images", "/inbox", "/knowledge", "/no-such-page", "/mailings", "/mailings/new", `/mailings/${missing}`, `/lead-magnets/${missing}`, `/lead-magnets/${missing}/publish`, `/bots/${missing}`, "/api/preview/models", "/api/constructor/models", "/api/role-swap/models", "/api/images/missing", `/api/inbox/images/in/${missing}`, "/c/missing", "/c/missing/manifest.webmanifest", "/api/web-chat/messages", `/api/web-chat/images/${missing}`, "/docs/api", "/api/v1/chats/missing", "/api/v1/chats/missing/messages", `/api/v1/images/${missing}`];
+  const posts = [`/api/webhooks/telegram/${missing}`, "/api/web-chat/session", "/api/web-chat/away", "/api/web-chat/push", "/api/v1/chats/missing/session", "/api/v1/chats/missing/messages"];
   // «/knowledge» и «/no-such-page» (своя страница «не найдено») тоже: иначе их первая сборка посреди прогона перезагружает вкладки соседних тестов
   // Страницы независимы: собираются одновременно
   await Promise.all([

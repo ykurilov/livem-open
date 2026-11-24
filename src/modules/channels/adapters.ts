@@ -1,3 +1,4 @@
+import { uploadsDir } from "../mailings/images";
 import { optionalEnv, telegramApiFromEnv } from "../platform/env";
 import type { ChannelAdapters } from "./channel";
 import { FakeChannel } from "./fake";
@@ -15,7 +16,7 @@ export function createChannelAdapters(
   env: Record<string, string | undefined> = process.env,
   options: { fetch?: typeof fetch; webChatNotifier?: WebChatNotifier } = {},
 ): ChannelAdapters {
-  const web = createWebChatAdapter({ publicBaseUrl: optionalEnv("PUBLIC_BASE_URL", env) ?? "", notifier: options.webChatNotifier });
+  const web = createWebChatAdapter({ publicBaseUrl: optionalEnv("PUBLIC_BASE_URL", env) ?? "", uploadsDir: uploadsDir(env), notifier: options.webChatNotifier });
   if (env.STUB_CHANNEL === "fake") {
     if (env.NODE_ENV === "production")
       throw new Error("STUB_CHANNEL задана в продакшене: подделка мессенджера только для проверок. Уберите переменную.");

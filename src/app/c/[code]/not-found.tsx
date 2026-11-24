@@ -2,7 +2,7 @@ import { Button } from "@ykurilov/ds-react";
 import { getDatabase } from "@/modules/platform/db";
 import { webChatTitle } from "@/modules/web-chat";
 import { currentVisitor } from "@/modules/web-chat/server";
-import "./web-chat.css";
+import "@/ui/web-chat/web-chat.css";
 
 /** Неизвестная или устаревшая ссылка веб-чата: вернувшемуся посетителю — переход в его последний чат. */
 export default async function WebChatNotFound() {

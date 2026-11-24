@@ -21,6 +21,7 @@ import { loadWithoutCodeHistory, REOPEN_WINDOW_MS, whoWritesWithoutCode } from "
 import { returnGoesToInbox } from "./program-return";
 import { chatOwnerOf, inboundMessages, passages, type InboundRoute } from "./schema";
 import { findHandoffByCode, takeMessengerHandoff, type HandoffTake } from "../messenger-handoff/handoff";
+import { claimCallNoticeConnect, confirmCallNoticeConnect } from "../booking/notices";
 import { messengerHandoffs } from "../messenger-handoff/schema";
 
 export { AUTOREPLY_TEXT } from "../channels";
@@ -70,14 +71,23 @@ export async function routeInboundMessage(deps: RouterDependencies, inboundMessa
   for (;;) {
     // Концы сценариев — только после записи решения: при откате транзакции прохождение осталось бы активным, а сценарий — законченным
     const flowEnds: FlowEndInput[] = [];
-    const result = await deps.db.transaction(async (tx): Promise<{ routed: InboundRow } | { reopen: ReopenCandidate }> => {
+    const result = await deps.db.transaction(async (tx): Promise<{ routed: InboundRow; callNoticeConnected?: true } | { reopen: ReopenCandidate }> => {
       const [inbound] = await tx.select().from(inboundMessages).where(eq(inboundMessages.id, inboundMessageId)).for("update");
       if (!inbound) throw new Error(`Входящее ${inboundMessageId} не найдено`);
-      if (inbound.processedAt) return { routed: inbound };
+      // Повтор задачи после подключения уведомлений: человек не записан — значит, это был «Старт» эксперта
+      if (inbound.processedAt) return inbound.route === "ignored" && !inbound.personId && inbound.startCode ? { routed: inbound, callNoticeConnected: true } : { routed: inbound };
 
       const [bot] = await tx.select().from(bots).where(eq(bots.id, inbound.botId));
       if (!bot) throw new Error(`Бот ${inbound.botId} не найден`);
       const now = deps.clock.now();
+      // «Старт» эксперта по ссылке «Подключить» уведомлений о записях: он не человек лидмагнита, разговора нет
+      if (inbound.kind === "message" && inbound.startCode && bot.channel !== "web") {
+        const connected = await claimCallNoticeConnect(tx, { botId: bot.id, code: inbound.startCode, chatId: inbound.externalUserId, now });
+        if (connected) {
+          const [updated] = await tx.update(inboundMessages).set({ processedAt: now, route: "ignored" }).where(eq(inboundMessages.id, inbound.id)).returning();
+          return { routed: updated!, callNoticeConnected: true };
+        }
+      }
       let person = await upsertPerson(tx, {
         channel: bot.channel,
         botId: bot.id,
@@ -126,6 +136,11 @@ export async function routeInboundMessage(deps: RouterDependencies, inboundMessa
     }
     if (reopenOutcome) await closeUnusedReopen(deps, reopenOutcome, result.routed);
     if (result.routed.followedUpAt) return;
+    if (result.callNoticeConnected) {
+      await confirmCallNoticeConnect(deps, { botId: result.routed.botId, chatId: result.routed.externalUserId, inboundId: result.routed.id });
+      await deps.db.update(inboundMessages).set({ followedUpAt: deps.clock.now() }).where(eq(inboundMessages.id, inboundMessageId));
+      return;
+    }
     await followUp(deps, result.routed, appSettings.privacyPolicyUrl);
     // Без отметки задачу, исчерпавшую повторы, доведёт подмётчик (`requeueUnfinishedFollowUps`)
     await deps.db.update(inboundMessages).set({ followedUpAt: deps.clock.now() }).where(eq(inboundMessages.id, inboundMessageId));

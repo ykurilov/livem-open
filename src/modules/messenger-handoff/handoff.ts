@@ -2,6 +2,7 @@ import { randomInt } from "node:crypto";
 import type { AgentFlowHandle, FlowEndInput } from "@ykurilov/agent-chat-flows";
 import { and, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { agentLogTurns } from "../agent-log/schema";
+import { callBookings } from "../booking/schema";
 import { CHANNEL_LABELS, type ChannelAdapters, type ChannelKind } from "../channels/channel";
 import { bots, leadMagnetBots, outboundMessages } from "../channels/schema";
 import { recordOutbound, scheduleOutboundSend } from "../channels";
@@ -286,6 +287,7 @@ async function absorbMessengerPerson(
   await tx.update(mailingRecipients).set({ personId: web.id }).where(eq(mailingRecipients.personId, messenger.id));
   await tx.update(agentLogTurns).set({ personId: web.id }).where(eq(agentLogTurns.personId, messenger.id));
   await tx.update(messengerHandoffs).set({ personId: web.id }).where(eq(messengerHandoffs.personId, messenger.id));
+  await tx.update(callBookings).set({ personId: web.id }).where(eq(callBookings.personId, messenger.id));
 
   // «Входящие»: перенос входящих триггер считает заново — одна строка с суммой, как было у обоих
   await tx.delete(inboxThreads).where(inArray(inboxThreads.personId, [web.id, messenger.id]));

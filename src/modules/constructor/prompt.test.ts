@@ -23,7 +23,7 @@ describe("контракт инструкции конструктора", () =>
   });
 
   it("сохраняет границы инструментов консультанта и коротких ссылок", () => {
-    for (const text of ["set_text_link", "{text}", "{type}", "1200 знаков", "text_link", "sale_answer", "set_messenger_handoff"])
+    for (const text of ["set_text_link", "{text}", "{type}", "1200 знаков", "text_link", "sale_answer", "set_messenger_handoff", "set_call_booking", "call_booked"])
       expect(prompt).toContain(text);
     expect(prompt).toMatch(/отправка файлов[^\n]*нет/);
     expect(prompt).toMatch(/Публикует лидмагнит[^\n]*только эксперт/);
@@ -50,5 +50,9 @@ describe("контракт инструкции конструктора", () =>
   it("сохраняет стабильный текст для кэша без дат и динамических подстановок", () => {
     expect(prompt).not.toMatch(/\{\{|\$\{|%[sd]/);
     expect(prompt).not.toMatch(/\b20\d\d-\d\d-\d\d\b|\b\d{1,2}\.\d{1,2}\.20\d\d\b/);
+  });
+
+  it("вопросы о работе приложения — по справке app_help, без выдумок", () => {
+    expect(prompt).toMatch(/app_help[^\n]*не выдумывай|не выдумывай[^\n]*app_help/);
   });
 });

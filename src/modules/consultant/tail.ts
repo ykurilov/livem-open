@@ -1,5 +1,6 @@
 import type { FlowDayInfo, FlowFirstReason } from "@ykurilov/agent-chat-flows";
 import type { LeadMagnetSettings } from "../lead-magnets";
+import { enabledMessengerHandoff } from "../messenger-handoff/setting";
 import type { SaleAnswer, SaleReason } from "./schema";
 
 /** За сколько сообщений до предела консультант начинает видеть обратный отсчёт. */
@@ -15,12 +16,20 @@ function messagesWord(count: number): string {
 }
 
 /**
- * Наш хвост хода человека: обратный отсчёт до предела сообщений. Этап, день, время, рамки дня и попутные задачи
- * дописывает сценарий SDK после него. У программы на несколько дней предела нет — его заменяют рамки дня.
+ * Наш хвост хода человека: сколько сообщений прислал человек (для условия перехода в мессенджер, пока он в веб-чате) и
+ * обратный отсчёт до предела сообщений. Этап, день, время, рамки дня и попутные задачи дописывает сценарий SDK после
+ * него. У программы на несколько дней предела нет — его заменяют рамки дня.
  * `personMessageCount` — сколько сообщений человек уже прислал, включая это.
  */
-export function buildConsultantTail(input: { settings: LeadMagnetSettings; personMessageCount: number }): string | null {
+export function buildConsultantTail(input: { settings: LeadMagnetSettings; personMessageCount: number; inWebChat?: boolean }): string | null {
   const { settings, personMessageCount } = input;
+  // Считать сообщения модель сбивается, а эксперт часто пишет условие перехода счётом: число даёт приложение
+  const count =
+    input.inWebChat && enabledMessengerHandoff(settings) ? `Человек прислал в этом разговоре ${personMessageCount} ${messagesWord(personMessageCount)}.` : null;
+  return [count, limitLine(settings, personMessageCount)].filter(Boolean).join("\n") || null;
+}
+
+function limitLine(settings: LeadMagnetSettings, personMessageCount: number): string | null {
   if (settings.flow.schedule) return null;
   const left = settings.maxPersonMessages - personMessageCount;
   if (left <= 0) return "Это последнее сообщение человека: заверши разговор сейчас и вызови finish_dialog.";

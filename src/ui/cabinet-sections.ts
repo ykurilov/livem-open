@@ -1,5 +1,5 @@
 import type { Icon as CabinetIcon } from "@phosphor-icons/react";
-import { TrayIcon as Inbox, MagnetIcon as Magnet, PaperPlaneTiltIcon as Send, GearIcon as Settings, BooksIcon as Knowledge, UsersIcon as Users } from "@phosphor-icons/react/dist/ssr";
+import { CalendarDotsIcon as Calls, TrayIcon as Inbox, MagnetIcon as Magnet, PaperPlaneTiltIcon as Send, GearIcon as Settings, BooksIcon as Knowledge, UsersIcon as Users } from "@phosphor-icons/react/dist/ssr";
 
 export interface CabinetSection {
   href: string;
@@ -19,6 +19,7 @@ export interface SectionTab {
 
 export const PEOPLE_TABS: SectionTab[] = [
   { href: "/people", label: "Список" },
+  { href: "/people/sources", label: "Откуда пришли" },
   { href: "/fields", label: "Что запоминает агент" },
 ];
 
@@ -26,6 +27,11 @@ export const KNOWLEDGE_TABS: SectionTab[] = [
   { href: "/knowledge", label: "Тексты" },
   { href: "/videos", label: "Видео" },
   { href: "/images", label: "Картинки" },
+];
+
+export const CALLS_TABS: SectionTab[] = [
+  { href: "/calls", label: "Календарь" },
+  { href: "/call-bookings", label: "Записи" },
 ];
 
 export const SETTINGS_TABS: SectionTab[] = [
@@ -46,6 +52,7 @@ export const CABINET_SECTIONS: CabinetSection[] = [
   { href: "/", title: "Лидмагниты", icon: Magnet, purpose: "Карточки лидмагнитов и кнопка «Создать»." },
   { href: "/inbox", title: "Входящие", icon: Inbox, purpose: "Сообщения, на которые консультант не отвечал." },
   { href: "/people", title: "Люди", icon: Users, purpose: "Люди, которые прошли через ваши лидмагниты, и что о них запоминает агент.", tabs: PEOPLE_TABS },
+  { href: "/calls", title: "Созвоны", icon: Calls, purpose: "Время для созвонов, записи людей и уведомления о них.", tabs: CALLS_TABS },
   { href: "/mailings", title: "Рассылки", icon: Send, purpose: "Сообщения людям." },
   {
     href: "/knowledge",
@@ -64,4 +71,10 @@ export function isSectionActive(section: CabinetSection, pathname: string): bool
 /** Адрес — эта страница или вложенная в неё: `/people/42` под `/people`, а `/people-extra` — нет. */
 export function isUnder(href: string, pathname: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/** Вкладка раздела для адреса. Вложенная точнее родительской: на «/people/sources» — «Откуда пришли», а не «Список». */
+export function activeTabHref(tabs: SectionTab[], pathname: string): string | undefined {
+  const matching = tabs.filter((tab) => isUnder(tab.href, pathname));
+  return matching.sort((a, b) => b.href.length - a.href.length)[0]?.href ?? tabs[0]?.href;
 }

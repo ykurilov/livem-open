@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 import { previewConversations } from "../consultant/schema";
 import { passages } from "../conversations/schema";
-import { leadMagnets } from "../lead-magnets/schema";
+import { constructorChats } from "../lead-magnets/schema";
 import { people } from "../people/schema";
 import type { Database } from "../platform/db";
 import { createRedactor } from "./redact";
@@ -23,7 +23,7 @@ interface ChatOwner {
 
 /** Чей это чат: конструктор лидмагнита, Проверка или разговор человека в мессенджере. Чужой — `null`. */
 export async function findChatOwner(db: Database, chatId: string): Promise<ChatOwner | null> {
-  const [constructor] = await db.select({ id: leadMagnets.id }).from(leadMagnets).where(eq(leadMagnets.constructorChatId, chatId));
+  const [constructor] = await db.select({ id: constructorChats.leadMagnetId }).from(constructorChats).where(eq(constructorChats.chatId, chatId));
   if (constructor) return { leadMagnetId: constructor.id, agent: "constructor", source: null, personId: null, personLabel: null, channel: null };
 
   const [preview] = await db

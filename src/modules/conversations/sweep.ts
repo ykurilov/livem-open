@@ -1,4 +1,5 @@
 import { and, eq, gt, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { recoverCallBookingWork } from "../booking/recovery";
 import { requeueStuckOutbound } from "../channels";
 import { requeuePendingChatMigrations } from "../flows/chat-migration";
 import type { Clock } from "../platform/clock";
@@ -47,9 +48,10 @@ export async function sweepStuckWork(deps: SweepDependencies): Promise<void> {
   const turns = await requeueLostTurns(deps);
   const purchases = await recoverPurchaseReactions(deps);
   const migrations = await requeuePendingChatMigrations(deps);
-  if (inbound.length || followUps || outbound || turns || purchases || migrations)
+  const calls = await recoverCallBookingWork(deps, overdueBefore);
+  if (inbound.length || followUps || outbound || turns || purchases || migrations || calls)
     console.warn(
-      `Подмётчик: заново поставлено входящих — ${inbound.length}, действий после решения — ${followUps}, исходящих — ${outbound}, ходов — ${turns}, покупок — ${purchases}, переводов — ${migrations}`,
+      `Подмётчик: заново поставлено входящих — ${inbound.length}, действий после решения — ${followUps}, исходящих — ${outbound}, ходов — ${turns}, покупок — ${purchases}, переводов — ${migrations}, созвонов — ${calls}`,
     );
 }
 

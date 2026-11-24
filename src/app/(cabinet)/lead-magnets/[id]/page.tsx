@@ -25,9 +25,9 @@ export default async function LeadMagnetPage({ params }: { params: Promise<{ id:
   if (!lead) notFound();
 
   const services = await getEditorServices();
-  // Чаты обычно уже есть: тогда лидмагнит заново не читается
-  const [constructorChatId, previewChatId, versions, fields, videos, images, knowledge] = await Promise.all([
-    lead.constructorChatId ?? services.constructor.ensureChat(id),
+  // Чат предпросмотра обычно уже есть: тогда лидмагнит заново не читается. Хотя бы один чат конструктора — всегда
+  const [, previewChatId, versions, fields, videos, images, knowledge] = await Promise.all([
+    services.constructor.ensureChat(id),
     lead.previewChatId ?? services.preview.ensurePreview(id),
     listVersionSummaries(db, id),
     listFields(db),
@@ -35,9 +35,8 @@ export default async function LeadMagnetPage({ params }: { params: Promise<{ id:
     listImages(db),
     listKnowledgeBases(db),
   ]);
-  const [status, constructorHasMessages, pendingCorrections, roleSwap] = await Promise.all([
+  const [status, pendingCorrections, roleSwap] = await Promise.all([
     services.preview.status(id),
-    services.constructor.hasMessages(constructorChatId),
     countPending(db, id),
     services.roleSwap.current(id),
   ]);
@@ -57,9 +56,7 @@ export default async function LeadMagnetPage({ params }: { params: Promise<{ id:
       draft={lead.draft}
       testClient={lead.testClient}
       draftVersionId={lead.draftVersionId}
-      constructorChatId={constructorChatId}
-      constructorHasMessages={constructorHasMessages}
-      preview={status ?? { chatId: previewChatId, stageName: null, day: null, days: null, finished: false, messengerHandoff: null }}
+      preview={status ?? { chatId: previewChatId, stageName: null, day: null, days: null, finished: false, messengerHandoff: null, callBooking: null }}
       versions={versions.map((version) => ({ ...version, createdAt: version.createdAt.toISOString() }))}
       fields={fields}
       videos={videos.map(({ id, title, description }) => ({ id, title, description }))}

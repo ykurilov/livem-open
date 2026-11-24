@@ -7,6 +7,8 @@ const SHARED_STATE_SPECS = /(settings|publish-and-talk)\.spec\.ts$/;
 // Пояс у тестовых чатов «Проверки» общий на кабинет, и каждый ход пишет в него пояс браузера. Дни «Проверки» тест
 // считает в поясе, где сейчас полдень, а соседи по прогону — в поясе машины: их ход посреди теста сдвигает дни
 const PREVIEW_DAY_SPECS = /preview-day\.spec\.ts$/;
+// Safari — только то, в чём браузеры расходятся
+const WEBKIT_SPECS = /-webkit\.spec\.ts$/;
 
 // Полный браузерный прогон — не дольше 5 минут
 export default defineConfig({
@@ -23,14 +25,16 @@ export default defineConfig({
   // Имена эталонов без названия группы: файлы снимков остаются прежними
   snapshotPathTemplate: "{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}{-snapshotSuffix}{ext}",
   projects: [
-    { name: "main", testIgnore: [SHARED_STATE_SPECS, PREVIEW_DAY_SPECS] },
+    { name: "main", testIgnore: [SHARED_STATE_SPECS, PREVIEW_DAY_SPECS, WEBKIT_SPECS] },
+    { name: "webkit", testMatch: WEBKIT_SPECS, use: { browserName: "webkit" } },
     { name: "shared-state", testMatch: SHARED_STATE_SPECS, dependencies: ["main"] },
     { name: "preview-day", testMatch: PREVIEW_DAY_SPECS, dependencies: ["main"] },
   ],
   webServer: {
     command: "pnpm exec tsx tests/e2e/start-server.ts",
     wait: { stdout: new RegExp(E2E_READY_LINE) },
-    timeout: 180_000,
+    // Прогрев собирает все страницы заранее; на медленной машине (тестовый загон) это дольше трёх минут
+    timeout: Number(process.env.E2E_SERVER_TIMEOUT_MS ?? 180_000),
     reuseExistingServer: false,
     stdout: "pipe",
   },

@@ -1,4 +1,5 @@
 export {
+  createWebChatVisitor,
   ensureWebChatBot,
   FEED_FIRST_LOAD_LIMIT,
   findWebChatVisitor,
@@ -15,7 +16,9 @@ export {
   startWebChatOverAsNewVisitor,
   webChatCanStartOver,
   webChatImagePath,
+  webChatLeadMagnetId,
   webChatMessengerHandoff,
+  webChatPhotosAccepted,
   webChatResumeCode,
   webChatElsewhere,
   webChatTitle,
@@ -26,6 +29,8 @@ export {
 export type { WebChatDependencies, WebChatElsewhere, WebChatItem, WebChatOpened, WebChatSendResult, WebChatVideo, WebChatVisitor } from "./web-chat";
 export { createWebPushSender, isWebPushEndpoint, NOTIFICATION_PARAM, PAGE_OPEN_WINDOW_MS, queuedWebChatNotifier } from "./push";
 export { webChatImageResponse } from "./image";
+export { webChatOpenedAnswer, webChatSendAnswer, type WebChatAnswer } from "./answers";
+export { readSentMessage, type SentMessage } from "./sent-message";
 export type { PushVisitor, WebPushSubscription } from "./push";
 export { createWebPushSenderFromEnv, webPushPublicKey } from "./push-from-env";
 export { messagesPerAddress, newVisitorsPerAddress, pagesPerAddress, sessionsPerAddress, takeWebChatLimit, type WebChatLimit } from "./limits";

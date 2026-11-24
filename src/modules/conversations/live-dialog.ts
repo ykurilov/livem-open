@@ -24,6 +24,10 @@ import {
 } from "../spending";
 import { congratulatePurchase, remindPayment } from "../purchases/reactions";
 import { continueInMessenger, offerMessengerHandoff } from "../messenger-handoff/handoff";
+import { createCallBookingPort } from "../booking/port";
+import { queueCallNotices, scheduleCallReminder, sendCallNotice, sendCallReminder } from "../booking/notices";
+import { CALL_BOOKED_EVENT, enabledCallBooking } from "../booking/setting";
+import { getVersion } from "../lead-magnets";
 import { endActivePassages } from "./passage-end";
 import { createPassageConversationStore } from "./passage-store";
 import { routeInboundMessage } from "./router";
@@ -103,6 +107,10 @@ export interface LiveDialog {
   remindPayment(passageId: string): Promise<void>;
   /** Задача `messenger-handoff-continue`: разговор продолжается в мессенджере после «Старта» по кнопке веб-чата. */
   continueInMessenger(handoffId: string): Promise<void>;
+  /** Задача `call-notice-send`: уведомление эксперту о записи на созвон. */
+  sendCallNotice(noticeId: string): Promise<void>;
+  /** Задача `call-reminder`: напоминание человеку перед созвоном. */
+  remindCall(bookingId: string): Promise<void>;
 }
 
 export function createLiveDialog(deps: LiveDialogDependencies): LiveDialog {
@@ -141,6 +149,30 @@ export function createLiveDialog(deps: LiveDialogDependencies): LiveDialog {
       inWebChat: async ({ ownerId }) => (await getPerson(db, ownerId))?.channel === "web",
       offer: (chat) => offerMessengerHandoff(db, deps.adapters, chat),
     },
+    callBooking: createCallBookingPort({
+      db,
+      clock,
+      async partyOf({ chatId }) {
+        const [passage] = await db.select().from(passages).where(eq(passages.chatId, chatId));
+        if (!passage) return null;
+        const snapshot = await getVersion(db, passage.snapshotId);
+        return {
+          party: { kind: "person", personId: passage.personId, passageId: passage.id, leadMagnetId: passage.leadMagnetId },
+          meetingLink: (snapshot && enabledCallBooking(snapshot.settings)?.meetingLink) || null,
+        };
+      },
+      // Запись уже в базе: уведомление, напоминание и событие сценария доводятся каждое само — сбой одного не глушит другие
+      async onChange(change, chat) {
+        const steps = [
+          () => queueCallNotices({ db, queue: deps.queue, clock }, change),
+          () => scheduleCallReminder({ queue: deps.queue, clock }, change.booking),
+          ...(change.kind === "booked" ? [() => flow.signal({ ...chat, name: CALL_BOOKED_EVENT, data: {}, wakeAgent: false })] : []),
+        ];
+        const failures: unknown[] = [];
+        for (const step of steps) await step().catch((error: unknown) => failures.push(error));
+        if (failures.length > 0) throw new AggregateError(failures, failures.map((error) => (error instanceof Error ? error.message : String(error))).join("; "));
+      },
+    }),
     ...(deps.chatImages && { attachments: deps.chatImages }),
     modelChoice: deps.modelChoice,
     limits,
@@ -209,5 +241,7 @@ export function createLiveDialog(deps: LiveDialogDependencies): LiveDialog {
     congratulatePurchase: (passageId) => congratulatePurchase({ db, queue: deps.queue, clock, writer: consultant }, passageId),
     continueInMessenger: (handoffId) => continueInMessenger({ db, queue: deps.queue, clock, writer: consultant, flow }, handoffId),
     remindPayment: (passageId) => remindPayment({ db, queue: deps.queue, clock, writer: consultant }, passageId),
+    sendCallNotice: (noticeId) => sendCallNotice({ db, cipher: deps.cipher, adapters: deps.adapters, clock }, noticeId),
+    remindCall: (bookingId) => sendCallReminder({ db, queue: deps.queue, clock }, bookingId),
   };
 }

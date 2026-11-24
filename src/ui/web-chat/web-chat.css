@@ -97,6 +97,15 @@
 .web-chat__messenger:focus-visible { outline: 2px solid var(--yk-accent); outline-offset: 2px; }
 /* После перехода — одна кнопка в строку: знак и «Перейти в …» */
 .web-chat__messenger--wide { flex-direction: row; max-width: none; width: 100%; padding: var(--yk-space-2) var(--yk-space-3); }
+/* Подсказка под плитками: у ВКонтакте и Max при старой переписке нет «Начать» — бот узнает человека по первому сообщению */
+.web-chat__offer .web-chat__handoff-hint { margin: var(--yk-space-3) 0 0; color: var(--yk-muted); font-size: var(--yk-text-small-size); text-align: center; }
 .web-chat__handoff-moved { display: flex; align-items: center; gap: var(--yk-space-3); margin-bottom: var(--yk-space-3); }
 .web-chat__handoff-moved svg { flex: none; }
 .web-chat__handoff .web-chat__handoff-moved p { margin: 0; }
+
+/* Фото клиента: кнопка в поле, выбранное фото — над полем, с кнопкой «убрать» */
+.web-chat__field-actions .web-chat__photo { color: var(--yk-muted); }
+@media (hover: hover) { .web-chat__field-actions .web-chat__photo:hover:not(:disabled) { color: var(--yk-text); } }
+.web-chat__attachment { display: flex; align-items: center; gap: var(--yk-space-2); margin: 0 0 var(--yk-space-2); padding: var(--yk-space-1); border: 1px solid var(--yk-border); border-radius: var(--yk-radius-md); background: var(--yk-surface); }
+.web-chat__attachment img { width: 48px; height: 48px; flex: none; object-fit: cover; border-radius: var(--yk-radius-sm); }
+.web-chat__attachment-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--yk-muted); font-size: var(--yk-text-small-size); }

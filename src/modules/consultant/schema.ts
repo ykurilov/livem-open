@@ -1,8 +1,9 @@
 import type { FlowTransitionEvent } from "@ykurilov/agent-chat-flows";
-import { integer, jsonb, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { integer, jsonb, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { appSchema } from "../platform/app-schema";
 import { leadMagnets } from "../lead-magnets/schema";
 import type { HandoffMessenger } from "../messenger-handoff/setting";
+import type { SavedTestBooking } from "../booking/test-bookings";
 
 /** Кто перевёл на этап: консультант по условию или приложение по дню программы. */
 export type StageChangedBy = "model" | "day";
@@ -116,3 +117,42 @@ export const previewConversations = appSchema.table("preview_conversations", {
   messengerChannel: text("messenger_channel").$type<HandoffMessenger>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Что из тестового разговора возвращает правка в «Проверке»: состояние на начало хода и часы тестового чата. */
+export interface PreviewTurnSnapshot {
+  conversation: Pick<
+    typeof previewConversations.$inferSelect,
+    | "currentStageId"
+    | "stageHistory"
+    | "facts"
+    | "fieldValues"
+    | "fieldUpdatedAt"
+    | "timeZone"
+    | "personMessageCount"
+    | "saleAnswer"
+    | "sideTasks"
+    | "messengerChannel"
+  > & { messengerOfferedAt: string | null };
+  /** Сдвиг часов тестового чата, мс; чат не тестовый — `null`. */
+  timeOffset: number | null;
+  /** Тестовые записи на созвон этого чата; в снимках до записи на созвон поля нет — записи откат не трогает. */
+  callBookings?: SavedTestBooking[];
+}
+
+/**
+ * Снимок тестового разговора на начало каждого хода консультанта, по id его ответа: правка реплики или «Переделать
+ * ответ» возвращают разговор к этому месту. Сценарий SDK своё состояние держит в ветке сообщений, а здесь — то, что
+ * лежит вне ветки.
+ */
+export const previewTurnSnapshots = appSchema.table(
+  "preview_turn_snapshots",
+  {
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => previewConversations.chatId, { onDelete: "cascade" }),
+    answerId: text("answer_id").notNull(),
+    snapshot: jsonb("snapshot").$type<PreviewTurnSnapshot>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.chatId, table.answerId] })],
+);

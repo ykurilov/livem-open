@@ -32,6 +32,7 @@ import { assistantHandoffIn, botDirectionIn, greetingDirectionIn } from "./bot-d
 import { textLinkSchema } from "../text-links/text-link";
 import { MESSENGER_KINDS } from "../channels/channel";
 import { messengerHandoffSchema } from "../messenger-handoff/setting";
+import { callBookingSchema } from "../booking/setting";
 import { getKnowledgeBases } from "../knowledge";
 import { withoutSalesCard, withSalesCard } from "../sales-cards";
 import { describeEditInputIssues } from "./edit-input-hints";
@@ -39,12 +40,14 @@ import { withoutDeletedFields } from "./manual-edits";
 import { ANSWER_CORRECTION_TOOL_NAMES, createAnswerCorrectionTools } from "./answer-corrections";
 import type { Database, DatabaseExecutor } from "../platform/db";
 import { TOOL_TITLES } from "../agent-log/tool-titles";
+import { createAppHelpTool } from "./app-help";
 
 export const CONSTRUCTOR_TOOL_NAMES = [
   "view_lead_magnet",
   "edit_lead_magnet",
   "read_test_conversation",
   "reopen_test_conversation",
+  "app_help",
   ...ANSWER_CORRECTION_TOOL_NAMES,
 ] as const;
 
@@ -167,6 +170,7 @@ const change = z.union([
           z.strictObject({
             enabled: z.boolean(),
             when: z.string().describe("Словами эксперта: в какой момент разговора позвать в мессенджер"),
+            how: z.string().optional().describe("Словами эксперта: что сказать, приглашая в мессенджер; не передано — остаётся прежнее; пустая строка — убрать"),
             channels: z.array(z.enum(MESSENGER_KINDS)).describe("Куда звать"),
           }),
           z.null(),
@@ -174,6 +178,22 @@ const change = z.union([
         .describe("null — убрать"),
     })
     .describe("Переход из веб-чата в мессенджер: консультант в этот момент показывает кнопки ботов эксперта"),
+  z
+    .strictObject({
+      op: z.literal("set_call_booking"),
+      callBooking: z
+        .union([
+          z.strictObject({
+            enabled: z.boolean(),
+            when: z.string().describe("Словами эксперта: когда предложить человеку созвон"),
+            about: z.string().describe("Что сказать о созвоне: формат, длительность, что на нём будет. Можно пусто"),
+            meetingLink: z.string().describe("Ссылка на встречу (https://…), её человек получит в напоминании. Можно пусто"),
+          }),
+          z.null(),
+        ])
+        .describe("null — убрать"),
+    })
+    .describe("Запись на созвон: консультант предлагает свободное время из календаря эксперта и записывает человека"),
   z.strictObject({ op: z.literal("attach_field"), fieldId: z.string() }).describe("Подключить поле словаря к карточке клиента"),
   z.strictObject({ op: z.literal("detach_field"), fieldId: z.string() }),
   z
@@ -362,9 +382,19 @@ async function applyChange(tx: DatabaseExecutor, settings: LeadMagnetSettings, i
         const { messengerHandoff: _removed, ...rest } = settings;
         return rest;
       }
-      const parsed = messengerHandoffSchema.safeParse(item.messengerHandoff);
+      // «Как пригласить» не названо — прежнее остаётся: правка «когда» не стирает слова эксперта
+      const parsed = messengerHandoffSchema.safeParse({ how: settings.messengerHandoff?.how ?? "", ...item.messengerHandoff });
       if (!parsed.success) throw new ChangeRejected(parsed.error.issues.map((issue) => issue.message).join("; "));
       return { ...settings, messengerHandoff: parsed.data };
+    }
+    case "set_call_booking": {
+      if (item.callBooking === null) {
+        const { callBooking: _removed, ...rest } = settings;
+        return rest;
+      }
+      const parsed = callBookingSchema.safeParse(item.callBooking);
+      if (!parsed.success) throw new ChangeRejected(parsed.error.issues.map((issue) => issue.message).join("; "));
+      return { ...settings, callBooking: parsed.data };
     }
     case "attach_field": {
       const [field] = await getFields(tx, [item.fieldId]);
@@ -561,6 +591,7 @@ export async function viewLeadMagnet(
           published: lead.publishedSnapshotId !== null,
           textLink: draft.textLink ?? null,
           messengerHandoff: draft.messengerHandoff ?? null,
+          callBooking: draft.callBooking ?? null,
           unfilled: unfilledSettings(draft),
         };
         break;
@@ -712,6 +743,7 @@ export function createConstructorTools(
         return { ok: true };
       },
     }),
+    app_help: createAppHelpTool(),
     ...createAnswerCorrectionTools(deps.db, leadMagnetId, onChange),
   };
 }

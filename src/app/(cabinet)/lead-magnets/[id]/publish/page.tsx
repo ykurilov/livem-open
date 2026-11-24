@@ -14,10 +14,12 @@ import {
   type LinkReportRow,
   type StageStopRow,
 } from "@/modules/lead-magnets";
+import { readAllowedSites, readChatApiKey } from "@/modules/chat-api";
 import { planChatMigration } from "@/modules/flows";
 import { getChatStorage } from "@/modules/platform/chat-storage";
 import { getDatabase } from "@/modules/platform/db";
 import { requireEnv } from "@/modules/platform/env";
+import { currentAppOrigin } from "@/modules/platform/request-origin";
 import { isUuid } from "@/modules/platform/uuid";
 import { formatUsd } from "@/modules/spending";
 import { ArrowLink, CopyableLink, DataTable, PageHeader, type DataTableColumn } from "@/ui";
@@ -30,6 +32,7 @@ import { PurchaseReportCard } from "./purchase-report";
 import { purchaseReport } from "@/modules/purchases/report";
 import { channelChoices } from "./channel-choices";
 import { PublishForm } from "./publish-form";
+import { SiteEmbed } from "./site-embed";
 import { UnpublishForm } from "./unpublish-form";
 
 export const dynamic = "force-dynamic";
@@ -42,7 +45,7 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
   if (!lead) notFound();
 
   const adapters = createChannelAdapters();
-  const [publication, bots, labeledLinks, report, program, migration, purchases, averageCosts] = await Promise.all([
+  const [publication, bots, labeledLinks, report, program, migration, purchases, averageCosts, allowedSites, apiKey] = await Promise.all([
     describePublication(db, adapters, id),
     createBotServiceFromEnv().listBots(),
     listLabeledLinks(db, adapters, id),
@@ -51,6 +54,8 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
     planChatMigration(db, id),
     purchaseReport(db, id),
     averagePassageCosts(db),
+    readAllowedSites(db, id),
+    readChatApiKey(db, id),
   ]);
   const averageCost = averageCosts.get(id);
   const published = publication.snapshotId !== null;
@@ -150,6 +155,22 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
             </CardContent>
           </Card>
         ) : null}
+        {published && publication.code ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Встроить на сайт</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <SiteEmbed
+                leadMagnetId={id}
+                code={publication.code}
+                origin={await currentAppOrigin()}
+                sites={allowedSites}
+                apiKey={apiKey ? { keyStart: apiKey.keyStart, issuedOn: ISSUED_ON.format(apiKey.createdAt) } : null}
+              />
+            </CardContent>
+          </Card>
+        ) : null}
         <Card>
           <CardHeader>
             <CardTitle>Отчёт</CardTitle>
@@ -181,6 +202,8 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
     </>
   );
 }
+
+const ISSUED_ON = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Moscow" });
 
 const linkColumns: DataTableColumn<LinkReportRow>[] = [
   {

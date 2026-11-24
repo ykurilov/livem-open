@@ -22,6 +22,7 @@ import { createFlowTestRoutes, type FlowTestClockResult } from "./preview-flow-t
 import { createPreviewCorrections } from "./preview-corrections";
 import { createPreviewConversationStore, readPreviewConversation, reopenPreviewConversation, startPreviewConversation } from "./preview-store";
 import { previewConversations } from "./schema";
+import { answerInProgress, createPreviewRewind, personMessagesForTurn, rewoundAnswerId } from "./preview-rewind";
 import { consultantStepContext } from "./step-context";
 import { leadMagnetImageSource } from "../images";
 import { leadMagnetVideoSource } from "../videos";
@@ -38,6 +39,12 @@ import { CHANNEL_LABELS } from "../channels/channel";
 import { enabledMessengerHandoff, MESSENGER_HANDOFF_EVENT, type HandoffMessenger } from "../messenger-handoff/setting";
 import { handoffNotice } from "../messenger-handoff/notice";
 import type { MessengerHandoffPort } from "../messenger-handoff/tool";
+import { currentBookingOf } from "../booking/bookings";
+import { readCallCalendar } from "../booking/calendar";
+import { createCallBookingPort } from "../booking/port";
+import { CALL_BOOKED_EVENT, enabledCallBooking } from "../booking/setting";
+import { slotLabel } from "../booking/slots";
+import type { CallBookingPort } from "../booking/tool";
 import type { PreviewConversation } from "./preview-store";
 
 export const PREVIEW_BASE_PATH = "/api/preview";
@@ -69,6 +76,15 @@ export interface PreviewStatus {
   finished: boolean;
   /** Переход в мессенджер: консультант показал кнопки или эксперт уже нажал одну; нет — `null`. */
   messengerHandoff: PreviewMessengerHandoff | null;
+  /** Тестовая запись на созвон этого разговора: окна не занимает, уведомлений и напоминания нет. Нет записи — `null`. */
+  callBooking: PreviewCallBooking | null;
+}
+
+export interface PreviewCallBooking {
+  startsAt: string;
+  /** День, время и пояс эксперта. */
+  label: string;
+  meetingLink: string | null;
 }
 
 /** Кнопки мессенджеров в «Проверке»: все выбранные в настройке — публикация для проверки не нужна. */
@@ -198,53 +214,86 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
     },
   });
 
+  // Правка в «Проверке» возвращает разговор к своему месту: снимок на начало каждого хода, откат перед ходом правки
+  const rewind = createPreviewRewind({
+    db,
+    chatData: {
+      read: async (chatId) => (await serverOfChat(chatId)).service.getChatData(await ownerOf(chatId), chatId),
+      update: async (chatId, patch) => void (await (await serverOfChat(chatId)).service.updateChatData(await ownerOf(chatId), chatId, patch)),
+    },
+  });
+
+  // Запись «Проверки» — тестовая: окна не занимает, уведомлений и напоминания нет; сценарий получает событие, как вживую
+  const previewCallBooking = (settings: LeadMagnetSettings): CallBookingPort =>
+    createCallBookingPort({
+      db,
+      clock,
+      partyOf: async ({ chatId }) => ({
+        party: { kind: "test", chatId, leadMagnetId: (await findLeadMagnetByPreviewChat(db, chatId))?.id ?? null },
+        meetingLink: enabledCallBooking(settings)?.meetingLink || null,
+      }),
+      onChange: async (change, chat) => {
+        if (change.kind === "booked") await flow.signal({ ...chat, name: CALL_BOOKED_EVENT, data: {}, wakeAgent: false });
+      },
+    });
+
+  const previewCallBookingOf = async (chatId: string): Promise<PreviewCallBooking | null> => {
+    const booking = await currentBookingOf(db, { kind: "test", chatId, leadMagnetId: null }, clock.now());
+    if (!booking) return null;
+    const { timeZone } = await readCallCalendar(db);
+    return { startsAt: booking.startsAt.toISOString(), label: slotLabel(booking, timeZone), meetingLink: booking.meetingLink };
+  };
+
   type PreviewServer = ReturnType<typeof createChatServer>;
   const servers = new VersionCache<PreviewServer>(SERVICES_IN_MEMORY);
   const serverFor = ({ key, settings, knowledge }: LiveConsultantVersion): Promise<PreviewServer> =>
     servers.get(key, async () =>
       createChatServer(
-        flow.withChat({
-          basePath: PREVIEW_BASE_PATH,
-          // Ответ — один на ход, с прощанием приложения в конце; чужие слова и ссылки проверяет служба SDK до записи,
-          // поэтому прощание эксперта проверка не видит
-          storage: previewFarewellStorage(singleReplyStorage(chatStorage), {
-            farewellMessage: settings.farewellMessage,
-            summaryOf: async (chatId) => (await readPreviewConversation(db, chatId))?.summary ?? null,
-            // Ответ из finish_dialog — теми же проверками, что ответ модели, службой этого же разговора
-            checkedAnswer: async ({ chatId, messageId, answer }): Promise<string> =>
-              (await (await serverOfChat(chatId)).service.checkReply({ ownerId: await ownerOf(chatId), chatId, text: answer, messageId })).text,
-          }),
-          // Как в мессенджере: эксперт видит только проверенный текст, фраза перед инструментом не мелькает исходной
-          replyChecks: { ...consultantReplyChecks({ db, settings, knowledge }), web: "hold" },
-          logError: (line: string) => void logError(line),
-          catalog: options.catalog,
-          defaultChoice: options.modelChoice(settings),
-          ...(options.env && { env: options.env }),
-          resolveUser,
-          // «Проверка» изображает мессенджер: там поправки на лету нет, и ответ на ход один. Пометки «Агент написал первым —
-          // человек молчал…» видит только эксперт в тестовом разговоре: боевые чаты и конструктор их не получают
-          // Картинки клиента — как в мессенджере: только если лидмагнит их принимает, иначе и запрос, и поле ввода прежние
-          ...(options.attachments && settings.clientImages && { attachments: options.attachments }),
-          chatCapabilities: () => ({ steer: false, appNotices: true, attachments: settings.clientImages, answerEditing: true }),
-          // «Поправить»: эксперт правит ответ консультанта, правка ложится в журнал правок для конструктора
-          answerEditing: true,
-          onAnswerEdited: (input: AnswerEditedInput) => corrections.onAnswerEdited(input),
-          agent: {
-            ...consultantAgentSettings({
-              settings,
-              store,
-              videos: leadMagnetVideoSource(db, settings.videoIds),
-              images: leadMagnetImageSource(db, settings.imageIds),
-              personLink,
-              stepContext,
-              dayOf,
-              knowledge,
-              messengerHandoff: previewMessengerHandoff(settings),
+        rewind.withTurnSnapshots(
+          flow.withChat({
+            basePath: PREVIEW_BASE_PATH,
+            // Ответ — один на ход, с прощанием приложения в конце; чужие слова и ссылки проверяет служба SDK до записи,
+            // поэтому прощание эксперта проверка не видит
+            storage: previewFarewellStorage(singleReplyStorage(chatStorage), {
+              farewellMessage: settings.farewellMessage,
+              summaryOf: async (chatId) => (await readPreviewConversation(db, chatId))?.summary ?? null,
+              // Ответ из finish_dialog — теми же проверками, что ответ модели, службой этого же разговора
+              checkedAnswer: async ({ chatId, messageId, answer }): Promise<string> =>
+                (await (await serverOfChat(chatId)).service.checkReply({ ownerId: await ownerOf(chatId), chatId, text: answer, messageId })).text,
             }),
-            // Инструкции правят на ходу: модель видит только текущую карточку шага, прошлые ответы — без старых правил
-            contextBlocksHistory: { latest: ["flow:state", SALES_CARDS_BLOCK_KEY] },
-          },
-        }),
+            // Как в мессенджере: эксперт видит только проверенный текст, фраза перед инструментом не мелькает исходной
+            replyChecks: { ...consultantReplyChecks({ db, settings, knowledge }), web: "hold" },
+            logError: (line: string) => void logError(line),
+            catalog: options.catalog,
+            defaultChoice: options.modelChoice(settings),
+            ...(options.env && { env: options.env }),
+            resolveUser,
+            // «Проверка» изображает мессенджер: там поправки на лету нет, и ответ на ход один. Пометки «Агент написал первым —
+            // человек молчал…» видит только эксперт в тестовом разговоре: боевые чаты и конструктор их не получают
+            // Картинки клиента — как в мессенджере: только если лидмагнит их принимает, иначе и запрос, и поле ввода прежние
+            ...(options.attachments && settings.clientImages && { attachments: options.attachments }),
+            chatCapabilities: () => ({ steer: false, appNotices: true, attachments: settings.clientImages, answerEditing: true }),
+            // «Поправить»: эксперт правит ответ консультанта, правка ложится в журнал правок для конструктора
+            answerEditing: true,
+            onAnswerEdited: (input: AnswerEditedInput) => corrections.onAnswerEdited(input),
+            agent: {
+              ...consultantAgentSettings({
+                settings,
+                store,
+                videos: leadMagnetVideoSource(db, settings.videoIds),
+                images: leadMagnetImageSource(db, settings.imageIds),
+                personLink,
+                stepContext,
+                dayOf,
+                knowledge,
+                messengerHandoff: previewMessengerHandoff(settings),
+                callBooking: previewCallBooking(settings),
+              }),
+              // Инструкции правят на ходу: модель видит только текущую карточку шага, прошлые ответы — без старых правил
+              contextBlocksHistory: { latest: ["flow:state", SALES_CARDS_BLOCK_KEY] },
+            },
+          }),
+        ),
       ),
     );
   /** Служба тестового разговора по его чату: черновик лидмагнита, у которого этот чат открыт в «Проверке». */
@@ -347,6 +396,14 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
     return chatId;
   }
 
+  /** Тело запроса правки или «Переделать»: id правленой реплики или ответа. Сам запрос остаётся службе чата. */
+  async function turnBody(request: Request): Promise<{ editedMessageId?: unknown; messageId?: unknown }> {
+    const body: unknown = await request.clone().json().catch(() => null);
+    if (!body || typeof body !== "object") return {};
+    const { editedMessageId, messageId } = body as Record<string, unknown>;
+    return { editedMessageId, messageId };
+  }
+
   async function reopen(chatId: string): Promise<void> {
     // Сценарий снова идёт: консультант продолжает в той ноде, где разговор кончился
     // Тестовый чат эксперта открывается и после итоговой ноды; срок программы и блокировку SDK не снимает
@@ -398,7 +455,7 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
       }
       const { service } = await serverFor(await liveConsultantVersion(db, lead.draftVersionId, lead.draft));
       const personMessageCount = history.filter((line) => line.role === "user").length;
-      tails.set(chatId, buildConsultantTail({ settings: lead.draft, personMessageCount }));
+      tails.set(chatId, buildConsultantTail({ settings: lead.draft, personMessageCount, inWebChat: true }));
       const stream = await service.sendMessage(ownerId, chatId, { id: randomUUID(), role: "user", parts: [{ type: "text", text: question.text }] });
       let timer: ReturnType<typeof setTimeout> | undefined;
       const done = await Promise.race([
@@ -463,12 +520,25 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
       if (!turnChatId(request, PREVIEW_BASE_PATH)) return handler.fetch(request);
 
       const state = await readPreviewConversation(db, chatId);
+      const route = segments[1];
+      const kind: "messages" | "edit" | "regenerate" | "other" = route === "messages" || route === "edit" || route === "regenerate" ? route : "other";
+      const rewinding = kind === "edit" || kind === "regenerate";
+      const body = rewinding ? await turnBody(request) : {};
+      const turn = { kind, ...body };
+      const branch = await loadCurrentBranch(chatStorage, chatId);
+      // Ответ ещё идёт — «занято», как ответила бы служба чата, но до отката: иначе он затрёт записи идущего хода
+      if (rewinding && answerInProgress(branch)) return Response.json({ error: { kind: "busy" } }, { status: 409 });
+      // Правка своей реплики или «Переделать» возвращают разговор к этому месту: часы, нода, факты, поля, мессенджер.
+      // Снимка нет (разговор начат до снимков) — откат только того, что лежит в ветке сообщений
+      const answerId = rewinding ? rewoundAnswerId(branch, body) : null;
+      const restored = answerId ? await rewind.restore(chatId, answerId) : null;
       if (state?.finishedAt) {
         // Правка своей реплики или «Переделать» уводят разговор на ветку до конца: он снова идёт
-        if (segments[1] === "edit" || segments[1] === "regenerate") {
+        if (rewinding) {
           try {
             await reopen(chatId);
           } catch (error) {
+            await restored?.undo();
             if (!(error instanceof PreviewReopenRefused)) throw error;
             return Response.json({ error: { kind: "finished", message: error.message } }, { status: 409 });
           }
@@ -483,8 +553,9 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
             { status: 409 },
           );
       }
+      if (restored) await restored.applyConversation();
       // Кнопки мессенджеров показаны — поле ввода закрыто, как в веб-чате. Правка реплики или «Переделать» кнопки убирают
-      if (previewHandoffOf(state, lead.draft)?.state === "offered") {
+      else if (previewHandoffOf(state, lead.draft)?.state === "offered") {
         if (segments[1] === "messages")
           return Response.json(
             {
@@ -502,12 +573,18 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
       // Инструкции правили — разговор и с прошлой реплики, и дальше идёт по текущему черновику
       await moveTestChatToDraft(flow, { leadMagnetId: lead.id, chatId, draftVersionId: lead.draftVersionId, draftFlow: lead.draft.flow })
         .catch((error: unknown) => console.error(`Тестовый чат ${chatId} не переведён на черновик:`, error instanceof Error ? error.message : error));
-      const branch = await loadCurrentBranch(chatStorage, chatId);
-      const sent = branch.filter((message) => message.role === "user").length;
-      const isNewMessage = segments[1] === "messages";
-      const personMessageCount = sent + (isNewMessage ? 1 : 0);
-      tails.set(chatId, buildConsultantTail({ settings: lead.draft, personMessageCount }));
-      return handler.fetch(request);
+      tails.set(
+        chatId,
+        buildConsultantTail({
+          settings: lead.draft,
+          personMessageCount: personMessagesForTurn(branch, turn),
+          inWebChat: !(await readPreviewConversation(db, chatId))?.messengerChannel,
+        }),
+      );
+      const response = await handler.fetch(request);
+      // Служба чата правку не приняла (идёт ход, нет такой реплики): ветка прежняя — и разговор прежний
+      if (restored && !response.ok) await restored.undo();
+      return response;
     },
 
     async ensurePreview(leadMagnetId) {
@@ -532,6 +609,7 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
         // Конец сценария приложение записывает в `finishedAt` (`onFinish`); «Продолжить разговор» его снимает
         finished: Boolean(state?.finishedAt),
         messengerHandoff: previewHandoffOf(state, lead.draft),
+        callBooking: await previewCallBookingOf(chatId),
       };
     },
 

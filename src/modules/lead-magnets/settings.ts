@@ -5,6 +5,7 @@ import { validateLeadMagnetFlow, type FlowSettingsIssue } from "../flows/validat
 import { DEFAULT_MODEL_CHOICE } from "../platform/models-catalog";
 import { productLinkSchema, productPage, type ProductLink } from "../purchases/product-links";
 import { textLinkSchema } from "../text-links/text-link";
+import { callBookingSchema } from "../booking/setting";
 import { messengerHandoffSchema } from "../messenger-handoff/setting";
 import { checkedSalesCards, salesCardsSchema } from "../sales-cards/sales-cards";
 
@@ -154,6 +155,8 @@ export const leadMagnetSettingsSchema = z.object({
    * там. Нет поля или выключено — инструмента нет.
    */
   messengerHandoff: messengerHandoffSchema.optional(),
+  /** «Запись на созвон»: агент предлагает свободное время из «Созвонов» и записывает. Нет поля или выключено — инструментов нет. */
+  callBooking: callBookingSchema.optional(),
 });
 
 export type Stage = z.infer<typeof stageSchema>;

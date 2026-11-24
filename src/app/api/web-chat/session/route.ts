@@ -1,4 +1,4 @@
-import { openWebChat, webPushPublicKey } from "@/modules/web-chat";
+import { openWebChat, webChatOpenedAnswer, webPushPublicKey } from "@/modules/web-chat";
 import { clientAddress, jsonResponse, readVisitorToken, rememberVisitorToken, webChatDependencies } from "@/modules/web-chat/server";
 
 export const dynamic = "force-dynamic";
@@ -15,10 +15,7 @@ export async function POST(request: Request) {
   const timeZone = typeof body?.timeZone === "string" ? body.timeZone.slice(0, 100) : null;
   const cookieToken = await readVisitorToken();
   const opened = await openWebChat(await webChatDependencies(), { token: cookieToken, resume, code, address: clientAddress(request.headers), timeZone });
-  if (opened.kind === "limited") return jsonResponse({ error: opened.error }, 429);
-  if (opened.kind === "not_found") return jsonResponse({ error: "Чат не найден: ссылка устарела или лидмагнит снят с публикации" }, 404);
-  if (opened.issued) await rememberVisitorToken(opened.token);
-  if (opened.kind === "retry") return jsonResponse({ error: opened.error }, 503);
-  if (opened.kind === "closed") return jsonResponse({ error: "Этот чат закончен", current: opened.current }, 409);
-  return jsonResponse({ title: opened.title, pushKey: webPushPublicKey() });
+  if ((opened.kind === "opened" || opened.kind === "retry" || opened.kind === "closed") && opened.issued) await rememberVisitorToken(opened.token);
+  const answer = webChatOpenedAnswer(opened);
+  return jsonResponse(opened.kind === "opened" ? { ...answer.body, pushKey: webPushPublicKey() } : answer.body, answer.status);
 }

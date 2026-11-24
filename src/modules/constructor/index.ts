@@ -15,6 +15,7 @@ export {
 export {
   CONSTRUCTOR_BASE_PATH,
   DRAFT_CHANGED_TAG,
+  constructorChatsApi,
   createConstructorEndpoint,
   readConstructorPrompt,
 } from "./endpoint";

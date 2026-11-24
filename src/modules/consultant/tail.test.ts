@@ -47,6 +47,51 @@ describe("хвост консультанта", () => {
   });
 });
 
+describe("счёт сообщений для перехода в мессенджер", () => {
+  const handoff = { enabled: true, when: "Прошло 4 сообщения", how: "", channels: ["telegram" as const] };
+
+  it("переход включён и человек в веб-чате — хвост называет, сколько он прислал, и у программы на несколько дней тоже", () => {
+    expect(buildConsultantTail({ settings: { ...settings, messengerHandoff: handoff }, personMessageCount: 4, inWebChat: true })).toMatch(/прислал в этом разговоре 4 сообщения/);
+    const program = firstAppSettings();
+    const flowProgram = { ...program, flow: leadMagnetToFlow(program, FIRST_APP_FIELDS), messengerHandoff: handoff };
+    expect(buildConsultantTail({ settings: flowProgram, personMessageCount: 1, inWebChat: true })).toMatch(/прислал в этом разговоре 1 сообщение/);
+  });
+
+  it("человек уже в мессенджере или переход выключен — счёта нет", () => {
+    expect(buildConsultantTail({ settings: { ...settings, messengerHandoff: handoff }, personMessageCount: 4, inWebChat: false })).toBeNull();
+    expect(buildConsultantTail({ settings, personMessageCount: 4, inWebChat: true })).toBeNull();
+  });
+
+  it("счёт и отсчёт до предела — обе строки", () => {
+    const tail = buildConsultantTail({ settings: { ...settings, messengerHandoff: handoff }, personMessageCount: 16, inWebChat: true })!;
+    expect(tail).toMatch(/прислал в этом разговоре 16 сообщений/);
+    expect(tail).toMatch(/осталось 4 сообщения/i);
+  });
+});
+
+describe("переход в мессенджер в инструкции", () => {
+  const handoff = { enabled: true, when: "Прошло 4 сообщения. Ссылку на сервис в веб-чате не давай", how: "", channels: ["telegram" as const] };
+
+  it("условие эксперта — в постоянной инструкции и главнее этапа, пока есть инструмент перехода", () => {
+    const instruction = buildConsultantInstruction({ ...settings, messengerHandoff: handoff });
+    expect(instruction).toContain("Прошло 4 сообщения. Ссылку на сервис в веб-чате не давай");
+    expect(instruction).toMatch(/offer_messenger/);
+    expect(instruction).toMatch(/главнее/);
+  });
+
+  it("«Как пригласить» эксперта — в правиле перехода; пусто — строки нет", () => {
+    expect(buildConsultantInstruction({ ...settings, messengerHandoff: { ...handoff, how: "В мессенджере ссылки не потеряются" } })).toContain(
+      "Как пригласить, по словам эксперта: «В мессенджере ссылки не потеряются»",
+    );
+    expect(buildConsultantInstruction({ ...settings, messengerHandoff: { ...handoff, how: "" } })).not.toContain("Как пригласить");
+  });
+
+  it("переход выключен — правила нет", () => {
+    expect(buildConsultantInstruction(settings)).not.toMatch(/offer_messenger/);
+    expect(buildConsultantInstruction({ ...settings, messengerHandoff: { ...handoff, enabled: false } })).not.toMatch(/offer_messenger/);
+  });
+});
+
 describe("строка продажи в хвосте", () => {
   it("без отказа и не в «Продаже» — строки нет", () => {
     expect(saleTailLine({ saleAnswer: null, inSale: false, day: day(1) })).toBeNull();

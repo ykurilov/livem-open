@@ -9,7 +9,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "tsx src/server/app-server.ts --dev",
+    "dev": "pnpm widget:build && tsx src/server/app-server.ts --dev",
+    "widget:build": "tsx scripts/build-widget.ts",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
