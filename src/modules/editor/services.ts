@@ -3,7 +3,7 @@ import { getUser } from "../../auth";
 import { AccessError, parseAllowedEmails } from "../access";
 import { createAgentLogRecorder, withAgentLog } from "../agent-log";
 import { requireUserFromCookie } from "../access/require-user";
-import { createConstructorEndpoint, type ConstructorEndpoint } from "../constructor";
+import { createConstructorEndpoint, createConstructorFiles, type ConstructorEndpoint } from "../constructor";
 import { createPreviewEndpoint, type PreviewEndpoint } from "../consultant";
 import { loadAppModels } from "../platform/app-models";
 import { getChatImages } from "../platform/chat-attachments";
@@ -44,6 +44,8 @@ async function createEditorServices(): Promise<EditorServices> {
   return {
     constructor: createConstructorEndpoint({
       ...common,
+      // Кроме картинок — PDF и текстовые файлы: они становятся базами знаний лидмагнита
+      attachments: createConstructorFiles({ db, storage: common.attachments.storage }),
       defaultChoice: models.constructorChoice,
       reopenTestConversation: (leadMagnetId) => preview.reopenPreview(leadMagnetId),
     }),

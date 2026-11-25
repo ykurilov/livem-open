@@ -1,8 +1,8 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { seal } from "../../src/auth/core/cookie-seal";
 import { E2E_SCRIPT } from "../../src/modules/platform/e2e-script";
 import { E2E_BASE_URL, E2E_COOKIE_SECRET, E2E_EMAIL } from "./e2e-env";
-import { openTab } from "./open-tab";
+import { openCreateForm, openTab } from "./open-tab";
 
 test.beforeEach(async ({ context }) => {
   const session = {
@@ -112,15 +112,12 @@ test("эксперт создаёт лидмагнит, правит его че
   const lastAnswer = preview.locator("[data-feed-item]").filter({ hasText: E2E_SCRIPT.finalReply });
   await expect(lastAnswer).toContainText(E2E_SCRIPT.farewell);
   await expect(preview.getByText(E2E_SCRIPT.farewell)).toHaveCount(1);
-  // Написать после конца нельзя: вместо поля — плашка конца с подсказкой, ошибки нет
-  await expect(previewInput).toBeHidden();
-  await expect(preview.getByText("Чтобы писать дальше, продолжите разговор")).toBeVisible();
+  // Новый лидмагнит продолжает разговор после конца: поле открыто, над ним — что делать дальше (плашка «Продолжить разговор» — preview-after-end.spec.ts)
+  await expect(previewInput).toBeEnabled({ timeout: 30_000 });
+  await expect(preview.getByText("Напишите как вернувшийся клиент")).toBeVisible();
   await expect(preview.getByText("Что-то пошло не так")).toHaveCount(0);
 
-  // «Продолжить разговор» снимает конец: поле снова открыто, «Автоответ» сразу отправляет реплику клиента
-  await page.getByRole("button", { name: "Продолжить разговор" }).click();
-  await expect(preview.getByText("Диалог завершён")).toBeHidden({ timeout: 30_000 });
-  await expect(previewInput).toBeEnabled({ timeout: 30_000 });
+  // «Автоответ» пишет за вернувшегося клиента, агент отвечает в тот же разговор
   await preview.getByRole("button", { name: "Автоответ" }).click();
   await expect(preview.getByText(E2E_SCRIPT.clientAutoreply)).toBeVisible({ timeout: 30_000 });
   await expect(previewInput).toHaveValue("");
@@ -268,10 +265,3 @@ test("после хода конструктора: кнопка перезап�
   await expect(versions).toHaveCount(3);
   await expect(versions.first().getByText("Откат")).toBeVisible();
 });
-
-/** Открывает форму «Новый лидмагнит»; в пустом кабинете она уже открыта и кнопки нет. */
-async function openCreateForm(page: Page) {
-  const button = page.getByRole("button", { name: "Новый лидмагнит" });
-  await expect(button.or(page.getByLabel("Название"))).toBeVisible({ timeout: 60_000 });
-  if (await button.isVisible()) await button.click();
-}

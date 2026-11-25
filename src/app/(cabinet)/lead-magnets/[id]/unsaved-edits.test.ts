@@ -28,6 +28,29 @@ describe("обе правки сразу: «Настройки» и «Сцена
   });
 });
 
+describe("«Напоминать» и «Ждать ответа» хранятся в сценарии", () => {
+  const formNudges = { afterSilence: [], stopAfter: { amount: 5, unit: "d" as const }, giveUpAfter: { amount: 30, unit: "d" as const } };
+
+  it("сроки меняли в «Настройках» — в сценарий с доски идут они", () => {
+    const settings = saved();
+    settings.flow = { ...settings.flow, nudges: formNudges };
+    const board = { ...saved().flow, layout: { a: { x: 1, y: 2 } } };
+    const combined = combineUnsavedEdits(saved(), settings, board);
+    expect(combined.flow.nudges).toEqual(formNudges);
+    expect(combined.flow.layout).toEqual({ a: { x: 1, y: 2 } });
+  });
+
+  it("сроки меняли в форме, а пришла новая версия — сроки из формы, остальной сценарий из новой версии", () => {
+    const edited = saved();
+    edited.flow = { ...edited.flow, nudges: formNudges };
+    const latest = saved();
+    latest.flow = { ...latest.flow, states: latest.flow.states.slice(1) };
+    const rebased = rebaseSettingsEdit(saved(), edited, latest);
+    expect(rebased.settings.flow).toEqual({ ...latest.flow, nudges: formNudges });
+    expect(rebased.conflicts).toEqual([]);
+  });
+});
+
 describe("правка «Настроек» поверх новой версии черновика", () => {
   it("набранное остаётся, нетронутые поля — из новой версии", () => {
     const base = saved();

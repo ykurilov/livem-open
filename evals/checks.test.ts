@@ -576,8 +576,12 @@ describe("checkScenario: переходы и расход сценария", () 
 
 describe("checkScenario: касания и «не завершил» без «Дней и времени»", () => {
   const CLIENT = "клиент 1: Сомневающаяся Марина";
+  // «Ждать ответа» 3 дня: у нового лидмагнита срока нет, «не завершил» по тишине — только когда эксперт его задал
+  const base = scenarioRun().settings!;
+  const waitingThreeDays = { ...base, flow: { ...base.flow, nudges: { afterSilence: [], ...base.flow.nudges, giveUpAfter: { amount: 3, unit: "d" as const } } } };
   const left = (tail: ConsultantTurn, overrides: Partial<ClientRun> = {}) =>
     scenarioRun({
+      settings: waitingThreeDays,
       clients: [
         clientRun({
           turns: [...clientRun().turns.slice(0, 2), tail],
@@ -616,6 +620,7 @@ describe("checkScenario: касания и «не завершил» без «Д
 
   it("консультант завершил разговор или у сценария нет «не завершил» — пропуск", () => {
     expect(find(checkScenario(scenarioRun()), "flow_abandoned", CLIENT).status).toBe("skip");
+    expect(find(checkScenario({ ...left(touches()), settings: base }), "flow_abandoned", CLIENT).status).toBe("skip");
     expect(find(checkScenario(programRun([programClient([said("Хочу игру", 1, "12:01")])])), "flow_abandoned", CLIENT).status).toBe("skip");
   });
 

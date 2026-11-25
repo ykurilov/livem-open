@@ -209,6 +209,8 @@ export const BASE_SETTINGS: Partial<LeadMagnetSettings> = {
   firstMessage: "Привет! Чем вы занимаетесь?",
   farewellMessage: "Спасибо за разговор! До встречи.",
   endCondition: "Человек выбрал следующий шаг",
+  // Прежнее поведение после конца: тесты продолжения задают «Агент продолжит разговор» сами
+  returnAfterProgram: "inbox",
 };
 
 let kitCounter = 0;

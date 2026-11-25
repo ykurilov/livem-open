@@ -73,7 +73,7 @@ test("касания разговора от конструктора видны
 
   await expect(nudges.getByRole("spinbutton", { name: "Молчит — написать через 1", exact: true })).toHaveValue("2");
   await expect(nudges.getByRole("textbox", { name: "Потом каждый день в 1", exact: true }).or(nudges.getByLabel("Потом каждый день в 1", { exact: true }))).toHaveValue("11:30");
-  await expect(nudges.getByRole("spinbutton", { name: "Молчит столько — разговор окончен", exact: true })).toHaveValue("5");
+  await expect(nudges.getByRole("spinbutton", { name: "Ждать ответа (молчит столько — «не завершил»)", exact: true })).toHaveValue("5");
 
   // Правка человека ложится в те же касания, по которым работает агент
   await nudges.getByRole("spinbutton", { name: "Молчит — написать через 1", exact: true }).fill("3");

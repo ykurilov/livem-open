@@ -102,6 +102,11 @@ export const passages = appSchema.table(
     // Время записи, а не начала транзакции: по нему прохождения идут по порядку
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().default(sql`clock_timestamp()`),
     endedAt: timestamp("ended_at", { withTimezone: true }),
+    /**
+     * Человек вернулся после конца разговора (согласием или сроком), и снимок велит агенту продолжить: последний такой
+     * возврат. Пускает ход в законченное прохождение; статус, итог и конец не меняются (`continuesAfterEnd`).
+     */
+    returnedAfterEndAt: timestamp("returned_after_end_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("passages_chat").on(table.chatId),
@@ -116,6 +121,29 @@ export const passages = appSchema.table(
     index("passages_purchase_uncongratulated").on(table.purchasedAt).where(sql`${table.purchaseCongratulatedAt} is null`),
     index("passages_payment_reminder_due").on(table.paymentReminderDueAt).where(sql`${table.paymentReminderSentAt} is null`),
   ],
+);
+
+/**
+ * Возврат человека в разговор — для отчёта лидмагнита. `after_pause` — в идущий или открытый заново разговор после
+ * молчания дольше «Напоминать»; `after_end` — в разговор, законченный согласием или сроком, когда агент его продолжает.
+ */
+export const PASSAGE_RETURN_KINDS = ["after_pause", "after_end"] as const;
+export type PassageReturnKind = (typeof PASSAGE_RETURN_KINDS)[number];
+
+export const passageReturns = appSchema.table(
+  "passage_returns",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    passageId: uuid("passage_id")
+      .notNull()
+      .references(() => passages.id, { onDelete: "cascade" }),
+    leadMagnetId: uuid("lead_magnet_id")
+      .notNull()
+      .references(() => leadMagnets.id),
+    kind: text("kind", { enum: PASSAGE_RETURN_KINDS }).notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("passage_returns_lead_magnet").on(table.leadMagnetId, table.kind)],
 );
 
 export const INBOUND_KINDS = ["message", "button", "blocked", "unblocked", "contact"] as const;

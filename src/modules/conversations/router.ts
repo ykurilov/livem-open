@@ -19,6 +19,8 @@ import { buildMenu, chooseNoCodeReply, codeFromMenuPayload, findPublishedTarget,
 import { endActivePassages, type PassageEndStatus } from "./passage-end";
 import { loadWithoutCodeHistory, REOPEN_WINDOW_MS, whoWritesWithoutCode } from "./returning";
 import { returnGoesToInbox } from "./program-return";
+import { continuableOfLeadMagnet, markReturnedAfterEnd, snapshotContinues } from "./after-end";
+import { noteReturnAfterPause } from "./passage-returns";
 import { chatOwnerOf, inboundMessages, passages, type InboundRoute } from "./schema";
 import { findHandoffByCode, takeMessengerHandoff, type HandoffTake } from "../messenger-handoff/handoff";
 import { claimCallNoticeConnect, confirmCallNoticeConnect } from "../booking/notices";
@@ -157,6 +159,8 @@ interface ReopenCandidate {
   ownerId: string;
   chatId: string;
   now: Date;
+  /** Снимок нового вида (с «Напоминать»): открыть через сколько угодно, без предела в неделю. */
+  anyTime: boolean;
 }
 
 interface ReopenOutcome {
@@ -170,7 +174,8 @@ interface ReopenOutcome {
 }
 
 /**
- * Открыть сценарий брошенного разговора. Давность проверяем и сами (`whoWritesWithoutCode`), и в SDK (`endedAfter`).
+ * Открыть сценарий брошенного разговора. Давность проверяем и сами (`whoWritesWithoutCode`), и в SDK (`endedAfter`);
+ * у снимка нового вида давность не ограничена.
  * «Не закончен» — сценарий уже открыт: этим же вызовом до сбоя или соседней копией; разговор продолжается.
  */
 async function reopenConversation(deps: RouterDependencies, candidate: ReopenCandidate): Promise<ReopenOutcome> {
@@ -179,7 +184,7 @@ async function reopenConversation(deps: RouterDependencies, candidate: ReopenCan
     ownerId: candidate.ownerId,
     chatId: candidate.chatId,
     reason: "person_returned",
-    endedAfter: new Date(candidate.now.getTime() - REOPEN_WINDOW_MS),
+    ...(!candidate.anyTime && { endedAfter: new Date(candidate.now.getTime() - REOPEN_WINDOW_MS) }),
   });
   return {
     passageId: candidate.passageId,
@@ -325,6 +330,17 @@ async function decide(
   if (target) {
     // Та же ссылка посреди разговора — разговор продолжается, человеку напоминаем, на чём остановились
     if (active?.leadMagnetId === target.leadMagnetId) return { route: "ignored", repeatLastMessage: true };
+    // Разговор этого лидмагнита закончился согласием или сроком, а лидмагнит велит продолжать («Агент продолжит
+    // разговор» и у снимка разговора, и у опубликованного): тот же чат, агент отвечает с учётом прошлого
+    const resumable = (await targetContinues(tx, target)) ? await continuableOfLeadMagnet(tx, person, target.leadMagnetId) : null;
+    if (resumable) {
+      if (active) {
+        await endPassage(tx, active, "not_completed", now);
+        input.endFlow({ ownerId: chatOwnerOf(active), chatId: active.chatId, reason: "switched", outcome: `перешёл на лидмагнит ${target.leadMagnetId}` });
+      }
+      await markReturnedAfterEnd(tx, resumable.id, now, true);
+      return { route: "passage", passageId: resumable.id };
+    }
     // Программа этого лидмагнита у человека уже закончилась: по настройке лидмагнита сообщение уходит эксперту,
     // человеку — автоответ, как вернувшемуся без кода; или лидмагнит начинается заново — новым прохождением, как первый старт
     if (await returnGoesToInbox(tx, person, target)) return { route: "inbox", autoreply: await autoreplyToday() };
@@ -348,6 +364,7 @@ async function decide(
       return BARE_START_COMMAND.test(inbound.text.trim()) && (await menuOffersSwitch(tx, bot, active.leadMagnetId))
         ? { route: "ignored", menu: true }
         : { route: "ignored", repeatLastMessage: true };
+    await noteReturnAfterPause(tx, active, now);
     await tx.update(passages).set({ lastPersonMessageAt: now }).where(eq(passages.id, active.id));
     return { route: "passage", passageId: active.id };
   }
@@ -360,6 +377,12 @@ async function decide(
   // не должен попасть во вступление лидмагнита по умолчанию: он во «Входящих» с автоответом раз в день
   const writer = whoWritesWithoutCode({ ...(await loadWithoutCodeHistory(tx, person.id, person.conversationsResetAt)), now });
   if (writer.kind === "newcomer") return withoutCode(isButton || isStartCommand);
+  // Вернулся после конца, а лидмагнит велит продолжать: тот же чат без ограничения по давности. Голый /start и кнопка
+  // снятого лидмагнита — не реплика разговора
+  if (writer.kind === "continue" && !isStartCommand && !isButton) {
+    await markReturnedAfterEnd(tx, writer.passageId, now, true);
+    return { route: "passage", passageId: writer.passageId };
+  }
   // Брошенный недавно разговор продолжается тем же чатом. Голый /start — не реплика разговора. Сценарий не открылся
   // (срок программы вышел и др.) — как у остальных, «Входящие»
   if (writer.kind === "reopen" && !isStartCommand) {
@@ -369,10 +392,14 @@ async function decide(
         .select({ chatId: passages.chatId, personId: passages.personId, chatOwnerId: passages.chatOwnerId })
         .from(passages)
         .where(eq(passages.id, writer.passageId));
-      return { reopen: { passageId: writer.passageId, personId: person.id, ownerId: chatOwnerOf(ended!), chatId: ended!.chatId, now } };
+      return { reopen: { passageId: writer.passageId, personId: person.id, ownerId: chatOwnerOf(ended!), chatId: ended!.chatId, now, anyTime: writer.anyTime === true } };
     }
     // Сценарий проверяем ещё раз под блокировкой человека (upsertPerson): соседняя копия могла закрыть его обратно
     if (outcome.passageId === writer.passageId && outcome.reopened && (await flowIsOpen(deps, outcome.ownerId, outcome.chatId))) {
+      if (!isButton) {
+        const [reopened] = await tx.select().from(passages).where(eq(passages.id, writer.passageId));
+        if (reopened) await noteReturnAfterPause(tx, reopened, now);
+      }
       await tx
         .update(passages)
         .set({ status: "active", endedAt: null, ...(!isButton && { lastPersonMessageAt: now }) })
@@ -385,6 +412,11 @@ async function decide(
   // Голый /start — человек сам просит начать: меню бота, если оно есть, без автоответа
   if (isStartCommand && (await chooseNoCodeReply(tx, bot)).kind === "menu") return { route: "ignored", menu: true };
   return { route: "inbox", autoreply: await autoreplyToday() };
+}
+
+/** Опубликованный снимок лидмагнита велит продолжать разговор с вернувшимся после конца. */
+async function targetContinues(tx: DatabaseExecutor, target: { snapshotId: string }): Promise<boolean> {
+  return snapshotContinues((await getVersion(tx, target.snapshotId))?.settings);
 }
 
 /** Лидмагнит разговора, из которого показан переход, с источником этого разговора. Снят с публикации — `null`. */

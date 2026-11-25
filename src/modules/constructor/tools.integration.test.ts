@@ -360,6 +360,63 @@ describe("запись на созвон", () => {
   });
 });
 
+describe("человек вернулся после конца", () => {
+  it("set_return меняет режим и указание, видно в обзоре; сценарий после конца отвечает только при «продолжит»", async () => {
+    expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_return", afterEnd: "continue", guidance: "Спроси, что получилось" }] })).toMatchObject({ ok: true });
+    let draft = (await getLeadMagnet(deps.db, lead.id))!.draft;
+    expect(draft).toMatchObject({ returnAfterProgram: "continue", returnGuidance: "Спроси, что получилось" });
+    expect(draft.flow.afterEnd).toBe("reply");
+    expect(((await viewLeadMagnet(deps, lead.id, { sections: ["overview"] })) as { overview: Record<string, unknown> }).overview).toMatchObject({
+      returnAfterEnd: { afterEnd: "continue", guidance: "Спроси, что получилось" },
+    });
+
+    // Не названное остаётся прежним
+    expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_return", afterEnd: "inbox" }] })).toMatchObject({ ok: true });
+    draft = (await getLeadMagnet(deps.db, lead.id))!.draft;
+    expect(draft).toMatchObject({ returnAfterProgram: "inbox", returnGuidance: "Спроси, что получилось" });
+    expect(draft.flow.afterEnd).toBe("silent");
+
+    const tooLong = await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_return", guidance: "а".repeat(1501) }] });
+    expect(tooLong).toMatchObject({ ok: false });
+    if (!tooLong.ok) expect(tooLong.error).toMatch(/вернувшихся/);
+  });
+});
+
+describe("«Напоминать» и «Ждать ответа»", () => {
+  const overview = async () => ((await viewLeadMagnet(deps, lead.id, { sections: ["overview"] })) as { overview: Record<string, unknown> }).overview;
+
+  it("новый лидмагнит: напоминать 3 дня, ждать без срока — видно в обзоре", async () => {
+    expect(await overview()).toMatchObject({ returnAfterEnd: { remindDays: 3, waitDays: null } });
+  });
+
+  it("set_return меняет сроки молчания в сценарии; ждать без срока — null; касания не трогает", async () => {
+    const before = (await getLeadMagnet(deps.db, lead.id))!.draft.flow.nudges;
+    expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_return", remindDays: 2, waitDays: 14 }] })).toMatchObject({ ok: true });
+    let nudges = (await getLeadMagnet(deps.db, lead.id))!.draft.flow.nudges;
+    expect(nudges).toMatchObject({ afterSilence: before?.afterSilence, stopAfter: { amount: 2, unit: "d" }, giveUpAfter: { amount: 14, unit: "d" } });
+    expect(await overview()).toMatchObject({ returnAfterEnd: { remindDays: 2, waitDays: 14 } });
+
+    expect(await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_return", waitDays: null }] })).toMatchObject({ ok: true });
+    nudges = (await getLeadMagnet(deps.db, lead.id))!.draft.flow.nudges;
+    expect(nudges?.stopAfter).toEqual({ amount: 2, unit: "d" });
+    expect(nudges?.giveUpAfter).toBeUndefined();
+  });
+
+  it("«Напоминать» дольше «Ждать ответа» — отказ с понятной причиной", async () => {
+    const result = await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_return", remindDays: 10, waitDays: 5 }] });
+    expect(result).toMatchObject({ ok: false });
+    if (!result.ok) expect(result.error).toMatch(/«Напоминать» не может быть дольше «Ждать ответа»/);
+  });
+
+  it("у воронки на несколько дней сроков молчания нет — отказ", async () => {
+    await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_flow", flow: twoStates() }] });
+    await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_schedule", schedule }] });
+    const result = await editLeadMagnet(deps, lead.id, { changes: [{ op: "set_return", remindDays: 2 }] });
+    expect(result).toMatchObject({ ok: false });
+    if (!result.ok) expect(result.error).toMatch(/воронк/);
+  });
+});
+
 describe("схема edit_lead_magnet для модели", () => {
   const schema = () => asSchema(createConstructorTools(deps, lead.id).edit_lead_magnet!.inputSchema);
   const setName = [{ op: "set", field: "name", value: "Марафон" }];
@@ -404,13 +461,13 @@ const saleState = {
 const schedule = { dayStart: "09:00", nightFrom: "21:00", lengthDays: 3, deadlineState: FINAL_STATE_ID, dayFrame: { softFrom: 20, hardAt: 30, hardText: "Утром отвечу!" } };
 
 describe("сценарий", () => {
-  it("put_flow заменяет сценарий целиком; «Общее», id и режим после конца дописываются сами", async () => {
+  it("put_flow заменяет сценарий целиком; «Общее» и id дописываются сами, режим после конца — по настройке «Если человек вернулся после конца»", async () => {
     const result = await editLeadMagnet(deps, lead.id, { changes: [{ op: "put_flow", flow: twoStates() }] });
     expect(result).toMatchObject({ ok: true });
     const { flow } = await currentDraft();
     expect(flow.states.map((state) => state.id)).toEqual(["intro", "goal", FINAL_STATE_ID]);
     expect(flow.common).toBe("Ты консультант. Спроси про цель. Не продавай в лоб.");
-    expect(flow.afterEnd).toBe("silent");
+    expect(flow.afterEnd).toBe("reply");
     expect((await listVersions(database.db, lead.id))[0]!.source).toBe("constructor");
   });
 
@@ -608,7 +665,9 @@ describe("сценарий", () => {
     expect(off).toMatchObject({ ok: true });
     const { flow } = await currentDraft();
     expect(flow.schedule).toBeUndefined();
-    expect(flow.nudges?.giveUpAfter).toBeDefined();
+    // Касания нового лидмагнита: напоминать 3 дня, ждать без срока
+    expect(flow.nudges?.stopAfter).toEqual({ amount: 3, unit: "d" });
+    expect(flow.nudges?.giveUpAfter).toBeUndefined();
   });
 
   it("put_schedule без касаний и потолка — умолчания программы: касания через 3 ч и потолок по дням «3, 2»", async () => {

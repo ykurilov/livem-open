@@ -1,9 +1,9 @@
 import type { ChatStorage, UsageSource } from "@ykurilov/agent-chat-core";
 import type { FlowState } from "@ykurilov/agent-chat-flows/format";
-import { and, asc, avg, count, eq, inArray, isNotNull, notLike, sql, sum } from "drizzle-orm";
+import { and, asc, avg, count, countDistinct, eq, inArray, isNotNull, notLike, sql, sum } from "drizzle-orm";
 import { outboundMessages } from "../channels/schema";
 import type { SaleReason } from "../consultant/schema";
-import { inboundMessages, passages } from "../conversations/schema";
+import { inboundMessages, passageReturns, passages, type PassageReturnKind } from "../conversations/schema";
 import { modelUsage } from "../spending/schema";
 import type { DatabaseExecutor } from "../platform/db";
 import { entryLinks, leadMagnets, leadMagnetVersions } from "./schema";
@@ -78,12 +78,31 @@ export interface StageStopRow {
 export interface LeadMagnetReport {
   byLink: LinkReportRow[];
   stoppedByStage: StageStopRow[];
+  /**
+   * Сколько разговоров возобновились: после молчания дольше «Напоминать» посреди разговора и после его конца. Разговор
+   * считается один раз, сколько бы раз человек ни возвращался.
+   */
+  returns: { afterPause: number; afterEnd: number };
 }
 
-/** Отчёт лидмагнита: по ссылкам и меткам (пришло, завершило, стоимость) и по этапам, где люди остановились. */
+/** Отчёт лидмагнита: по ссылкам и меткам (пришло, завершило, стоимость), по этапам, где люди остановились, и возвраты. */
 export async function leadMagnetReport(db: DatabaseExecutor, leadMagnetId: string): Promise<LeadMagnetReport> {
-  const [byLink, stoppedByStage] = await Promise.all([reportByLink(db, leadMagnetId), reportStoppedByStage(db, leadMagnetId)]);
-  return { byLink, stoppedByStage };
+  const [byLink, stoppedByStage, returns] = await Promise.all([
+    reportByLink(db, leadMagnetId),
+    reportStoppedByStage(db, leadMagnetId),
+    reportReturns(db, leadMagnetId),
+  ]);
+  return { byLink, stoppedByStage, returns };
+}
+
+async function reportReturns(db: DatabaseExecutor, leadMagnetId: string): Promise<LeadMagnetReport["returns"]> {
+  const rows = await db
+    .select({ kind: passageReturns.kind, passages: countDistinct(passageReturns.passageId) })
+    .from(passageReturns)
+    .where(eq(passageReturns.leadMagnetId, leadMagnetId))
+    .groupBy(passageReturns.kind);
+  const of = (kind: PassageReturnKind) => rows.find((row) => row.kind === kind)?.passages ?? 0;
+  return { afterPause: of("after_pause"), afterEnd: of("after_end") };
 }
 
 async function reportByLink(db: DatabaseExecutor, leadMagnetId: string): Promise<LinkReportRow[]> {

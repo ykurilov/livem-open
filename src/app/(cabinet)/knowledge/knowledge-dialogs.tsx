@@ -5,15 +5,32 @@ import { Alert, Button, Field, Input } from "@/ui/primitives";
 import { Dialog } from "@ykurilov/ds-react";
 import { PencilSimpleIcon as Pencil, TrashIcon as Trash2 } from "@phosphor-icons/react";
 import { IconButton } from "@/ui/icon-button";
+import { Checkbox } from "@/ui/checkbox";
 import { isFileTooLarge, keepingFormOnSendFailure } from "@/ui/form-upload";
-import { KNOWLEDGE_FILE_MAX_BYTES } from "@/modules/knowledge/knowledge-file";
+import { isPdfName, knowledgeFileMaxBytes, megabytes } from "@/modules/knowledge/knowledge-limits";
 import type { KnowledgeBaseListItem } from "@/modules/knowledge";
 import { deleteKnowledgeAction, saveKnowledgeAction, type KnowledgeActionState } from "./actions";
 
-const FILE_HINT = "Текст .txt или .md до 1 МБ.";
+const FILE_HINT = "Текст .txt или .md до 1 МБ либо PDF с текстом до 10 МБ. Скан без текста не подойдёт.";
+
+/** Лидмагнит, к которому новую базу можно подключить сразу. */
+export interface KnowledgeTarget {
+  id: string;
+  name: string;
+}
 
 /** Окно с формой базы: новая (`base` нет) или правка. Сохранилось — окно закрывается. */
-function KnowledgeFormDialog({ base, trigger, title }: { base?: KnowledgeBaseListItem; trigger: ReactElement<{ onClick?: () => void }>; title: string }) {
+function KnowledgeFormDialog({
+  base,
+  targets = [],
+  trigger,
+  title,
+}: {
+  base?: KnowledgeBaseListItem;
+  targets?: KnowledgeTarget[];
+  trigger: ReactElement<{ onClick?: () => void }>;
+  title: string;
+}) {
   const [open, setOpen] = useState(false);
   // Каждое открытие — новая форма: прошлый файл и прошлая ошибка не остаются
   const [opening, setOpening] = useState(0);
@@ -26,14 +43,15 @@ function KnowledgeFormDialog({ base, trigger, title }: { base?: KnowledgeBaseLis
         },
       })}
       <Dialog open={open} onClose={() => setOpen(false)} title={title}>
-        <KnowledgeForm key={opening} base={base} onClose={() => setOpen(false)} />
+        <KnowledgeForm key={opening} base={base} targets={targets} onClose={() => setOpen(false)} />
       </Dialog>
     </>
   );
 }
 
-function KnowledgeForm({ base, onClose }: { base?: KnowledgeBaseListItem; onClose(): void }) {
+function KnowledgeForm({ base, targets, onClose }: { base?: KnowledgeBaseListItem; targets: KnowledgeTarget[]; onClose(): void }) {
   const [fileName, setFileName] = useState<string | null>(null);
+  const [chosenTargets, setChosenTargets] = useState<string[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [state, save, saving] = useActionState<KnowledgeActionState, FormData>(keepingFormOnSendFailure(saveKnowledgeAction.bind(null, base?.id ?? null)), {});
@@ -49,6 +67,7 @@ function KnowledgeForm({ base, onClose }: { base?: KnowledgeBaseListItem; onClos
         onSubmit={(event) => {
           event.preventDefault();
           const formData = new FormData(event.currentTarget);
+          for (const id of chosenTargets) formData.append("leadMagnetIds", id);
           startTransition(() => save(formData));
         }}
       >
@@ -68,16 +87,17 @@ function KnowledgeForm({ base, onClose }: { base?: KnowledgeBaseListItem; onClos
                 ref={fileInput}
                 type="file"
                 name="file"
-                accept=".txt,.md,.markdown,text/plain,text/markdown"
-                aria-label="Текстовый файл"
+                accept=".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf"
+                aria-label="Файл базы знаний"
                 className="sr-only"
                 tabIndex={-1}
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   // Слишком большой сервер не примет: выбор сбрасывается сразу, набранное остаётся
-                  const tooLarge = isFileTooLarge(file, KNOWLEDGE_FILE_MAX_BYTES);
+                  const maxBytes = knowledgeFileMaxBytes(file?.name ?? "");
+                  const tooLarge = isFileTooLarge(file, maxBytes);
                   if (tooLarge) event.target.value = "";
-                  setFileError(tooLarge ? "Файл больше 1 МБ — разделите его на несколько" : null);
+                  setFileError(tooLarge ? `${isPdfName(file?.name ?? "") ? "PDF" : "Файл"} больше ${megabytes(maxBytes)} — разделите его на несколько` : null);
                   setFileName(tooLarge ? null : (file?.name ?? null));
                 }}
               />
@@ -91,6 +111,25 @@ function KnowledgeForm({ base, onClose }: { base?: KnowledgeBaseListItem; onClos
           <Field label="Название" hint={base ? undefined : "Не заполнено — возьмём имя файла."} required={Boolean(base)}>
             <Input name="title" defaultValue={base?.title} />
           </Field>
+          {!base && targets.length > 0 ? (
+            <fieldset className="flex flex-col gap-1">
+              <legend className="mb-1 text-[length:var(--yk-text-small-size)] font-semibold">Подключить к лидмагнитам</legend>
+              <p className="text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">
+                Консультант отвечает по базе, только когда она подключена. Не отметили — подключите позже на вкладке «Настройки» лидмагнита.
+              </p>
+              {targets.map((target) => (
+                <Checkbox
+                  key={target.id}
+                  checked={chosenTargets.includes(target.id)}
+                  onCheckedChange={(checked) =>
+                    setChosenTargets((chosen) => (checked === true ? [...chosen, target.id] : chosen.filter((id) => id !== target.id)))
+                  }
+                >
+                  {target.name}
+                </Checkbox>
+              ))}
+            </fieldset>
+          ) : null}
           {state.error ? <Alert variant="danger" title={state.error} /> : null}
         </div>
         <div className="app-dialog-actions">
@@ -106,8 +145,8 @@ function KnowledgeForm({ base, onClose }: { base?: KnowledgeBaseListItem; onClos
   );
 }
 
-export function AddKnowledgeButton() {
-  return <KnowledgeFormDialog title="Новая база знаний" trigger={<Button type="button">Добавить текст</Button>} />;
+export function AddKnowledgeButton({ targets }: { targets: KnowledgeTarget[] }) {
+  return <KnowledgeFormDialog title="Новая база знаний" targets={targets} trigger={<Button type="button">Добавить текст</Button>} />;
 }
 
 /** Изменить (название, новый файл) и удалить базу знаний. */

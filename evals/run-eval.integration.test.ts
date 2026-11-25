@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { AppModels } from "@/modules/platform/app-models";
 import { createAppCatalog, createStubModelCatalog, STUB_MODEL_CHOICE } from "@/modules/platform/models-catalog";
 import { createScriptedModel, type ScriptedCall, type ScriptedReply } from "@/modules/platform/scripted-model";
+import { newLeadMagnetSettings } from "@/modules/lead-magnets/settings";
 import { createTestDatabase } from "../tests/integration/db-helper";
 import { isJudgeCall } from "../tests/integration/live-dialog-kit";
 import { checkScenario } from "./checks";
@@ -21,7 +22,15 @@ const STUBBORN = "РЕЖИМ: молчун";
 const SILENT = "РЕЖИМ: молчит до завтра";
 const SUMMARY_QUESTION = "Итог: пробное занятие. Подходит?";
 
-function constructorReply(call: ScriptedCall): ScriptedReply {
+type ConstructorChange = Record<string, unknown>;
+
+/** «Ждать ответа» 3 дня: у нового лидмагнита срока нет, молчун «не завершил» только когда эксперт его задал. */
+function waitForAnswerDays(days: number): ConstructorChange {
+  const flow = newLeadMagnetSettings("Йога").flow;
+  return { op: "put_flow", flow: { ...flow, nudges: { ...flow.nudges, giveUpAfter: { amount: days, unit: "d" } } } };
+}
+
+function constructorReply(call: ScriptedCall, extraChanges: ConstructorChange[]): ScriptedReply {
   if (call.lastToolResult !== undefined) return { text: "Готово, всё настроил." };
   return {
     delayMs: 150,
@@ -34,6 +43,7 @@ function constructorReply(call: ScriptedCall): ScriptedReply {
             { op: "set", field: "firstMessage", value: "Привет! Что беспокоит?" },
             { op: "set", field: "endCondition", value: "Человек согласился на пробное занятие" },
             { op: "set", field: "farewellMessage", value: "Спасибо! До встречи на коврике." },
+            ...extraChanges,
           ],
         },
       },
@@ -63,11 +73,11 @@ function clientReply(call: ScriptedCall): ScriptedReply {
   return { text: call.system.includes(STUBBORN) ? "Не знаю" : "Болит спина" };
 }
 
-function stubModels(expertPrompts: string[] = []): AppModels {
+function stubModels(expertPrompts: string[] = [], constructorChanges: ConstructorChange[] = []): AppModels {
   const scripted = createScriptedModel((call) => {
     // Запасной судья сценария — та же подставная модель: условия словами не выполнены, переходы — по срокам нод
     if (isJudgeCall(call)) return { text: JSON.stringify({ met: [] }) };
-    if (call.toolNames.includes("edit_lead_magnet")) return constructorReply(call);
+    if (call.toolNames.includes("edit_lead_magnet")) return constructorReply(call, constructorChanges);
     if (call.toolNames.includes(EXPERT_FINISH_TOOL)) {
       expertPrompts.push(call.system);
       return expertReply(call);
@@ -149,6 +159,8 @@ describe("runScenario на подставной модели", () => {
     // После реплик молчун молчит, пока разговор не кончится сам; чем кончится — тест ниже
     expect(stubborn!.turns).toHaveLength(5);
     expect(stubborn!.turns.at(-1)!.silence).toBe(SILENCE_TILL_END);
+    // «Ждать ответа» без срока (умолчание нового лидмагнита): молчание не делает молчуна «не завершил»
+    expect(stubborn!.passage?.status).toBe("active");
     expect(stubborn!.flow?.transitions[0]).toMatchObject({ title: "Разговор", decidedBy: "start" });
     expect(stubborn!.usage).toBeDefined();
     expect(stubborn!.chat.some((message) => message.role === "assistant")).toBe(true);
@@ -161,8 +173,9 @@ describe("runScenario на подставной модели", () => {
   });
 
   // Касания уходят доставкой сценария через наших ботов; у молчуна их за 3 дня больше пяти подряд (SDK 0.53)
-  it("молчун после разговора: касания через 15 мин и 1 ч, через 3 дня тишины — «не завершил»", async () => {
-    const run = await stubRun(scenario("yoga-silent"));
+  it("молчун после разговора: касания через 15 мин и 1 ч, при «Ждать ответа» 3 дня через 3 дня тишины — «не завершил»", async () => {
+    const run = await stubRun(scenario("yoga-silent"), {}, stubModels([], [waitForAnswerDays(3)]));
+    expect(run.settings?.flow.nudges?.giveUpAfter).toEqual({ amount: 3, unit: "d" });
     const stubborn = run.clients[1]!;
     const tail = stubborn.turns.at(-1)!;
     expect(tail.timeline?.filter((message) => message.kind === "outreach").length).toBeGreaterThan(1);

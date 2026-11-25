@@ -1,7 +1,7 @@
 import type { FlowDayInfo, FlowFirstReason } from "@ykurilov/agent-chat-flows";
 import type { LeadMagnetSettings } from "../lead-magnets";
 import { enabledMessengerHandoff } from "../messenger-handoff/setting";
-import type { SaleAnswer, SaleReason } from "./schema";
+import type { DialogOutcome, SaleAnswer, SaleReason } from "./schema";
 
 /** За сколько сообщений до предела консультант начинает видеть обратный отсчёт. */
 export const COUNTDOWN_FROM = 5;
@@ -21,12 +21,46 @@ function messagesWord(count: number): string {
  * него. У программы на несколько дней предела нет — его заменяют рамки дня.
  * `personMessageCount` — сколько сообщений человек уже прислал, включая это.
  */
-export function buildConsultantTail(input: { settings: LeadMagnetSettings; personMessageCount: number; inWebChat?: boolean }): string | null {
+export function buildConsultantTail(input: {
+  settings: LeadMagnetSettings;
+  personMessageCount: number;
+  inWebChat?: boolean;
+  /** Человек вернулся после конца разговора: вместо отсчёта до предела — строка о конце. */
+  afterEnd?: AfterEndTail | null;
+}): string | null {
   const { settings, personMessageCount } = input;
   // Считать сообщения модель сбивается, а эксперт часто пишет условие перехода счётом: число даёт приложение
   const count =
     input.inWebChat && enabledMessengerHandoff(settings) ? `Человек прислал в этом разговоре ${personMessageCount} ${messagesWord(personMessageCount)}.` : null;
-  return [count, limitLine(settings, personMessageCount)].filter(Boolean).join("\n") || null;
+  const ending = input.afterEnd ? afterEndLine(input.afterEnd) : limitLine(settings, personMessageCount);
+  return [count, ending].filter(Boolean).join("\n") || null;
+}
+
+/** Начало строки хвоста о вернувшемся после конца: по ней подставная модель проверок узнаёт новый ход после конца. */
+export const RETURNED_AFTER_END_MARK = "Человек вернулся после конца разговора";
+
+/** Как закончился разговор, в который вернулся человек. */
+export interface AfterEndTail {
+  endedAt: Date;
+  /** `term_ended` — срок программы; `completed` — итог `outcome`, без итога — предел сообщений. */
+  status: "completed" | "term_ended";
+  outcome: DialogOutcome | null;
+  /** Пояс человека для даты конца; неизвестен — Москва. */
+  timeZone: string;
+}
+
+const ENDING_LABELS: Record<DialogOutcome, string> = {
+  agreed: "человек согласился с итогом",
+  declined: "человек отказался или отложил решение",
+  left: "человек ушёл",
+};
+
+/** Строка хода после конца разговора: когда и чем он закончился. Правило для вернувшегося — в постоянной инструкции. */
+function afterEndLine(afterEnd: AfterEndTail): string {
+  const date = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric", timeZone: afterEnd.timeZone }).format(afterEnd.endedAt);
+  const ending =
+    afterEnd.status === "term_ended" ? "закончился срок программы" : afterEnd.outcome ? ENDING_LABELS[afterEnd.outcome] : "закончился предел сообщений";
+  return `${RETURNED_AFTER_END_MARK}. Разговор закончился ${date}: ${ending}.`;
 }
 
 function limitLine(settings: LeadMagnetSettings, personMessageCount: number): string | null {

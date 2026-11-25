@@ -49,6 +49,27 @@ describe("сообщение без кода без идущего разгов�
     expect(whoWritesWithoutCode({ lastPassage, lastMailingSentAt: null, lastStaffReplyAt: ago(5 * DAY), now: NOW })).toEqual({ kind: "reopen", passageId: "p1" });
   });
 
+  it("«Ждать ответа» дольше недели: брошенный разговор продолжается через сколько угодно; рассылка или ответ эксперта после него — во «Входящие»", () => {
+    const lastPassage = { id: "p1", status: "not_completed" as const, lastActivityAt: ago(200 * DAY), reopensAnyTime: true };
+    expect(whoWritesWithoutCode({ lastPassage, lastMailingSentAt: null, lastStaffReplyAt: null, now: NOW })).toEqual({ kind: "reopen", passageId: "p1", anyTime: true });
+    expect(whoWritesWithoutCode({ lastPassage, lastMailingSentAt: ago(DAY), lastStaffReplyAt: null, now: NOW })).toEqual({ kind: "inbox" });
+    expect(whoWritesWithoutCode({ lastPassage, lastMailingSentAt: null, lastStaffReplyAt: ago(DAY), now: NOW })).toEqual({ kind: "inbox" });
+  });
+
+  it("«Агент продолжит разговор»: завершил или срок вышел — тот же разговор, даже через полгода", () => {
+    for (const status of ["completed", "term_ended"] as const) {
+      const lastPassage = { id: "p1", status, lastActivityAt: ago(180 * DAY), continuesAfterEnd: true };
+      expect(whoWritesWithoutCode({ lastPassage, lastMailingSentAt: null, lastStaffReplyAt: null, now: NOW })).toEqual({ kind: "continue", passageId: "p1" });
+    }
+  });
+
+  it("«Агент продолжит разговор», но после конца ушла рассылка или ответил эксперт — во «Входящие»; заблокировал — тоже", () => {
+    const lastPassage = { id: "p1", status: "completed" as const, lastActivityAt: ago(10 * DAY), continuesAfterEnd: true };
+    expect(whoWritesWithoutCode({ lastPassage, lastMailingSentAt: ago(DAY), lastStaffReplyAt: null, now: NOW })).toEqual({ kind: "inbox" });
+    expect(whoWritesWithoutCode({ lastPassage, lastMailingSentAt: null, lastStaffReplyAt: ago(DAY), now: NOW })).toEqual({ kind: "inbox" });
+    expect(whoWritesWithoutCode({ lastPassage: { ...lastPassage, status: "blocked" }, lastMailingSentAt: null, lastStaffReplyAt: null, now: NOW })).toEqual({ kind: "inbox" });
+  });
+
   it("завершил, срок вышел, заблокировал — во «Входящие», даже если недавно", () => {
     for (const status of ["completed", "term_ended", "blocked"] as const) {
       const lastPassage = { id: "p1", status, lastActivityAt: ago(DAY) };

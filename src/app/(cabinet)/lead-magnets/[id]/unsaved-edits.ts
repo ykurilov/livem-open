@@ -11,11 +11,22 @@ export function combineUnsavedEdits(
   board: AgentFlow,
 ): { settings: LeadMagnetSettings; flow: AgentFlow } {
   const commonEdited = settings.flow.common !== saved.flow.common;
-  return { settings, flow: commonEdited ? { ...board, common: settings.flow.common } : board };
+  const nudgesEdited = !same(settings.flow.nudges, saved.flow.nudges);
+  return {
+    settings,
+    flow: {
+      ...board,
+      ...(commonEdited && { common: settings.flow.common }),
+      ...(nudgesEdited && settings.flow.nudges && { nudges: settings.flow.nudges }),
+    },
+  };
 }
 
-/** Поле формы «Настроек»; `common` — основная инструкция, она хранится в сценарии. */
-export type SettingsEditKey = Exclude<keyof LeadMagnetSettings, "flow"> | "common";
+/**
+ * Поле формы «Настроек»; `common` — основная инструкция, `nudges` — «Напоминать» и «Ждать ответа»: они хранятся в
+ * сценарии.
+ */
+export type SettingsEditKey = Exclude<keyof LeadMagnetSettings, "flow"> | "common" | "nudges";
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -40,6 +51,7 @@ export function rebaseSettingsEdit(
   for (const key of keys) {
     if (key !== "flow") settings[key] = pick(key, base[key], edited[key], latest[key]);
   }
-  settings.flow = { ...latest.flow, common: pick("common", base.flow.common, edited.flow.common, latest.flow.common) };
+  const nudges = pick("nudges", base.flow.nudges, edited.flow.nudges, latest.flow.nudges);
+  settings.flow = { ...latest.flow, common: pick("common", base.flow.common, edited.flow.common, latest.flow.common), ...(nudges && { nudges }) };
   return { settings: settings as LeadMagnetSettings, conflicts };
 }

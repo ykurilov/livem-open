@@ -37,7 +37,10 @@ export const STAFF_SILENCE_HOURS = 2;
 /** Фраза жёсткой рамки дня: уходит без модели, один раз за день. */
 export const HARD_DAY_FRAME_TEXT = "Утром отвечу!";
 
-/** Напоминания бросившим у лидмагнита без программы: 15 минут, час, потом утром и вечером; 3 дня тишины — «не завершил». */
+/**
+ * Напоминания бросившим у лидмагнита без программы прежнего вида: 15 минут, час, потом утром и вечером; 3 дня тишины —
+ * «не завершил». Так строятся сценарии из старых настроек: их поведение не меняется.
+ */
 export const CONVERSATION_NUDGES: FlowNudges = {
   afterSilence: [
     { amount: 15, unit: "min" },
@@ -45,6 +48,13 @@ export const CONVERSATION_NUDGES: FlowNudges = {
   ],
   dailyAt: ["10:00", "19:00"],
   giveUpAfter: { amount: 3, unit: "d" },
+};
+
+/** Касания нового лидмагнита: те же, но «Напоминать» 3 дня, а «Ждать ответа» без срока — разговор молчанием не закрывается. */
+export const NEW_CONVERSATION_NUDGES: FlowNudges = {
+  afterSilence: CONVERSATION_NUDGES.afterSilence,
+  dailyAt: CONVERSATION_NUDGES.dailyAt,
+  stopAfter: { amount: 3, unit: "d" },
 };
 
 /** Общие касания программы: после утреннего — через 3 ч и ещё через 3 ч. Частые касания дня 1 — у нод первого дня. */

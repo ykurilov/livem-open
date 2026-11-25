@@ -189,9 +189,11 @@ function ConstructorComposer(props: ComponentProps<ChatSkin["Composer"]>) {
 
 /**
  * Консультант завершил тестовый разговор: писать дальше — после «Продолжить разговор»; своя реплика правится и так.
- * `null` — разговор идёт.
+ * У «Агент продолжит разговор» поле ввода открыто: эксперт пишет как вернувшийся клиент. `null` — разговор идёт.
  */
 interface PreviewEnd {
+  /** «Если человек вернулся после конца» — «Агент продолжит разговор». */
+  continues: boolean;
   reopen(): void;
   reopening: boolean;
   /** «Продолжить разговор» не вышло: почему и что делать. */
@@ -216,7 +218,7 @@ function PreviewComposer(props: ComponentProps<ChatSkin["Composer"]>) {
   const end = useContext(PreviewEnd);
   const clock = useContext(PreviewClock);
   // Пустое поле с недоступной стрелкой обещает ввод, которого нет: вместо него — плашка конца с одним действием
-  if (end)
+  if (end && !end.continues)
     return (
       <div
         role="status"
@@ -244,7 +246,7 @@ function PreviewComposer(props: ComponentProps<ChatSkin["Composer"]>) {
         ) : null}
       </div>
     );
-  return (
+  const composer = (
     <oduvanchikSkin.Composer
       {...props}
       modelChoice={undefined}
@@ -257,6 +259,15 @@ function PreviewComposer(props: ComponentProps<ChatSkin["Composer"]>) {
         </div>
       }
     />
+  );
+  if (!end) return composer;
+  return (
+    <div className="flex flex-col gap-2">
+      <p role="status" className="px-1 text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">
+        Диалог завершён. Напишите как вернувшийся клиент — агент продолжит разговор. Промотайте время, чтобы проверить долгую паузу.
+      </p>
+      {composer}
+    </div>
   );
 }
 
@@ -610,7 +621,7 @@ export function Editor({
     });
   // Плашка конца — и в «Разговоре», и в тестовом чате доски: это один разговор
   const previewEnd = (chatId: string): PreviewEnd | null =>
-    preview.finished && chatId === preview.chatId ? { reopen, reopening, error: reopenError } : null;
+    preview.finished && chatId === preview.chatId ? { continues: draft.returnAfterProgram === "continue", reopen, reopening, error: reopenError } : null;
 
   // Лента «Разговора» перечитывается без пересоздания чата (недописанная реплика остаётся в поле): на новом дне и при
   // возврате на вкладку — тот же разговор мог идти в тестовом чате доски

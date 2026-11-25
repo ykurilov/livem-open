@@ -23,6 +23,7 @@ import { enabledMessengerHandoff } from "../messenger-handoff/setting";
 import { createMessengerHandoffTool, IN_WEB_CHAT, type MessengerHandoffPort } from "../messenger-handoff/tool";
 import { enabledCallBooking } from "../booking/setting";
 import { createCallBookingTools, type CallBookingPort } from "../booking/tool";
+import { createExpertHandoverTool, type ExpertHandoverPort } from "./expert-handover";
 
 /** Общие на процесс: настройки пересоздаются каждый ход, а помнить показанный ролик и картинку надо весь ответ. */
 const limitVideosPerReply = oneVideoPerReply();
@@ -51,6 +52,8 @@ export function consultantAgentSettings(input: {
   messengerHandoff?: MessengerHandoffPort;
   /** Запись на созвон; нужна, только если она включена в настройках. */
   callBooking?: CallBookingPort;
+  /** Передача вопроса вернувшегося человека эксперту; инструмент — только у версии с «Агент продолжит разговор». */
+  expertHandover?: ExpertHandoverPort;
 }): AgentSettings {
   const personLink = viewsLinks(input.settings) ? (input.personLink ?? null) : null;
   const appDomains = appDomainsIn(leadMagnetKnownTexts(input.settings));
@@ -60,6 +63,7 @@ export function consultantAgentSettings(input: {
   const handoff = handoffSetting && input.messengerHandoff ? { setting: handoffSetting, port: input.messengerHandoff } : null;
   const callSetting = enabledCallBooking(input.settings);
   const callBooking = callSetting && input.callBooking ? { setting: callSetting, port: input.callBooking } : null;
+  const expertHandover = input.settings.returnAfterProgram === "continue" ? (input.expertHandover ?? null) : null;
   return {
     instructions: buildConsultantInstruction(input.settings, input.knowledge),
     tools: (model) =>
@@ -77,6 +81,7 @@ export function consultantAgentSettings(input: {
           ...(personLink && personLink(model, { appDomains })),
           ...(handoff && model.viewer?.[IN_WEB_CHAT] === true && createMessengerHandoffTool(handoff.setting, () => handoff.port.offer({ ownerId: model.ownerId, chatId: model.chatId }))),
           ...(callBooking && createCallBookingTools(callBooking.setting, callBooking.port, { ownerId: model.ownerId, chatId: model.chatId })),
+          ...(expertHandover && createExpertHandoverTool(expertHandover, { ownerId: model.ownerId, chatId: model.chatId })),
         },
         model.chatId,
       ),

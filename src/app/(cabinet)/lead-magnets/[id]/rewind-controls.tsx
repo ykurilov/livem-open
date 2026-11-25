@@ -10,6 +10,9 @@ const QUICK_STEPS = [
   { label: "+15 мин", ms: 15 * 60_000 },
   { label: "+1 ч", ms: 60 * 60_000 },
   { label: "+3 ч", ms: 3 * 60 * 60_000 },
+  { label: "+1 день", ms: 24 * 60 * 60_000 },
+  { label: "+1 неделя", ms: 7 * 24 * 60 * 60_000 },
+  { label: "+1 месяц", ms: 30 * 24 * 60 * 60_000 },
 ];
 
 export interface RewindControlsProps {
@@ -56,7 +59,7 @@ export function RewindControls({ onRewind, onNextReminder, onNextDay, disabled }
       <form onSubmit={submit} className="flex min-w-0 flex-wrap items-center gap-2">
         <Input
           aria-label="Промотать на своё время"
-          placeholder="1 ч 30 мин, 2 дня"
+          placeholder="1 ч 30 мин, 2 дня, 3 месяца"
           value={text}
           autoFocus
           disabled={disabled}

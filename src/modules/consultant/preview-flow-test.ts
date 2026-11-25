@@ -11,7 +11,7 @@ import { MAX_REWIND_MS, MIN_REWIND_MS } from "./rewind-duration";
 
 /** Перемотка часов тестового чата за один раз: целые миллисекунды от минуты до тридцати суток. */
 const isRewindMs = (ms: unknown): ms is number => typeof ms === "number" && Number.isInteger(ms) && ms >= MIN_REWIND_MS && ms <= MAX_REWIND_MS;
-const BAD_REWIND = "Укажите, на сколько промотать: от минуты до 30 суток";
+const BAD_REWIND = "Укажите, на сколько промотать: от минуты до года";
 
 /** Отказ, который эксперту надо показать словами: часы не двигаются. */
 export class PreviewRefusal extends Error {}
@@ -93,8 +93,11 @@ export function createFlowTestRoutes(options: FlowTestRoutesOptions): FlowTestRo
     return result;
   }
 
-  /** Тестовый разговор, у которого можно двигать часы: начат, не завершён, за сценарием (не писал — закрепляется сейчас). */
-  async function movableTestChat(lead: LeadMagnet, timeZone?: string) {
+  /**
+   * Тестовый разговор, у которого можно двигать часы: начат, за сценарием (не писал — закрепляется сейчас), не завершён.
+   * `afterEnd` — завершённый тоже, если агент продолжает разговор с вернувшимся: эксперт проверяет возврат через месяцы.
+   */
+  async function movableTestChat(lead: LeadMagnet, timeZone?: string, afterEnd = false) {
     const state = lead.previewChatId ? await readPreviewConversation(db, lead.previewChatId) : null;
     if (!state) throw new PreviewRefusal("Тестовый разговор не начат");
     const ownerId = await options.ownerOf(state.chatId);
@@ -104,7 +107,9 @@ export function createFlowTestRoutes(options: FlowTestRoutesOptions): FlowTestRo
     await moveTestChatToDraft(flow, { leadMagnetId: lead.id, chatId: state.chatId, draftVersionId: lead.draftVersionId, draftFlow: lead.draft.flow })
       .catch((error: unknown) => console.error(`Тестовый чат ${state.chatId} не переведён на черновик:`, error instanceof Error ? error.message : error));
     const run = await flow.readRun(ownerId, state.chatId);
-    if (state.finishedAt || run?.endedAt !== undefined) throw new PreviewRefusal("Тестовый разговор завершён: начните проверку заново");
+    const ended = Boolean(state.finishedAt) || run?.endedAt !== undefined;
+    if (ended && !(afterEnd && lead.draft.returnAfterProgram === "continue"))
+      throw new PreviewRefusal("Тестовый разговор завершён: начните проверку заново");
     return { ownerId, chatId: state.chatId, run };
   }
 
@@ -117,7 +122,7 @@ export function createFlowTestRoutes(options: FlowTestRoutesOptions): FlowTestRo
 
   async function advanceBy(lead: LeadMagnet, ms: number, timeZone?: string): Promise<number> {
     if (!isRewindMs(ms)) throw new PreviewRefusal(BAD_REWIND);
-    const { ownerId, chatId } = await movableTestChat(lead, timeZone);
+    const { ownerId, chatId } = await movableTestChat(lead, timeZone, true);
     return (await oneRewindAtATime(() => flow.advanceTestClock({ ownerId, chatId, ms }))).timeOffset;
   }
 

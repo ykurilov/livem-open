@@ -34,7 +34,7 @@ test("ссылка с меткой открывает веб-чат: разго�
   const image = await createImage(db, { title: `Кнопка ${tag}`, description: `Где нажать: ${E2E_SCRIPT.imageQuery} слева, ${tag}.` }, { bytes: SCREENSHOT });
   const leadName = `Веб-чат ${tag}`;
   const lead = await createLeadMagnet(db, { name: leadName });
-  await saveDraft(db, lead.id, { ...lead.draft, instruction: "Ты консультант.", firstMessage: E2E_SCRIPT.firstMessage, imageIds: [image.id] }, "manual");
+  await saveDraft(db, lead.id, { ...lead.draft, instruction: "Ты консультант.", firstMessage: E2E_SCRIPT.firstMessage, imageIds: [image.id], returnAfterProgram: "inbox" }, "manual");
   // Без мессенджера лидмагнит не публикуется: свой тестовый бот Telegram
   const token = `fake-webchat${tag}`;
   const [bot] = await db

@@ -31,13 +31,32 @@ describe("проверка настроек лидмагнита", () => {
     expect(validateLeadMagnetSettings(saved).voiceInput).toBe(false);
   });
 
-  it("«Если человек вернулся после конца программы» по умолчанию — «Входящие»; настройки, записанные до поля, — тоже", () => {
+  it("«Если человек вернулся после конца» у нового — «Агент продолжит разговор»; настройки, записанные до поля, — «Входящие»", () => {
     const settings = newLeadMagnetSettings("Разбор");
-    expect(settings.returnAfterProgram).toBe("inbox");
+    expect(settings.returnAfterProgram).toBe("continue");
     expect(validateLeadMagnetSettings({ ...settings, returnAfterProgram: "restart" }).returnAfterProgram).toBe("restart");
     const { returnAfterProgram: _skipped, ...saved } = settings;
     expect(validateLeadMagnetSettings(saved).returnAfterProgram).toBe("inbox");
     expect(() => validateLeadMagnetSettings({ ...settings, returnAfterProgram: "anything" })).toThrow();
+  });
+
+  it("сценарий после конца отвечает только при «Агент продолжит разговор», иначе молчит — что бы ни стояло в сценарии", () => {
+    const settings = newLeadMagnetSettings("Разбор");
+    expect(settings.flow.afterEnd).toBe("reply");
+    expect(validateLeadMagnetSettings(settings).flow.afterEnd).toBe("reply");
+    for (const mode of ["inbox", "restart"] as const)
+      expect(validateLeadMagnetSettings({ ...settings, returnAfterProgram: mode }).flow.afterEnd).toBe("silent");
+    const silent = { ...settings, flow: { ...settings.flow, afterEnd: "silent" as const } };
+    expect(validateLeadMagnetSettings(silent).flow.afterEnd).toBe("reply");
+  });
+
+  it("«Как вести вернувшихся» — пусто по умолчанию и у записанных до поля; длинное не проходит", () => {
+    const settings = newLeadMagnetSettings("Разбор");
+    expect(settings.returnGuidance).toBe("");
+    expect(validateLeadMagnetSettings({ ...settings, returnGuidance: "Спроси, как дела с проектом" }).returnGuidance).toBe("Спроси, как дела с проектом");
+    const { returnGuidance: _skipped, ...saved } = settings;
+    expect(validateLeadMagnetSettings(saved).returnGuidance).toBe("");
+    expect(() => validateLeadMagnetSettings({ ...settings, returnGuidance: "а".repeat(1501) })).toThrow(/вернувшихся/);
   });
 
   it("«Описание клиентов» сохраняется; настройки, записанные до поля, читаются с пустым описанием", () => {
@@ -231,12 +250,14 @@ describe("программа на несколько дней", () => {
 });
 
 describe("сценарий лидмагнита (поле flow)", () => {
-  it("новый лидмагнит сразу со сценарием: одна нода «Разговор», напоминания бросившим, после конца — молчать", () => {
+  it("новый лидмагнит сразу со сценарием: одна нода «Разговор», напоминания бросившим, после конца — отвечать", () => {
     const { flow } = newLeadMagnetSettings("Разбор");
     expect(flow.name).toBe("Разбор");
     expect(flow.states.map((state) => state.title)).toEqual(["Разговор", "Итог"]);
-    expect(flow.nudges?.giveUpAfter).toEqual({ amount: 3, unit: "d" });
-    expect(flow.afterEnd).toBe("silent");
+    // «Напоминать» 3 дня, «Ждать ответа» без срока: разговор не закрывается молчанием
+    expect(flow.nudges?.stopAfter).toEqual({ amount: 3, unit: "d" });
+    expect(flow.nudges?.giveUpAfter).toBeUndefined();
+    expect(flow.afterEnd).toBe("reply");
     expect(validateLeadMagnetSettings(newLeadMagnetSettings("Разбор")).flow).toEqual(flow);
   });
 
@@ -258,7 +279,6 @@ describe("сценарий лидмагнита (поле flow)", () => {
     const base = newLeadMagnetSettings("Разбор");
     const json = JSON.parse(JSON.stringify(base.flow));
     json.states[0].exits[0].when = { type: "judge" };
-    json.afterEnd = "reply";
     let error: unknown;
     try {
       validateLeadMagnetSettings({ ...base, flow: json });
@@ -269,9 +289,6 @@ describe("сценарий лидмагнита (поле flow)", () => {
     const issues = (error as InvalidLeadMagnetSettingsError).issues;
     expect(issues).toEqual([{ path: "flow.states[0].exits[0].when.text", message: expect.any(String) }]);
     expect((error as Error).message).toMatch(/«flow\.states\[0\]\.exits\[0\]\.when\.text»/);
-
-    json.states[0].exits[0].when = { type: "event", event: "tool", name: "finish_dialog" };
-    expect(() => validateLeadMagnetSettings({ ...base, flow: json })).toThrow(/«flow\.afterEnd»: .*молч/);
   });
 
   it("наши проверки сценария тоже работают при сохранении: «Продажа» без sale_answer", () => {

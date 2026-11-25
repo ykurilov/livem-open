@@ -104,7 +104,9 @@ describe("create", () => {
       maxPersonMessages: 40,
     });
     expect(lead.draft.flow.states.map((state) => state.id)).toEqual(["intro", "offer", "final"]);
-    expect(lead.draft.flow).toMatchObject({ start: "intro", common: input.instruction, afterEnd: "silent" });
+    // Новый лидмагнит: «Агент продолжит разговор», сценарий отвечает вернувшемуся после конца
+    expect(lead.draft.returnAfterProgram).toBe("continue");
+    expect(lead.draft.flow).toMatchObject({ start: "intro", common: input.instruction, afterEnd: "reply" });
     // Старые поля повторяют сценарий: их ещё читает движок хода до переноса
     expect(lead.draft.instruction).toBe(input.instruction);
     const versions = await listVersions(database.db, json.id);

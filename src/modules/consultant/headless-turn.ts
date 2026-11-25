@@ -40,6 +40,7 @@ import { consultantStepContext } from "./step-context";
 import { nameUsedRecently, profileNameForTail } from "./profile-name";
 import { botSendsNoPhotos } from "./bot-photos";
 import type { FirstMessageWriter } from "../purchases/reactions";
+import type { ExpertHandoverPort } from "./expert-handover";
 
 /** Имя служебного сообщения события приложения для модели и «Лога». */
 export const APP_EVENT_NOTICE = "app_event";
@@ -56,6 +57,8 @@ export interface HeadlessConsultantOptions {
   messengerHandoff?: MessengerHandoffPort;
   /** Запись на созвон (инструменты `call_free_times`, `book_call`, `change_call`); нет — инструментов нет. */
   callBooking?: CallBookingPort;
+  /** Передача вопроса вернувшегося человека эксперту (`hand_to_expert`); нет — инструмента нет. */
+  expertHandover?: ExpertHandoverPort;
   /** Картинки чатов работника: фото клиента. Служба версии получает их, только если лидмагнит их принимает (`clientImages`). */
   attachments?: Attachments;
   /** Модель консультанта по настройкам снимка. */
@@ -332,6 +335,7 @@ export function createHeadlessConsultant(options: HeadlessConsultantOptions): He
             knowledge,
             ...(options.messengerHandoff && { messengerHandoff: options.messengerHandoff }),
             ...(options.callBooking && { callBooking: options.callBooking }),
+            ...(options.expertHandover && { expertHandover: options.expertHandover }),
           }),
         }),
       );

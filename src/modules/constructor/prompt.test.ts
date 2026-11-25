@@ -23,7 +23,7 @@ describe("контракт инструкции конструктора", () =>
   });
 
   it("сохраняет границы инструментов консультанта и коротких ссылок", () => {
-    for (const text of ["set_text_link", "{text}", "{type}", "1200 знаков", "text_link", "sale_answer", "set_messenger_handoff", "set_call_booking", "call_booked"])
+    for (const text of ["set_text_link", "{text}", "{type}", "1200 знаков", "text_link", "sale_answer", "set_messenger_handoff", "set_call_booking", "call_booked", "set_return", "remindDays", "waitDays"])
       expect(prompt).toContain(text);
     expect(prompt).toMatch(/отправка файлов[^\n]*нет/);
     expect(prompt).toMatch(/Публикует лидмагнит[^\n]*только эксперт/);

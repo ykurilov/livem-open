@@ -55,6 +55,15 @@ describe("заметки о ручной правке", () => {
     expect(notes).toContain("glm-5.3-flash");
   });
 
+  it("«Если человек вернулся после конца» и «Как вести вернувшихся» — словами формы", () => {
+    const from = { ...before, returnAfterProgram: "inbox" as const, returnGuidance: "" };
+    const notes = describeManualEdits(from, { ...from, returnAfterProgram: "continue", returnGuidance: "Спроси про проект" }, new Map());
+    expect(notes).toEqual([
+      "Если человек вернулся после конца: было «Передать мне во «Входящие»» → стало «Агент продолжит разговор»",
+      "Как вести вернувшихся: было «» → стало «Спроси про проект»",
+    ]);
+  });
+
   it("основная инструкция — это «Общее» сценария", () => {
     const after = withFlow(before, { ...before.flow, common: "Ты помощник Анны." });
     expect(describeManualEdits(withFlow(before, { ...before.flow, common: "Ты консультант." }), after, new Map())).toEqual([

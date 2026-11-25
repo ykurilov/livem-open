@@ -1,6 +1,7 @@
 import type { ModelCatalog } from "@ykurilov/agent-chat-core";
 import { createStubModelCatalog } from "./models-catalog";
 import { OUTREACH_REQUEST_TEXT } from "../consultant/outreach-request";
+import { RETURNED_AFTER_END_MARK } from "../consultant/tail";
 import { HANDOFF_NOTICE_MARK } from "../messenger-handoff/notice";
 import { E2E_SCRIPT } from "./e2e-script";
 import { createScriptedModel, type ScriptedCall, type ScriptedReply } from "./scripted-model";
@@ -79,6 +80,8 @@ function consultantReply(call: ScriptedCall): ScriptedReply {
     return call.lastToolResult === undefined ? { toolCalls: [{ toolName: "offer_messenger", input: {} }] } : { text: E2E_SCRIPT.handoffReply };
   if (call.lastUserText.toLowerCase().includes(E2E_SCRIPT.callTrigger) && call.toolNames.includes("book_call")) return callBookingReply(call);
   if (call.lastUserText.includes(HANDOFF_NOTICE_MARK)) return { text: E2E_SCRIPT.handoffContinuation };
+  // После конца история кончается результатом `finish_dialog`: новое сообщение вернувшегося — не шаг после инструмента
+  if (call.lastUserText.includes(RETURNED_AFTER_END_MARK)) return { text: E2E_SCRIPT.consultantReply };
   const finishing = call.lastUserText.toLowerCase().includes(E2E_SCRIPT.finishTrigger);
   if (call.lastToolResult !== undefined) return {};
   if (call.lastUserText.includes(OUTREACH_REQUEST_TEXT) || call.lastUserText.includes(FLOW_FIRST_MESSAGE_MARK)) return { text: E2E_SCRIPT.morningReply };

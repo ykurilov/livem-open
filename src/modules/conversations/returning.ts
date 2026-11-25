@@ -1,26 +1,46 @@
 import { and, desc, eq, inArray, isNotNull, max, sql, type SQL } from "drizzle-orm";
 import { outboundMessages } from "../channels/schema";
+import { leadMagnetVersions } from "../lead-magnets/schema";
+import { CONTINUABLE_END_STATUSES, snapshotContinues } from "./after-end";
 import type { DatabaseExecutor } from "../platform/db";
 import { passages, type PassageStatus } from "./schema";
 import { afterStartOver } from "./start-over";
 
-/** Брошенный разговор продолжается, если с последнего сообщения в нём прошло меньше недели. */
+/** Брошенный разговор прежнего вида (без «Напоминать») продолжается, если с последнего сообщения в нём прошло меньше недели. */
 export const REOPEN_WINDOW_MS = 7 * 24 * 60 * 60_000;
+
+/**
+ * Снимок нового вида — с «Напоминать» (`nudges.stopAfter`): брошенный разговор открывается снова через сколько угодно.
+ * У прежних снимков — неделя, как было.
+ */
+export function snapshotReopensAnyTime(settings: { flow?: unknown } | null | undefined): boolean {
+  const flow = settings?.flow as { nudges?: { stopAfter?: unknown } } | null | undefined;
+  return Boolean(flow?.nudges?.stopAfter);
+}
 
 export interface LastPassage {
   id: string;
   status: PassageStatus;
   /** Последнее сообщение в разговоре — человека или бота. */
   lastActivityAt: Date;
+  /** Снимок разговора велит агенту продолжить его после конца («Агент продолжит разговор»). */
+  continuesAfterEnd?: boolean;
+  /** Брошенный разговор открывается снова без предела в неделю (`snapshotReopensAnyTime`). */
+  reopensAnyTime?: boolean;
 }
 
 /**
  * Кто пишет без кода, когда идущего разговора нет. Новичок (у бота с ним не было ни разговора, ни рассылки, и эксперт
  * ему из «Входящих» не отвечал) — режим
  * бота «без кода». Брошенный меньше недели назад разговор, после которого не было ни рассылки, ни ответа эксперта, — тот
- * же разговор. Остальные — «Входящие».
+ * же разговор. Разговор, законченный согласием или сроком, у снимка которого «Агент продолжит разговор», и после него не
+ * было ни рассылки, ни ответа эксперта, — продолжается без ограничения по давности. Остальные — «Входящие».
  */
-export type WithoutCodeWriter = { kind: "newcomer" } | { kind: "reopen"; passageId: string } | { kind: "inbox" };
+export type WithoutCodeWriter =
+  | { kind: "newcomer" }
+  | { kind: "reopen"; passageId: string; anyTime?: true }
+  | { kind: "continue"; passageId: string }
+  | { kind: "inbox" };
 
 export function whoWritesWithoutCode(input: {
   lastPassage: LastPassage | null;
@@ -34,10 +54,12 @@ export function whoWritesWithoutCode(input: {
 }): WithoutCodeWriter {
   const { lastPassage, lastMailingSentAt, lastStaffReplyAt, now } = input;
   if (!lastPassage) return lastMailingSentAt || lastStaffReplyAt ? { kind: "inbox" } : { kind: "newcomer" };
-  const recent = now.getTime() - lastPassage.lastActivityAt.getTime() < REOPEN_WINDOW_MS;
+  const recent = lastPassage.reopensAnyTime || now.getTime() - lastPassage.lastActivityAt.getTime() < REOPEN_WINDOW_MS;
   const after = (at: Date | null) => at !== null && at > lastPassage.lastActivityAt;
   if (lastPassage.status === "not_completed" && recent && !after(lastMailingSentAt) && !after(lastStaffReplyAt))
-    return { kind: "reopen", passageId: lastPassage.id };
+    return { kind: "reopen", passageId: lastPassage.id, ...(lastPassage.reopensAnyTime && { anyTime: true as const }) };
+  if (lastPassage.continuesAfterEnd && CONTINUABLE_END_STATUSES.includes(lastPassage.status) && !after(lastMailingSentAt) && !after(lastStaffReplyAt))
+    return { kind: "continue", passageId: lastPassage.id };
   return { kind: "inbox" };
 }
 
@@ -51,8 +73,15 @@ export async function loadWithoutCodeHistory(
   resetAt: Date | null = null,
 ): Promise<{ lastPassage: LastPassage | null; lastMailingSentAt: Date | null; lastStaffReplyAt: Date | null }> {
   const [passage] = await tx
-    .select({ id: passages.id, status: passages.status, startedAt: passages.startedAt, lastPersonMessageAt: passages.lastPersonMessageAt })
+    .select({
+      id: passages.id,
+      status: passages.status,
+      startedAt: passages.startedAt,
+      lastPersonMessageAt: passages.lastPersonMessageAt,
+      settings: leadMagnetVersions.settings,
+    })
     .from(passages)
+    .innerJoin(leadMagnetVersions, eq(leadMagnetVersions.id, passages.snapshotId))
     .where(afterStartOver(passages.startedAt, resetAt, eq(passages.personId, personId)))
     .orderBy(desc(passages.startedAt))
     .limit(1);
@@ -88,7 +117,13 @@ export async function loadWithoutCodeHistory(
   // Время начала пишет база, а не часы приложения: оно — только если в разговоре не было ни одного сообщения
   const lastActivityAt = moments.length > 0 ? new Date(Math.max(...moments.map((at) => at.getTime()))) : passage.startedAt;
   return {
-    lastPassage: { id: passage.id, status: passage.status, lastActivityAt },
+    lastPassage: {
+      id: passage.id,
+      status: passage.status,
+      lastActivityAt,
+      continuesAfterEnd: snapshotContinues(passage.settings),
+      reopensAnyTime: snapshotReopensAnyTime(passage.settings),
+    },
     lastMailingSentAt,
     lastStaffReplyAt,
   };

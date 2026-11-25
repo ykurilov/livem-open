@@ -10,6 +10,7 @@ import type { Pool } from "pg";
 import { createFlowLog } from "../flows/flow-log";
 import { moveTestChatToDraft } from "../flows/chat-migration";
 import { cacheMissLog } from "./cache-miss-log";
+import { previewExpertHandover } from "./expert-handover";
 import { agentFlowOf, createLeadMagnetFlow, loadLeadMagnetFlow, type LeadMagnetFlow } from "../flows/runtime";
 import { findLeadMagnetByPreviewChat, getLeadMagnet, setPreviewChat, type LeadMagnetSettings } from "../lead-magnets";
 import { CABINET_OWNER_ID, previewOwnerId } from "../platform/cabinet-owner";
@@ -32,7 +33,8 @@ import { lastReplyParts, singleReplyStorage } from "./single-reply";
 import type { Attachments } from "@ykurilov/agent-chat-attachments";
 import { suggestClientReply } from "./autoreply";
 import { withDirectModel } from "../platform/direct-model";
-import { buildConsultantTail } from "./tail";
+import { AGENT_TIME_ZONE } from "../platform/models-catalog";
+import { buildConsultantTail, type AfterEndTail } from "./tail";
 import { personLinkFromEnv } from "./person-link";
 import { APP_EVENT_NOTICE } from "./headless-turn";
 import { CHANNEL_LABELS } from "../channels/channel";
@@ -171,6 +173,16 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
   const tails = createTurnTails();
   /** Владелец тестового чата: свой у каждого (`previewOwnerId`), у начатых раньше — общий владелец кабинета. */
   const ownerOf = async (chatId: string) => (await chatStorage.getChat(chatId))?.ownerId ?? previewOwnerId(chatId);
+  /** Как закончился тестовый разговор, в который эксперт пишет как вернувшийся: время конца — по часам тестового чата. */
+  const previewAfterEnd = async (chatId: string, state: PreviewConversation): Promise<AfterEndTail> => {
+    const run = await flow.readRun(await ownerOf(chatId), chatId);
+    return {
+      endedAt: run?.endedAt !== undefined ? new Date(run.endedAt) : (state.finishedAt ?? new Date()),
+      status: "completed",
+      outcome: state.summary?.outcome ?? null,
+      timeZone: AGENT_TIME_ZONE,
+    };
+  };
   // Запрос к чату идёт от владельца этого чата; без чата (меню моделей) — от кабинета
   const resolveUser = async (request: Request) => {
     if (!(await options.resolveUser(request))) return null;
@@ -288,6 +300,7 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
                 knowledge,
                 messengerHandoff: previewMessengerHandoff(settings),
                 callBooking: previewCallBooking(settings),
+                expertHandover: previewExpertHandover(db),
               }),
               // Инструкции правят на ходу: модель видит только текущую карточку шага, прошлые ответы — без старых правил
               contextBlocksHistory: { latest: ["flow:state", SALES_CARDS_BLOCK_KEY] },
@@ -532,7 +545,9 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
       // Снимка нет (разговор начат до снимков) — откат только того, что лежит в ветке сообщений
       const answerId = rewinding ? rewoundAnswerId(branch, body) : null;
       const restored = answerId ? await rewind.restore(chatId, answerId) : null;
-      if (state?.finishedAt) {
+      // «Агент продолжит разговор»: эксперт пишет после конца как вернувшийся клиент — ход после конца, как в живом чате
+      const afterEnd = state?.finishedAt && !rewinding && lead.draft.returnAfterProgram === "continue" ? await previewAfterEnd(chatId, state) : null;
+      if (state?.finishedAt && !afterEnd) {
         // Правка своей реплики или «Переделать» уводят разговор на ветку до конца: он снова идёт
         if (rewinding) {
           try {
@@ -579,6 +594,7 @@ export function createPreviewEndpoint(options: PreviewEndpointOptions): PreviewE
           settings: lead.draft,
           personMessageCount: personMessagesForTurn(branch, turn),
           inWebChat: !(await readPreviewConversation(db, chatId))?.messengerChannel,
+          afterEnd,
         }),
       );
       const response = await handler.fetch(request);

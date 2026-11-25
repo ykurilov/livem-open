@@ -25,3 +25,16 @@ export async function openConstructor(page: Page): Promise<Locator> {
   }).toPass({ timeout: 45_000 });
   return panel;
 }
+
+/**
+ * Открывает форму «Новый лидмагнит». Каждый прогон начинается с пустой базы, а в пустом кабинете форма уже открыта и кнопки
+ * нет: есть ли кнопка, зависит от того, успели ли соседние тесты создать лидмагнит. Клик до гидратации пропадает — повторяем.
+ */
+export async function openCreateForm(page: Page): Promise<void> {
+  const button = page.getByRole("button", { name: "Новый лидмагнит" });
+  const title = page.getByLabel("Название");
+  await expect(async () => {
+    if (await button.isVisible()) await button.click({ timeout: 2000 });
+    await expect(title).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 60_000 });
+}

@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { seal } from "../../src/auth/core/cookie-seal";
 import { E2E_SCRIPT } from "../../src/modules/platform/e2e-script";
 import { E2E_BASE_URL, E2E_COOKIE_SECRET, E2E_EMAIL } from "./e2e-env";
-import { openConstructor } from "./open-tab";
+import { openConstructor, openCreateForm } from "./open-tab";
 
 test.beforeEach(async ({ context }) => {
   const session = {
@@ -53,10 +53,7 @@ test("чаты конструктора: новый чат → написать 
   test.setTimeout(180_000);
 
   await page.goto("/");
-  // На пустой главной форма создания открыта сразу, иначе — по кнопке
-  const createButton = page.getByRole("button", { name: "Новый лидмагнит" });
-  await expect(createButton.or(page.getByLabel("Название"))).toBeVisible({ timeout: 60_000 });
-  if (await createButton.isVisible()) await createButton.click();
+  await openCreateForm(page);
   await page.getByLabel("Название").fill("Лидмагнит с несколькими чатами");
   await page.getByRole("button", { name: "Создать" }).click();
   await expect(page).toHaveURL(/\/lead-magnets\/[0-9a-f-]{36}$/, { timeout: 60_000 });

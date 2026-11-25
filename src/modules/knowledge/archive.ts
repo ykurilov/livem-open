@@ -21,6 +21,14 @@ export interface KnowledgeFile {
   bytes: Uint8Array;
 }
 
+/** Файл, уже прочитанный в текст (`readKnowledgeFile`): разбор можно сделать до транзакции записи. */
+export interface KnowledgeFileText {
+  name: string;
+  byteSize: number;
+  content: string;
+  charCount: number;
+}
+
 const NOT_FOUND = "База знаний не найдена — обновите страницу";
 
 const baseColumns = {
@@ -35,9 +43,10 @@ const baseColumns = {
 /** Имя файла без пути и расширения — название по умолчанию. */
 const titleFromFileName = (name: string) => name.replace(/^.*[\\/]/, "").replace(/\.[^.]+$/, "").trim();
 
-function fileFields(file: KnowledgeFile) {
-  const { content, charCount } = readKnowledgeFile(file);
-  return { fileName: file.name.replace(/^.*[\\/]/, ""), content, charCount, byteSize: file.bytes.byteLength };
+async function fileFields(file: KnowledgeFile | KnowledgeFileText) {
+  const { content, charCount } = "bytes" in file ? await readKnowledgeFile(file) : file;
+  const byteSize = "bytes" in file ? file.bytes.byteLength : file.byteSize;
+  return { fileName: file.name.replace(/^.*[\\/]/, ""), content, charCount, byteSize };
 }
 
 /**
@@ -96,8 +105,8 @@ export function knowledgeOverLimit(total: number): string | null {
     : null;
 }
 
-export async function createKnowledgeBase(db: DatabaseExecutor, input: { title: string }, file: KnowledgeFile): Promise<KnowledgeBase> {
-  const fields = fileFields(file);
+export async function createKnowledgeBase(db: DatabaseExecutor, input: { title: string }, file: KnowledgeFile | KnowledgeFileText): Promise<KnowledgeBase> {
+  const fields = await fileFields(file);
   const title = input.title.trim() || titleFromFileName(file.name) || "Без названия";
   const [created] = await db.insert(knowledgeBases).values({ title, ...fields }).returning(baseColumns);
   return created!;
@@ -126,7 +135,7 @@ export async function renameKnowledgeBase(db: DatabaseExecutor, id: string, titl
  * Не помещается в предел хоть одного из них — ошибка с его названием.
  */
 export async function replaceKnowledgeFile(db: DatabaseExecutor, id: string, file: KnowledgeFile): Promise<KnowledgeBase> {
-  const fields = fileFields(file);
+  const fields = await fileFields(file);
   const [existing] = await db.select(baseColumns).from(knowledgeBases).where(and(eq(knowledgeBases.id, id), isNull(knowledgeBases.deletedAt)));
   if (!existing) throw new InvalidKnowledgeError(NOT_FOUND);
   for (const lead of (await attachments(db)).filter((one) => one.knowledgeIds.includes(id))) {

@@ -9,6 +9,7 @@ export {
   HARD_DAY_FRAME_TEXT,
   LATE_START_HOURS,
   LEAD_MAGNET_FLOW_ID,
+  NEW_CONVERSATION_NUDGES,
   PROGRAM_DAY_START,
   PROGRAM_FIRST_MESSAGES_BY_DAY,
   PROGRAM_NUDGES,
@@ -17,6 +18,8 @@ export {
   leadMagnetToFlow,
 } from "./settings-to-flow";
 export type { LeadMagnetFlowSource } from "./settings-to-flow";
+export { REMIND_LONGER_THAN_WAIT, silenceOf, withSilence } from "./silence-settings";
+export type { SilenceSettings } from "./silence-settings";
 export { EARLIEST_DAY_START, PROGRAM_MAX_DAYS, PROGRAM_MIN_DAYS, leadMagnetFlowChecks } from "./app-checks";
 export { endExitIssues, withFinishDialogEnds } from "./end-exits";
 export { withCurrentFlowRules, withProgramDaySale, withProgramDayTimers } from "./program-day";

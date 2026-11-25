@@ -3,6 +3,7 @@ import { LEAD_MAGNET_TOOLS } from "./catalog";
 import { endExitIssues } from "./end-exits";
 import { PROGRAM_MAX_DAYS, PROGRAM_MIN_DAYS } from "./program-day-events";
 import { SALE_TAG } from "./settings-to-flow";
+import { REMIND_LONGER_THAN_WAIT } from "./silence-settings";
 
 export type { FlowAppChecks } from "@ykurilov/agent-chat-flows/format";
 
@@ -61,6 +62,7 @@ function scheduleIssues(flow: AgentFlow): FlowAppIssue[] {
 }
 
 const UNIT_MINUTES = { min: 1, h: 60, d: 24 * 60 } as const;
+const durationMinutes = (duration: { amount: number; unit: keyof typeof UNIT_MINUTES }) => duration.amount * UNIT_MINUTES[duration.unit];
 const clockMinutes = (clock: string) => Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3, 5));
 
 /** Касания одного места: `where` — начало текста ошибки («Нода», «Дни и время»), `path` — путь к касаниям. */
@@ -81,6 +83,10 @@ function nudgesIssues(nudges: FlowNudges | "off" | undefined, path: string, wher
     (daily.length > 1 && daily[0]! + 24 * 60 - daily[daily.length - 1]! < MIN_NUDGE_GAP_MINUTES);
   if (tooClose)
     issues.push({ path: `${path}.dailyAt`, message: `${where}: касания по часам — не ближе ${MIN_NUDGE_GAP_MINUTES} минут друг к другу` });
+  // SDK считает это лишь предупреждением; эксперту такое сочетание бессмысленно — касания оборвёт «не завершил»
+  const { stopAfter, giveUpAfter } = nudges;
+  if (stopAfter && giveUpAfter && durationMinutes(stopAfter) > durationMinutes(giveUpAfter))
+    issues.push({ path: `${path}.stopAfter`, message: `${where}: ${REMIND_LONGER_THAN_WAIT}` });
   return issues;
 }
 
@@ -187,12 +193,6 @@ function timeIntoResultIssues(flow: AgentFlow): FlowAppIssue[] {
   return issues;
 }
 
-function afterEndIssues(flow: AgentFlow): FlowAppIssue[] {
-  return flow.afterEnd === "silent"
-    ? []
-    : [{ path: "afterEnd", message: "После конца разговора агент молчит (`silent`): новые сообщения идут эксперту во «Входящие»" }];
-}
-
 /**
  * Проверки лидмагнита поверх проверок SDK (plan.md, раздел 4). Одна функция для доски (`checks` у `FlowEditor`) и
  * сервера (`checkFlow(flow, catalog, { checks })`). Мягкую рамку раньше жёсткой и ночь после начала дня проверяет SDK.
@@ -203,7 +203,6 @@ export const leadMagnetFlowChecks: FlowAppChecks = (flow) => [
   ...scheduleIssues(flow),
   ...startIssues(flow),
   ...sideTaskIssues(flow),
-  ...afterEndIssues(flow),
   ...touchLimitIssues(flow),
   ...timeIntoResultIssues(flow),
 ];

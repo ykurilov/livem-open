@@ -112,11 +112,9 @@ describe("leadMagnetFlowChecks", () => {
     expect(leadMagnetFlowChecks(flow)).toEqual([{ path: "sideTasks[1].field", message: expect.stringMatching(/карточк/) }]);
   });
 
-  it("после конца разговора — только «молчать»", () => {
-    for (const afterEnd of ["reply", undefined] as const) {
-      const flow = firstAppFlow((draft) => (draft.afterEnd = afterEnd));
-      expect(leadMagnetFlowChecks(flow)).toEqual([{ path: "afterEnd", message: expect.stringMatching(/молч/) }]);
-    }
+  it("после конца разговора — любой режим: его выставляет настройка «Если человек вернулся после конца»", () => {
+    for (const afterEnd of ["reply", "silent", undefined] as const)
+      expect(leadMagnetFlowChecks(firstAppFlow((draft) => (draft.afterEnd = afterEnd)))).toEqual([]);
   });
 
   it("готовые тексты без подстановок: прощание при «срок вышел» и фраза жёсткой рамки", () => {
@@ -181,6 +179,21 @@ describe("leadMagnetFlowChecks", () => {
       draft.states[1]!.nudges = { afterSilence: Array.from({ length: 5 }, () => ({ amount: 10, unit: "min" as const })) };
     });
     expect(leadMagnetFlowChecks(fine)).toEqual([]);
+  });
+
+  it("«Напоминать» не дольше «Ждать ответа» — ошибка; равны или без срока ожидания — без находок", () => {
+    const longer = firstAppFlow((draft) => {
+      draft.nudges = { afterSilence: [], stopAfter: { amount: 5, unit: "d" }, giveUpAfter: { amount: 3, unit: "d" } };
+    });
+    expect(leadMagnetFlowChecks(longer)).toEqual([{ path: "nudges.stopAfter", message: expect.stringMatching(/«Напоминать» не может быть дольше «Ждать ответа»/) }]);
+    const equal = firstAppFlow((draft) => {
+      draft.nudges = { afterSilence: [], stopAfter: { amount: 72, unit: "h" }, giveUpAfter: { amount: 3, unit: "d" } };
+    });
+    expect(leadMagnetFlowChecks(equal)).toEqual([]);
+    const open = firstAppFlow((draft) => {
+      draft.nudges = { afterSilence: [], stopAfter: { amount: 30, unit: "d" } };
+    });
+    expect(leadMagnetFlowChecks(open)).toEqual([]);
   });
 
   it("касания по часам: не больше 2 в день (молчуну со второго дня — не больше двух) и не ближе 10 минут друг к другу", () => {

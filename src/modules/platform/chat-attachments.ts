@@ -2,8 +2,11 @@ import { resolve } from "node:path";
 import { createAttachments, createDiskAttachmentStorage, type Attachments } from "@ykurilov/agent-chat-attachments";
 import { optionalEnv } from "./env";
 
-/** Картинки, которые принимают чаты приложения: снимки экрана и фото. PDF и текстовые файлы — нет. */
+/** Картинки, которые принимают чаты приложения: снимки экрана и фото. */
 export const CHAT_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
+
+/** Чат конструктора принимает ещё PDF и текстовые файлы: они становятся базами знаний лидмагнита. */
+export const CONSTRUCTOR_FILE_TYPES = [...CHAT_IMAGE_TYPES, "application/pdf", "text/plain", "text/markdown"] as const;
 
 /**
  * Папка картинок чатов процесса. Хранилище SDK на диске рассчитано на один процесс, поэтому у сайта и у работника

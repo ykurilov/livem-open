@@ -22,6 +22,8 @@ test("тачпад: scroll перемещает, pinch масштабирует 
     ] };
     const flow = leadMagnetToFlow(settings, []);
     await saveDraft(connection.db, lead.id, { ...settings, flow }, "manual");
+    // Сохранение дописывает сценарию режим после конца по настройке лидмагнита: сравниваем с сохранённым, а не со входом
+    const saved = (await getLeadMagnet(connection.db, lead.id))!.draft.flow;
     const session = { user: { id: "e2e-expert", email: E2E_EMAIL, roles: [] }, accessToken: "e2e", refreshToken: "e2e", accessTokenExpiresAt: Date.now() + 86_400_000 };
     await context.addCookies([{ name: "auth_session", value: await seal(session, E2E_COOKIE_SECRET), url: E2E_BASE_URL }]);
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -64,7 +66,7 @@ test("тачпад: scroll перемещает, pinch масштабирует 
     }
     // Camera gestures must not become edits to the saved scenario.
     const after = (await getLeadMagnet(connection.db, lead.id))!;
-    expect(after.draft.flow).toEqual(flow);
+    expect(after.draft.flow).toEqual(saved);
     expect(after.publishedSnapshotId).toBeNull();
   } finally { await connection.close(); }
 });

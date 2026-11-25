@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { DatabaseExecutor } from "../platform/db";
 import { nextSaleAnswer } from "../program/sale-answer";
 import { previewConversations, type DialogSummary, type SaleAnswer, type SaleReason } from "./schema";
@@ -17,7 +17,8 @@ export type PreviewConversation = typeof previewConversations.$inferSelect;
 
 /** Куда инструменты консультанта пишут состояние разговора: превью — в `preview_conversations`, боевой разговор — в прохождение. */
 export interface ConversationStore {
-  finish(chatId: string, summary: DialogSummary): Promise<void>;
+  /** Записать итог. `false` — разговор уже закончен раньше: итог прежний, прощания нет. */
+  finish(chatId: string, summary: DialogSummary): Promise<boolean | void>;
   /** Ответ человека на предложение продукта; `day` — день программы, в который прозвучало предложение. */
   saleAnswer(chatId: string, answer: { reason: SaleReason; firm: boolean }, day: number): Promise<void>;
   /** Что человек ответил на предложение продукта: для строки продажи в хвосте хода. */
@@ -51,10 +52,12 @@ export function createPreviewConversationStore(db: DatabaseExecutor, shortLinks 
     purchases: previewPurchasePort(db),
     ...(shortLinks && { shortLinks }),
     async finish(chatId, summary) {
-      await db
+      const finished = await db
         .update(previewConversations)
         .set({ summary, finishedAt: sql`now()` })
-        .where(eq(previewConversations.chatId, chatId));
+        .where(and(eq(previewConversations.chatId, chatId), isNull(previewConversations.finishedAt)))
+        .returning({ chatId: previewConversations.chatId });
+      return finished.length > 0;
     },
     async saleAnswer(chatId, answer, day) {
       const state = await readPreviewConversation(db, chatId);

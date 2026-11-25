@@ -8,15 +8,19 @@ import {
   cardFromDictionary,
   clientCardFieldOf,
   completeFlowJson,
-  CONVERSATION_NUDGES,
   LEAD_MAGNET_TOOLS,
   leadMagnetFlowIssues,
+  NEW_CONVERSATION_NUDGES,
   scheduleWithDefaults,
+  silenceOf,
   withLeadMagnetFlow,
+  withSilence,
 } from "../flows";
 import {
+  afterEndFor,
   getLeadMagnet,
   InvalidLeadMagnetSettingsError,
+  RETURN_AFTER_PROGRAM_MODES,
   LeadMagnetNotFoundError,
   lockLeadMagnet,
   saveDraft,
@@ -194,6 +198,31 @@ const change = z.union([
         .describe("null — убрать"),
     })
     .describe("Запись на созвон: консультант предлагает свободное время из календаря эксперта и записывает человека"),
+  z
+    .strictObject({
+      op: z.literal("set_return"),
+      afterEnd: z
+        .enum(RETURN_AFTER_PROGRAM_MODES)
+        .optional()
+        .describe("continue — агент продолжит разговор, inbox — передать эксперту во «Входящие», restart — начать заново. Не передано — без изменений"),
+      guidance: z.string().optional().describe("«Как вести вернувшихся» словами эксперта, только для continue; пустая строка — общее правило. Не передано — без изменений"),
+      remindDays: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe("«Напоминать»: сколько дней молчания человека агент ещё пишет ему первым. Только без «Дней и времени». Не передано — без изменений"),
+      waitDays: z
+        .number()
+        .int()
+        .min(1)
+        .nullable()
+        .optional()
+        .describe(
+          "«Ждать ответа»: через сколько дней молчания разговор считается «не завершил»; null — без срока. Вернувшийся отвечает в любом случае. Не меньше «Напоминать». Только без «Дней и времени». Не передано — без изменений",
+        ),
+    })
+    .describe("Человек замолчал или написал снова после конца: сроки молчания и что делать после конца разговора или программы"),
   z.strictObject({ op: z.literal("attach_field"), fieldId: z.string() }).describe("Подключить поле словаря к карточке клиента"),
   z.strictObject({ op: z.literal("detach_field"), fieldId: z.string() }),
   z
@@ -336,7 +365,7 @@ function applyFlowChange(flow: AgentFlow, item: Change): AgentFlow {
     case "remove_schedule": {
       const { schedule: _schedule, ...rest } = flow;
       // Без «Дней и времени» напоминания бросившим идут общими касаниями сценария
-      return { ...rest, nudges: flow.nudges ?? CONVERSATION_NUDGES };
+      return { ...rest, nudges: flow.nudges ?? NEW_CONVERSATION_NUDGES };
     }
     case "put_side_tasks":
       return editFlow(flow, (json) => {
@@ -396,6 +425,15 @@ async function applyChange(tx: DatabaseExecutor, settings: LeadMagnetSettings, i
       if (!parsed.success) throw new ChangeRejected(parsed.error.issues.map((issue) => issue.message).join("; "));
       return { ...settings, callBooking: parsed.data };
     }
+    case "set_return": {
+      const afterEnd = item.afterEnd ?? settings.returnAfterProgram;
+      return {
+        ...settings,
+        returnAfterProgram: afterEnd,
+        returnGuidance: item.guidance ?? settings.returnGuidance ?? "",
+        flow: { ...withChangedSilence(flow, item), afterEnd: afterEndFor(afterEnd) },
+      };
+    }
     case "attach_field": {
       const [field] = await getFields(tx, [item.fieldId]);
       if (!field) throw new ChangeRejected(`Нет поля с id «${item.fieldId}» в словаре`);
@@ -432,6 +470,18 @@ async function withCardFromDictionary(tx: DatabaseExecutor, settings: LeadMagnet
 }
 
 /** Поле, заведённое этим вызовом, — в карточке, даже если следом put_flow прислал свою карточку без него. */
+/** «Напоминать» и «Ждать ответа» из `set_return`; не названное остаётся прежним. */
+function withChangedSilence(flow: AgentFlow, item: { remindDays?: number; waitDays?: number | null }): AgentFlow {
+  if (item.remindDays === undefined && item.waitDays === undefined) return flow;
+  const current = silenceOf(flow) ?? { remindDays: 0, waitDays: null };
+  try {
+    // У воронки `withSilence` отказывает: сроков молчания у неё нет
+    return withSilence(flow, { remindDays: item.remindDays ?? current.remindDays, waitDays: item.waitDays === undefined ? current.waitDays : item.waitDays });
+  } catch (error) {
+    throw new ChangeRejected(error instanceof Error ? error.message : String(error));
+  }
+}
+
 function keepCreatedFields(settings: LeadMagnetSettings, created: LeadMagnetSettings["flow"]["clientCard"]): LeadMagnetSettings {
   const card = settings.flow.clientCard;
   const lost = created.filter((field) => !card.some((one) => one.id === field.id));
@@ -592,6 +642,7 @@ export async function viewLeadMagnet(
           textLink: draft.textLink ?? null,
           messengerHandoff: draft.messengerHandoff ?? null,
           callBooking: draft.callBooking ?? null,
+          returnAfterEnd: { afterEnd: draft.returnAfterProgram, guidance: draft.returnGuidance ?? "", ...silenceOf(draft.flow) },
           unfilled: unfilledSettings(draft),
         };
         break;

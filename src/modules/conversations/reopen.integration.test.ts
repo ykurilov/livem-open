@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { createTestDatabase, type TestDatabase } from "../../../tests/integration/db-helper";
 import { createLiveDialogKit, DEFAULT_CONSULTANT_REPLY, type LiveDialogKit } from "../../../tests/integration/live-dialog-kit";
 import { outboundMessages } from "../channels/schema";
-import { newProgramSettings, unpublishLeadMagnet, type Stage } from "../lead-magnets";
+import { leadMagnetReport, newProgramSettings, unpublishLeadMagnet, type Stage } from "../lead-magnets";
 import { menuButtonPayload } from "./no-code";
 import { updateSettings } from "../platform/settings";
 import { AUTOREPLY_TEXT } from "./router";
@@ -103,6 +103,15 @@ describe("вернулся в брошенный разговор", () => {
     expect(run?.state).toBe(stateBefore);
     const [call] = kit.consultantCalls().slice(callsBefore);
     expect(JSON.stringify(call!.options.prompt)).toContain("Привет, я дизайнер");
+  });
+
+  it("вернулся в брошенный разговор после паузы — в отчёте «вернулись после паузы»", async () => {
+    const ended = await abandon();
+    kit.clock.advance(2 * DAY);
+
+    await say("Я вернулся, давайте продолжим");
+
+    expect((await leadMagnetReport(kit.db, ended.leadMagnetId)).returns).toEqual({ afterPause: 1, afterEnd: 0 });
   });
 
   it("пока сценарий открывался, человек начал другой лидмагнит по ссылке — открытый сценарий закрывается обратно с прежней причиной", async () => {
@@ -263,5 +272,62 @@ describe("вернулся в брошенный разговор", () => {
 
     expect(await passages()).toEqual([expect.objectContaining({ id: started!.id, status: "not_completed" })]);
     expect(await lastInbound()).toMatchObject({ route: "inbox", autoreply: true });
+  });
+});
+
+/** «Напоминать» и «Ждать ответа»: касания прекращаются через `remindDays`, разговор открыт `waitDays` (`null` — без срока). */
+const remindAndWait = (remindDays: number, waitDays: number | null) => (flow: AgentFlow): AgentFlow => ({
+  ...flow,
+  nudges: {
+    afterSilence: [{ amount: 15, unit: "min" }, { amount: 1, unit: "h" }],
+    dailyAt: ["10:00"],
+    stopAfter: { amount: remindDays, unit: "d" },
+    ...(waitDays !== null && { giveUpAfter: { amount: waitDays, unit: "d" } }),
+  },
+});
+
+describe("«Напоминать» и «Ждать ответа»", () => {
+  it("ждать без срока: после «Напоминать» агент молчит, разговор открыт; через 2 месяца — тот же разговор, агент знает о паузе", async () => {
+    const lead = await kit.publish({ firstMessage: FIRST_MESSAGE }, remindAndWait(3, null));
+    await kit.send(person, `/start ${lead.code}`, { startCode: lead.code });
+    await kit.runDue();
+    await say("Привет, я дизайнер");
+    await walk(later(3 * DAY + 2 * 60 * MINUTE));
+    const sentAfterReminders = kit.textsTo(person).length;
+    await walk(later(10 * DAY), 6 * 60 * MINUTE);
+    expect(kit.textsTo(person).length).toBe(sentAfterReminders);
+    const [open] = await passages();
+    expect(open).toMatchObject({ status: "active" });
+
+    kit.clock.advance(60 * DAY);
+    const callsBefore = kit.consultantCalls().length;
+    await say("Я вернулся, давайте продолжим");
+
+    expect(await passages()).toEqual([expect.objectContaining({ id: open!.id, status: "active" })]);
+    expect(await lastInbound()).toMatchObject({ route: "passage", passageId: open!.id });
+    const [call] = kit.consultantCalls().slice(callsBefore);
+    expect(JSON.stringify(call!.options.prompt)).toContain("Пауза: человек не писал");
+    expect((await leadMagnetReport(kit.db, open!.leadMagnetId)).returns).toEqual({ afterPause: 1, afterEnd: 0 });
+  });
+
+  it("«Ждать ответа» 5 дней: разговор «не завершил», через 2 месяца открывается снова без предела в неделю", async () => {
+    const lead = await kit.publish({ firstMessage: FIRST_MESSAGE }, remindAndWait(3, 5));
+    await kit.send(person, `/start ${lead.code}`, { startCode: lead.code });
+    await kit.runDue();
+    await say("Привет, я дизайнер");
+    await walk(later(5 * DAY + 2 * 60 * MINUTE));
+    const [ended] = await passages();
+    expect(ended).toMatchObject({ status: "not_completed" });
+
+    kit.clock.advance(60 * DAY);
+    const callsBefore = kit.consultantCalls().length;
+    await say("Я вернулся, давайте продолжим");
+
+    expect(await passages()).toEqual([expect.objectContaining({ id: ended!.id, status: "active", endedAt: null })]);
+    expect(await lastInbound()).toMatchObject({ route: "passage", passageId: ended!.id, autoreply: false });
+    const [call] = kit.consultantCalls().slice(callsBefore);
+    expect(JSON.stringify(call!.options.prompt)).toContain("Пауза: человек не писал");
+    expect(JSON.stringify(call!.options.prompt)).toContain("Разговор был закончен и открыт заново");
+    expect((await leadMagnetReport(kit.db, ended!.leadMagnetId)).returns).toEqual({ afterPause: 1, afterEnd: 0 });
   });
 });

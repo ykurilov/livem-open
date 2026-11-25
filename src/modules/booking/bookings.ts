@@ -107,7 +107,8 @@ export async function bookCall(
       if (typeof slot === "string") return { ok: false, reason: slot };
       const [booking] = await tx
         .insert(callBookings)
-        .values({ ...slot, ...partyColumns(input.party), leadMagnetId: input.party.leadMagnetId, meetingLink: input.meetingLink })
+        // Момент записи — по часам приложения, как и все сроки вокруг неё (напоминание, подмётчик), а не по часам базы
+        .values({ ...slot, ...partyColumns(input.party), leadMagnetId: input.party.leadMagnetId, meetingLink: input.meetingLink, createdAt: input.now })
         .returning();
       return { ok: true, booking: booking! };
     });
@@ -142,6 +143,7 @@ export async function rescheduleCall(db: Database, input: { party: CallParty; lo
           ...partyColumns(input.party),
           leadMagnetId: input.party.leadMagnetId ?? current.leadMagnetId,
           meetingLink: current.meetingLink,
+          createdAt: input.now,
         })
         .returning();
       const [previous] = await tx.update(callBookings).set({ rescheduledToId: booking!.id }).where(eq(callBookings.id, current.id)).returning();

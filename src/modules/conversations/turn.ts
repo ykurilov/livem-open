@@ -6,7 +6,9 @@ import { enqueueOutbound, outboundMessages } from "../channels";
 import { attachClientImages, type ClientImagesDependencies } from "./client-images";
 import { sentImagePath } from "../images";
 import type { ShownVideoLink } from "../videos";
-import { appClosingAfter, buildConsultantTail } from "../consultant";
+import { appClosingAfter, buildConsultantTail, type AfterEndTail } from "../consultant";
+import { AGENT_TIME_ZONE } from "../platform/models-catalog";
+import { continuesAfterEnd } from "./after-end";
 import { ConsultantTurnFailedError, type HeadlessConsultant, type TurnAnswer } from "../consultant/headless-turn";
 import type { AgentFlowHandle } from "@ykurilov/agent-chat-flows";
 import { PROGRAM_DAY_START } from "../flows";
@@ -172,7 +174,7 @@ export async function reserveBurstTurn(
     }
     const snapshot = await getVersion(tx, passage.snapshotId);
     if (!snapshot) throw new Error(`Снимок ${passage.snapshotId} не найден`);
-    return { tail: tailOf(snapshot.settings, personMessageCount, rows, await inWebChatOf(tx, passage.personId)) };
+    return { tail: tailOf(snapshot.settings, personMessageCount, rows, await inWebChatOf(tx, passage.personId), await afterEndOf(tx, passage)) };
   });
 }
 
@@ -195,9 +197,30 @@ export async function releaseBurstTurn(deps: Pick<TurnDependencies, "db">, input
   });
 }
 
-/** Наш хвост: отсчёт до предела и пометка о вложениях. День, этап, рамки и пояс сценарий допишет сам. */
-function tailOf(settings: LeadMagnetSettings, personMessageCount: number, messages: readonly InboundRow[], inWebChat: boolean): string | null {
-  return [buildConsultantTail({ settings, personMessageCount, inWebChat }), attachmentNoteOf(messages)].filter(Boolean).join("\n") || null;
+/**
+ * Наш хвост: отсчёт до предела (после конца разговора — строка о конце) и пометка о вложениях. День, этап, рамки и пояс
+ * сценарий допишет сам.
+ */
+function tailOf(
+  settings: LeadMagnetSettings,
+  personMessageCount: number,
+  messages: readonly InboundRow[],
+  inWebChat: boolean,
+  afterEnd: AfterEndTail | null,
+): string | null {
+  return [buildConsultantTail({ settings, personMessageCount, inWebChat, afterEnd }), attachmentNoteOf(messages)].filter(Boolean).join("\n") || null;
+}
+
+/** Как закончился разговор, в который вернулся человек; разговор идёт — `null`. */
+async function afterEndOf(db: DatabaseExecutor, passage: PassageRow): Promise<AfterEndTail | null> {
+  if (!continuesAfterEnd(passage) || !passage.endedAt) return null;
+  const [person] = await db.select({ timeZone: people.timeZone }).from(people).where(eq(people.id, passage.personId));
+  return {
+    endedAt: passage.endedAt,
+    status: passage.status === "term_ended" ? "term_ended" : "completed",
+    outcome: passage.summary?.outcome ?? null,
+    timeZone: person?.timeZone ?? AGENT_TIME_ZONE,
+  };
 }
 
 /** Человек пишет в веб-чате: так же решает инструмент перехода в мессенджер (`inWebChat` живого разговора). */
@@ -394,7 +417,10 @@ async function answerTurn(deps: TurnDependencies, claim: TurnClaim): Promise<voi
   const decision = await deps.flow.admit({ ownerId: chatOwnerOf(passage), chatId: passage.chatId });
   // Разговор закрыл сам этот ход (`finish_dialog`), а ответ не дошёл: сценарий уже закончен, но итог с прощанием доводим
   const finishing = passage.status === "completed" && Boolean(claim.turnId);
-  if (decision.kind === "ended" && !finishing) return endedBeforeTurn(deps, claim, passageStatusOf(decision.reason));
+  // Человек вернулся после конца, и сценарий велит отвечать после конца: ход как обычно, без смены статуса
+  const afterEnd = continuesAfterEnd(passage);
+  if (decision.kind === "ended" && afterEnd && decision.afterEnd !== "reply") return endedBeforeTurn(deps, claim, null);
+  if (decision.kind === "ended" && !finishing && !afterEnd) return endedBeforeTurn(deps, claim, passageStatusOf(decision.reason));
   const answer = await askConsultant(deps, claim);
   // Отвечает другой вызов (следующее сообщение пачки) или ход без вызова: ответ доставит он
   if (answer.elsewhere) return;
@@ -402,7 +428,7 @@ async function answerTurn(deps: TurnDependencies, claim: TurnClaim): Promise<voi
   if (answer.held) {
     // Пока ход ждал тишины, эксперт ответил или разговор закончился: решение — текущее, а не с начала хода
     const current = decision.kind === "paused" ? decision : await deps.flow.admit({ ownerId: chatOwnerOf(passage), chatId: passage.chatId });
-    if (current.kind === "ended") return endedBeforeTurn(deps, claim, passageStatusOf(current.reason));
+    if (current.kind === "ended" && !afterEnd) return endedBeforeTurn(deps, claim, passageStatusOf(current.reason));
     if (await heldWithoutAnswer(deps, ref, current.kind === "paused"))
       await deps.queue.enqueue("inbound-turn", { passageId: passage.id }, { singletonKey: passage.id });
     return;
@@ -420,7 +446,9 @@ async function deliverAnswer(deps: TurnDependencies, ref: TurnRef, answer: TurnA
   // Предел сообщений: консультант предупреждён хвостом, но если не завершил сам — завершает приложение.
   // У программы его заменяют рамки дня
   const reachedLimit = !settings.flow.schedule && after.status === "active" && after.personMessageCount >= settings.maxPersonMessages;
-  const completed = after.status === "completed" || reachedLimit;
+  // Разговор после конца: ни прощания, ни итога заново — ответ как в идущем разговоре
+  const afterEnd = continuesAfterEnd(after);
+  const completed = (after.status === "completed" && !afterEnd) || reachedLimit;
   // Согласившемуся последнее сообщение собирает приложение: ответ на вопрос из finish_dialog и прощание из настроек.
   // При отказе, уходе, пределе без итога и без прощания в настройках — последний ответ модели, как есть.
   const closing = completed ? appClosingAfter(after.summary, settings.farewellMessage) : null;
@@ -440,7 +468,7 @@ async function deliverAnswer(deps: TurnDependencies, ref: TurnRef, answer: TurnA
   // Ответ — в очередь до пометки «отвечено»: упадём между ними — повтор найдёт готовый ответ, ключ не даст дубля.
   // Разговор за время хода ушёл в другой лидмагнит или человек заблокировал бота — ответ уже не к месту.
   let delivered = false;
-  const closedDuringTurn = after.status !== "active" && after.status !== "completed";
+  const closedDuringTurn = after.status !== "active" && after.status !== "completed" && !afterEnd;
   if (!closedDuringTurn) {
     const botId = await botOf(deps, passage.personId);
     if (text || video || image) {
@@ -467,7 +495,7 @@ async function deliverAnswer(deps: TurnDependencies, ref: TurnRef, answer: TurnA
   // Повтор не поможет: он вернёт тот же готовый ответ
   const silent = !closedDuringTurn && !delivered;
   // Отказ или уход без последнего слова — конец по желанию человека: без тревоги и «отвечу чуть позже», но с объяснением
-  const outcome = after.status === "completed" && !reachedLimit ? after.summary?.outcome : undefined;
+  const outcome = after.status === "completed" && !reachedLimit && !afterEnd ? after.summary?.outcome : undefined;
   const quietEndReason = !silent ? null : outcome === "declined" ? DECLINED_SILENT_REASON : outcome === "left" ? LEFT_SILENT_REASON : null;
   const chatCost = await deps.consultant.chatCost(passage.chatId);
   const now = deps.clock.now();
@@ -518,13 +546,14 @@ async function endFlowAtLimit(deps: TurnDependencies, passage: PassageRow, limit
  * Разговор закончился раньше, чем дошёл ход (срок вышел, «не завершил», конец снаружи): консультант не отвечает,
  * сообщения — эксперту во «Входящие». Статус прохождения пишет `onFinish` сценария; не успел — пишем по той же причине.
  */
-async function endedBeforeTurn(deps: TurnDependencies, claim: TurnClaim, status: PassageEndStatus): Promise<void> {
+async function endedBeforeTurn(deps: TurnDependencies, claim: TurnClaim, status: PassageEndStatus | null): Promise<void> {
   await deps.db.transaction(async (tx) => {
     await tx
       .update(inboundMessages)
       .set({ route: "inbox" })
       .where(and(eq(inboundMessages.passageId, claim.passage.id), eq(inboundMessages.route, "passage"), isNull(inboundMessages.answeredAt)));
-    await endActivePassages(tx, eq(passages.id, claim.passage.id), status, deps.clock.now());
+    // Разговор после конца уже закончен: статус не трогаем
+    if (status) await endActivePassages(tx, eq(passages.id, claim.passage.id), status, deps.clock.now());
   });
 }
 
@@ -565,7 +594,7 @@ async function askConsultant(deps: TurnDependencies, claim: TurnClaim): Promise<
     }),
     ...(turnId && { turnId }),
     // Хвост повтора упавшего хода; у хода на пачку его даёт начало хода (`reserveBurstTurn`) по новому счёту
-    tail: tailOf(settings, passage.personMessageCount, messages, await inWebChatOf(deps.db, passage.personId)),
+    tail: tailOf(settings, passage.personMessageCount, messages, await inWebChatOf(deps.db, passage.personId), await afterEndOf(deps.db, passage)),
     expertReplies: await expertRepliesDuring(deps, passage),
     // «Сегодня» в хвосте — по поясу человека; неизвестен — Москва
     ...(timeZone && { timeZone }),
@@ -598,7 +627,7 @@ async function claimTurn(deps: TurnDependencies, passageId: string): Promise<Cla
 
     // Ход, начатый и не дошедший до ответа (упал, работник остановился), — сначала он, с теми же сообщениями
     const unfinished = waiting.find((message) => message.turnId)?.turnId ?? undefined;
-    if (passage.status !== "active") {
+    if (passage.status !== "active" && !continuesAfterEnd(passage)) {
       // finish_dialog завершает разговор посреди хода: упавший ход всё равно доводится до ответа и прощания
       const finishing = passage.status === "completed" && unfinished;
       const late = waiting.filter((message) => !finishing || message.turnId !== unfinished);

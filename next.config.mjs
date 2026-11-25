@@ -7,7 +7,8 @@ const nextConfig = {
   outputFileTracingRoot: import.meta.dirname,
   // Пакеты с серверной частью, которые Next не должен бандлить
   // Сценарии SDK читают свои миграции с диска (`drizzle/postgres` рядом с пакетом) — их тоже не бандлить
-  serverExternalPackages: ["pg", "pg-boss", "@ykurilov/agent-chat-storage-postgres", "@ykurilov/agent-chat-flows"],
+  // unpdf (текст PDF баз знаний) обращается к import.meta целиком: сборщик Next его не понимает
+  serverExternalPackages: ["pg", "pg-boss", "@ykurilov/agent-chat-storage-postgres", "@ykurilov/agent-chat-flows", "unpdf"],
   // Картинка рассылки — до 10 МБ, плюс текст формы
   experimental: { serverActions: { bodySizeLimit: "11mb" }, proxyClientMaxBodySize: "11mb" },
   // Инструкции агентов читаются с диска во время работы

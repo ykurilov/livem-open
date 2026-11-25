@@ -68,13 +68,13 @@ test("эксперт задаёт свой автоответ бота и выб
   await autoreplyCard.scrollIntoViewIfNeeded();
   await autoreplyCard.screenshot({ path: `${SHOTS}/returning-bot-autoreply.png`, animations: "disabled" });
 
-  // «Если человек вернулся после конца программы» — в «Настройках» лидмагнита
+  // «Если человек вернулся после конца» — в «Настройках» лидмагнита; новый лидмагнит продолжает разговор
   const lead = await createLeadMagnet(db, { name: `Возврат ${tag}` });
   await saveDraft(db, lead.id, { ...lead.draft, instruction: "Ты консультант.", firstMessage: E2E_SCRIPT.firstMessage }, "manual");
   await page.goto(`/lead-magnets/${lead.id}`);
-  const choice = page.getByRole("combobox", { name: "Если человек вернулся после конца программы" });
+  const choice = page.getByRole("combobox", { name: "Если человек вернулся после конца" });
   await openTab(page, "Настройки", choice);
-  await expect(choice).toHaveValue("inbox");
+  await expect(choice).toHaveValue("continue");
   await choice.selectOption({ label: "Начать заново" });
   await page.getByRole("button", { name: "Сохранить" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Сохранено" })).toBeVisible({ timeout: 30_000 });

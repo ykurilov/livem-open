@@ -1,6 +1,9 @@
 export { buildConsultantInstruction } from "./instruction";
 export { leadMagnetKnownTexts } from "./known-texts";
 export { buildConsultantTail } from "./tail";
+export type { AfterEndTail } from "./tail";
+export { AGENT_HANDOVER_PREFIX, HAND_TO_EXPERT_TOOL } from "./expert-handover";
+export type { ExpertHandoverPort } from "./expert-handover";
 export { CONSULTANT_TOOL_NAMES, createConsultantTools } from "./tools";
 export { createPreviewConversationStore, readPreviewConversation, startPreviewConversation } from "./preview-store";
 export type { ConversationStore, PreviewConversation } from "./preview-store";

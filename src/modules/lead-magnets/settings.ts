@@ -1,6 +1,6 @@
 import type { AgentFlow } from "@ykurilov/agent-chat-flows/format";
 import { z } from "zod";
-import { leadMagnetToFlow } from "../flows/settings-to-flow";
+import { leadMagnetToFlow, NEW_CONVERSATION_NUDGES } from "../flows/settings-to-flow";
 import { validateLeadMagnetFlow, type FlowSettingsIssue } from "../flows/validate-flow";
 import { DEFAULT_MODEL_CHOICE } from "../platform/models-catalog";
 import { productLinkSchema, productPage, type ProductLink } from "../purchases/product-links";
@@ -20,7 +20,8 @@ export const SIDE_TASK_TEXT_MAX_LENGTH = 300;
 export const SIDE_TASKS_MAX_COUNT = 10;
 
 /** Что делать с человеком, который вернулся по ссылке лидмагнита после конца его программы. */
-export const RETURN_AFTER_PROGRAM_MODES = ["inbox", "restart"] as const;
+export const RETURN_AFTER_PROGRAM_MODES = ["continue", "inbox", "restart"] as const;
+export const RETURN_GUIDANCE_MAX_LENGTH = 1500;
 export type ReturnAfterProgramMode = (typeof RETURN_AFTER_PROGRAM_MODES)[number];
 
 export const stageSchema = z.object({
@@ -126,10 +127,16 @@ export const leadMagnetSettingsSchema = z.object({
   /** Кнопка микрофона в веб-чате и в «Проверке»: человек диктует, текст появляется в поле. По умолчанию выключено. */
   voiceInput: z.boolean().default(false),
   /**
-   * Человек вернулся по ссылке или кнопке этого лидмагнита, когда его программа уже закончилась: `inbox` — сообщение
-   * эксперту во «Входящие» с автоответом (как было до поля), `restart` — лидмагнит начинается заново с первого дня.
+   * Человек написал снова, когда его разговор или программа уже закончились: `continue` — агент продолжает разговор
+   * (у новых лидмагнитов по умолчанию; сценарий отвечает после конца), `inbox` — сообщение эксперту во «Входящие»
+   * с автоответом (как было до поля), `restart` — лидмагнит начинается заново.
    */
   returnAfterProgram: z.enum(RETURN_AFTER_PROGRAM_MODES).default("inbox"),
+  /** «Как вести вернувшихся»: указание агенту для разговора после конца; пусто — общее правило. */
+  returnGuidance: z
+    .string()
+    .max(RETURN_GUIDANCE_MAX_LENGTH, `«Как вести вернувшихся» — не длиннее ${RETURN_GUIDANCE_MAX_LENGTH} знаков`)
+    .default(""),
   /** Программа на несколько дней; `null` — один разговор, как раньше. */
   program: programSettingsSchema.nullable().default(null),
   /**
@@ -221,14 +228,25 @@ export function newLeadMagnetSettings(name: string, cardDescription = ""): LeadM
     videoIds: [],
     clientImages: false,
     voiceInput: false,
-    returnAfterProgram: "inbox",
+    returnAfterProgram: "continue",
+    returnGuidance: "",
     imageIds: [],
     knowledgeIds: [],
     viewsLinks: false,
     program: null,
     salesCards: [],
-    flow: leadMagnetToFlow({ name, instruction: "", stages: [], program: null, fieldIds: [], viewsLinks: false }, []),
+    flow: {
+      ...leadMagnetToFlow({ name, instruction: "", stages: [], program: null, fieldIds: [], viewsLinks: false }, []),
+      // Новый лидмагнит: напоминать 3 дня, ждать ответа без срока
+      nudges: NEW_CONVERSATION_NUDGES,
+      afterEnd: afterEndFor("continue"),
+    },
   };
+}
+
+/** После конца разговора сценарий отвечает, только когда агент продолжает разговор; иначе молчит. */
+export function afterEndFor(mode: ReturnAfterProgramMode): AgentFlow["afterEnd"] {
+  return mode === "continue" ? "reply" : "silent";
 }
 
 export class InvalidLeadMagnetSettingsError extends Error {
@@ -248,6 +266,11 @@ function checkedFlow(input: unknown): AgentFlow {
   if (result.ok) return result.flow;
   const issues = result.issues.map((issue) => ({ path: issue.path ? `flow.${issue.path}` : "flow", message: issue.message }));
   throw new InvalidLeadMagnetSettingsError(issues.map((issue) => `«${issue.path}»: ${issue.message}`).join("; "), issues);
+}
+
+/** Режим «после конца» в сценарии задаёт настройка лидмагнита, а не сам сценарий. */
+function withAfterEnd(flow: unknown, mode: ReturnAfterProgramMode): unknown {
+  return flow && typeof flow === "object" && !Array.isArray(flow) ? { ...flow, afterEnd: afterEndFor(mode) } : flow;
 }
 
 /** Правила между разными частями настроек: программа, этапы, поля. */
@@ -298,7 +321,7 @@ export function validateLeadMagnetSettings(settings: unknown): LeadMagnetSetting
   if (parsed.success) {
     const ids = parsed.data.stages.map((stage) => stage.id);
     if (new Set(ids).size !== ids.length) throw new InvalidLeadMagnetSettingsError("У этапов повторяются id");
-    const checked = { ...parsed.data, videoIds: [...new Set(parsed.data.videoIds)], imageIds: [...new Set(parsed.data.imageIds)], knowledgeIds: [...new Set(parsed.data.knowledgeIds)], flow: checkedFlow(parsed.data.flow) };
+    const checked = { ...parsed.data, videoIds: [...new Set(parsed.data.videoIds)], imageIds: [...new Set(parsed.data.imageIds)], knowledgeIds: [...new Set(parsed.data.knowledgeIds)], flow: checkedFlow(withAfterEnd(parsed.data.flow, parsed.data.returnAfterProgram)) };
     checkProgram(checked);
     checkProductPages(checked.productLinks ?? []);
     const salesCards = checkedSalesCards(checked.salesCards, new Set(checked.flow.states.map((state) => state.id)));

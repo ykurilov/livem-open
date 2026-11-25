@@ -9,6 +9,7 @@ import {
   validateLeadMagnetSettings,
   type LeadMagnet,
   type LeadMagnetSettings,
+  type ReturnAfterProgramMode,
   type LeadMagnetVersion,
   type VersionSource,
 } from "../lead-magnets";
@@ -30,6 +31,12 @@ const textLabels = {
 } as const;
 
 /** Текст короче — в заметку целиком; длиннее — только изменённый кусок с соседями. */
+const RETURN_MODE_LABELS: Record<ReturnAfterProgramMode, string> = {
+  continue: "Агент продолжит разговор",
+  inbox: "Передать мне во «Входящие»",
+  restart: "Начать заново",
+};
+
 const WHOLE_TEXT_LIMIT = 120;
 const CONTEXT = 40;
 
@@ -78,7 +85,9 @@ function nudgesText(nudges: FlowNudges | "off" | undefined): string {
   if (nudges === "off") return "без касаний";
   const parts = [nudges.afterSilence.map(duration).join(", ") || "нет"];
   if (nudges.dailyAt?.length) parts.push(`каждый день в ${nudges.dailyAt.join(", ")}`);
+  if (nudges.stopAfter) parts.push(`«Напоминать» ${duration(nudges.stopAfter)}`);
   if (nudges.giveUpAfter) parts.push(`«не завершил» после ${duration(nudges.giveUpAfter)}`);
+  else if (nudges.stopAfter) parts.push("«Ждать ответа» без срока");
   return parts.join("; ");
 }
 
@@ -200,6 +209,11 @@ export function describeManualEdits(
   if (before.flow.common !== after.flow.common) notes.push(`Основная инструкция: ${quoteChange(before.flow.common, after.flow.common)}`);
   if (before.maxPersonMessages !== after.maxPersonMessages)
     notes.push(`Предел сообщений человека: было «${before.maxPersonMessages}» → стало «${after.maxPersonMessages}»`);
+  const returnMode = (s: LeadMagnetSettings) => RETURN_MODE_LABELS[s.returnAfterProgram ?? "inbox"];
+  if (returnMode(before) !== returnMode(after))
+    notes.push(`Если человек вернулся после конца: было «${returnMode(before)}» → стало «${returnMode(after)}»`);
+  if ((before.returnGuidance ?? "") !== (after.returnGuidance ?? ""))
+    notes.push(`Как вести вернувшихся: ${quoteChange(before.returnGuidance ?? "", after.returnGuidance ?? "")}`);
   const model = (s: LeadMagnetSettings) => `${s.providerId} / ${s.modelId}${s.reasoning ? `, рассуждение ${s.reasoning}` : ""}`;
   if (model(before) !== model(after)) notes.push(`Модель: было «${model(before)}» → стало «${model(after)}»`);
   notes.push(...describeFlow(before.flow, after.flow, fieldNames));

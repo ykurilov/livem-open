@@ -4,9 +4,10 @@ import type { AgentFlow } from "@ykurilov/agent-chat-flows/format";
 import { postgresFlowStore } from "@ykurilov/agent-chat-flows/postgres";
 import { eq } from "drizzle-orm";
 import type { Pool } from "pg";
+import { returnAfterEndRules } from "../consultant/after-end-rules";
 import { readPreviewConversation } from "../consultant/preview-store";
 import { passages } from "../conversations/schema";
-import { getLeadMagnet, getVersion } from "../lead-magnets";
+import { getLeadMagnet, getVersion, type LeadMagnetSettings } from "../lead-magnets";
 import { getPerson } from "../people";
 import { isPreviewOwner } from "../platform/cabinet-owner";
 import type { Clock } from "../platform/clock";
@@ -91,6 +92,17 @@ export async function loadLeadMagnetFlow(db: Database, chatId: string): Promise<
   return lead ? { flowId: lead.id, versionId: lead.draftVersionId, flow: currentRulesOf(lead.draft.flow) } : null;
 }
 
+/** Что делать с вернувшимся после конца — из снимка прохождения чата или черновика тестового чата. */
+async function loadReturnSettings(db: Database, chatId: string): Promise<Partial<Pick<LeadMagnetSettings, "returnAfterProgram" | "returnGuidance">> | null> {
+  const [passage] = await db.select({ snapshotId: passages.snapshotId }).from(passages).where(eq(passages.chatId, chatId));
+  if (passage) return (await getVersion(db, passage.snapshotId))?.settings ?? null;
+  const preview = await readPreviewConversation(db, chatId);
+  return (preview && (await getLeadMagnet(db, preview.leadMagnetId))?.draft) ?? null;
+}
+
+/** Пауза человека не короче суток — агент получает факт о ней: сколько прошло и когда было прошлое сообщение. */
+const PAUSE_NOTICE_AFTER = { amount: 1, unit: "d" } as const;
+
 /**
  * Снимок, опубликованный до правил 14.10, — по нынешним (`withCurrentFlowRules`). Версия, уже закреплённая за чатами,
  * так и идёт по сохранённому в SDK: под тем же номером другой сценарий SDK не примет.
@@ -156,6 +168,9 @@ export function createLeadMagnetFlow(options: LeadMagnetFlowOptions): LeadMagnet
     clientFacts: true,
     people: leadMagnetPeople(db),
     pause: { staffSilenceHours: STAFF_SILENCE_HOURS },
+    pauseNotice: { after: PAUSE_NOTICE_AFTER },
+    // «Агент продолжит разговор»: своё правило после конца с указанием эксперта; иначе — встроенное сценария
+    afterEndRules: async ({ chatId }) => returnAfterEndRules(await loadReturnSettings(db, chatId)),
     // Пояс человека ещё неизвестен (закрепление при входе по ссылке, до первого хода) — день считается по Москве
     defaultTimeZone: AGENT_TIME_ZONE,
     now: () => clock.now(),

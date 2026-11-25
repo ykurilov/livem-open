@@ -20,3 +20,4 @@ export {
   readConstructorPrompt,
 } from "./endpoint";
 export type { ConstructorEndpoint, ConstructorEndpointOptions } from "./endpoint";
+export { createConstructorFiles, createKnowledgeBaseFor } from "./knowledge-files";

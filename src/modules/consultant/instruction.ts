@@ -1,4 +1,5 @@
 import { modelMaySeeToolResultImages, standardCatalog } from "@ykurilov/agent-chat-core";
+import { HAND_TO_EXPERT_TOOL } from "./expert-handover";
 import type { LeadMagnetSettings } from "../lead-magnets";
 import { buildProgramInstructionSection, programFinishRule } from "../program/instruction-section";
 import { PERSON_LINK_TOOL, PERSON_LINKS_PER_CHAT } from "@ykurilov/agent-chat-web-tools";
@@ -61,6 +62,11 @@ export function buildConsultantInstruction(settings: LeadMagnetSettings, knowled
   const saleSection = buildProgramInstructionSection(settings);
   if (saleSection) parts.push(saleSection);
   if (settings.flow.schedule) parts.push(TIME_ZONE_RULE);
+  // Неизменно для версии: инструмент передачи есть у неё на всех ходах, а работает только после конца разговора
+  if (settings.returnAfterProgram === "continue")
+    parts.push(
+      `Исключение из запрета обещать передачу эксперту: после конца разговора ты можешь с согласия человека передать его вопрос эксперту инструментом ${HAND_TO_EXPERT_TOOL}. Говори о передаче, только когда вызов прошёл.`,
+    );
   if (settings.videoIds.length > 0) {
     parts.push(
       "У тебя есть видео эксперта. Когда ролик прямо поможет человеку с тем, о чём он сейчас говорит, или он сам просит видео, " +

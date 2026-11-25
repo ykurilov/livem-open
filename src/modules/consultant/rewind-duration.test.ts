@@ -38,20 +38,32 @@ describe("разбор времени перемотки", () => {
     expect(ms("0.5 ч")).toBe(30 * MIN);
   });
 
-  it("пределы: от минуты до 30 суток включительно", () => {
+  it("недели, месяцы и год: неделя — 7 суток, месяц — 30, год — 365", () => {
+    expect(ms("1 неделя")).toBe(7 * DAY);
+    expect(ms("2 недели")).toBe(14 * DAY);
+    expect(ms("3 нед")).toBe(21 * DAY);
+    expect(ms("1 месяц")).toBe(30 * DAY);
+    expect(ms("2 месяца")).toBe(60 * DAY);
+    expect(ms("6 месяцев")).toBe(180 * DAY);
+    expect(ms("1 мес")).toBe(30 * DAY);
+    expect(ms("1 год")).toBe(365 * DAY);
+    expect(ms("1 месяц 2 недели")).toBe(44 * DAY);
+  });
+
+  it("пределы: от минуты до года включительно", () => {
     expect(MIN_REWIND_MS).toBe(MIN);
-    expect(MAX_REWIND_MS).toBe(30 * DAY);
+    expect(MAX_REWIND_MS).toBe(365 * DAY);
     expect(ms("1 мин")).toBe(MIN);
-    expect(ms("30 дней")).toBe(30 * DAY);
-    for (const text of ["31 день", "720 ч 1 мин", "0,5 мин"]) {
+    expect(ms("365 дней")).toBe(365 * DAY);
+    for (const text of ["366 дней", "1 год 1 мин", "5 лет", "13 месяцев", "0,5 мин"]) {
       const result = parseRewindDuration(text);
       expect(result.ok, text).toBe(false);
-      if (!result.ok) expect(result.hint, text).toMatch(/от минуты до 30 суток/);
+      if (!result.ok) expect(result.hint, text).toMatch(/от минуты до года/);
     }
   });
 
   it("мусор и число без единицы — подсказка с примерами", () => {
-    for (const text of ["", "   ", "0 мин", "скоро", "45", "мин 45", "-5 мин", "5 лет", "1 ч ч"]) {
+    for (const text of ["", "   ", "0 мин", "скоро", "45", "мин 45", "-5 мин", "5 веков", "1 ч ч"]) {
       const result = parseRewindDuration(text);
       expect(result.ok, `«${text}»`).toBe(false);
       if (!result.ok) expect(result.hint, `«${text}»`).toMatch(/45 мин.*1 ч 30 мин.*2 дня/);

@@ -194,6 +194,18 @@ export default async function PublishPage({ params }: { params: Promise<{ id: st
                 <DataTable columns={stageColumns} rows={report.stoppedByStage} rowKey={(row) => row.stageId} />
               </>
             ) : null}
+            {report.returns.afterPause + report.returns.afterEnd > 0 ? (
+              <div className="flex flex-col gap-1 text-[length:var(--yk-text-small-size)]">
+                <p>
+                  <span className="text-[var(--yk-muted)]">Вернулись после паузы: </span>
+                  <span className="font-semibold tabular-nums">{report.returns.afterPause}</span>
+                </p>
+                <p>
+                  <span className="text-[var(--yk-muted)]">Вернулись после конца разговора: </span>
+                  <span className="font-semibold tabular-nums">{report.returns.afterEnd}</span>
+                </p>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
         {program ? <ProgramReportCard report={program} /> : null}

@@ -17,3 +17,16 @@ export const knowledgeBases = appSchema.table("knowledge_bases", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Файлы из чата конструктора, ставшие базами знаний. По номеру вложения модель на каждом ходе видит в истории одну и ту
+ * же пометку о судьбе файла (кэш модели не сбивается), а повторная отправка того же файла базу не дублирует.
+ */
+export const knowledgeChatFiles = appSchema.table("knowledge_chat_files", {
+  attachmentId: uuid("attachment_id").primaryKey(),
+  /** База из файла; нет — файл базой не стал (причина в пометке). */
+  knowledgeBaseId: uuid("knowledge_base_id").references(() => knowledgeBases.id),
+  /** Что модель видит в истории вместо текста файла. */
+  note: text("note").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

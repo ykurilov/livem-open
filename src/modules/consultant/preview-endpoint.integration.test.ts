@@ -78,6 +78,12 @@ beforeEach(async () => {
 const saveDraft = (db: typeof database.db, id: string, settings: LeadMagnetSettings, by: "manual") =>
   saveSettings(db, id, { ...settings, flow: leadMagnetToFlow(settings, []) }, by);
 
+/** «Если человек вернулся после конца» — «Передать мне во «Входящие»»: после конца тестовый разговор не отвечает. */
+const toInbox = async () => {
+  const current = (await getLeadMagnet(database.db, lead.id))!;
+  await saveSettings(database.db, lead.id, { ...current.draft, returnAfterProgram: "inbox" }, "manual");
+};
+
 let counter = 0;
 const send = (chatId: string, text: string) =>
   endpoint.fetch(
@@ -101,7 +107,8 @@ describe("тестовый разговор: порядок проверок", (
   });
 
   // Чат показывает человеку текст из error.message: в нём должно быть, что делать дальше
-  it("завершённый разговор — 409 с понятным текстом", async () => {
+  it("завершённый разговор у «Передать мне во «Входящие»» — 409 с понятным текстом", async () => {
+    await toInbox();
     const chatId = await endpoint.ensurePreview(lead.id);
     await createPreviewConversationStore(database.db).finish(chatId, { goal: "a", stuckAt: "b", chosenStep: "c" });
     const response = await send(chatId, "Привет");
@@ -396,6 +403,51 @@ describe("завершённый тестовый разговор можно п
     const response = await send(chatId, "Привет");
     expect(response.status).toBe(200);
     await response.text();
+  });
+});
+
+describe("после конца с «Агент продолжит разговор» тестовый разговор отвечает, как живой", () => {
+  const GUIDANCE = "Спроси, получилось ли применить разбор";
+  const finishedChat = async () => {
+    const current = (await getLeadMagnet(database.db, lead.id))!;
+    await saveSettings(database.db, lead.id, { ...current.draft, returnAfterProgram: "continue", returnGuidance: GUIDANCE }, "manual");
+    let finished = false;
+    reply = (call) => {
+      if (finished) return { text: "С возвращением! С чем пришли?" };
+      if (call.lastToolResult !== undefined) {
+        finished = true;
+        return { text: "Идея собрана." };
+      }
+      return { toolCalls: [{ toolName: "finish_dialog", input: { goal: "Курс", stuckAt: "Нет идеи", chosenStep: "Собрать идею", outcome: "agreed" } }] };
+    };
+    const chatId = await endpoint.ensurePreview(lead.id);
+    await (await send(chatId, "Да, подходит")).text();
+    expect((await endpoint.status(lead.id))?.finished).toBe(true);
+    return chatId;
+  };
+
+  it("промотать полгода и написать: ответ по правилу после конца, с паузой; разговор остаётся завершённым", async () => {
+    const chatId = await finishedChat();
+    await expect(endpoint.advanceBy(lead.id, 200 * DAY_MS)).resolves.toBeGreaterThanOrEqual(200 * DAY_MS);
+
+    const response = await send(chatId, "Здравствуйте, я снова к вам");
+    expect(response.status).toBe(200);
+    await response.text();
+    const call = calls.at(-1)!;
+    expect(call.system).toContain(GUIDANCE);
+    expect(call.toolNames).toContain("hand_to_expert");
+    expect(call.lastUserText).toContain("Человек вернулся после конца разговора");
+    expect(call.lastUserText).toContain("Пауза: человек не писал");
+    const answer = (await chatStorage.listMessages(chatId)).filter((message) => message.role === "assistant").at(-1)!;
+    expect(answer.parts.flatMap((part) => (part.type === "text" ? [part.text] : []))).toEqual(["С возвращением! С чем пришли?"]);
+    expect((await endpoint.status(lead.id))?.finished).toBe(true);
+  });
+
+  it("«Передать мне во «Входящие»»: после конца перемотка и сообщения — отказ, как раньше", async () => {
+    const chatId = await finishedChat();
+    await toInbox();
+    await expect(endpoint.advanceBy(lead.id, 15 * 60_000)).rejects.toThrow(/завершён/i);
+    expect((await send(chatId, "Привет")).status).toBe(409);
   });
 });
 
@@ -856,11 +908,12 @@ describe("перемотка тестового разговора на врем
   it("отказы словами: разговор не начат, завершён, время вне пределов — часы не двигаются", async () => {
     await expect(endpoint.advanceBy(lead.id, 15 * MIN)).rejects.toThrow(/не начат/i);
 
+    await toInbox();
     const chatId = await endpoint.ensurePreview(lead.id);
     const advance = vi.spyOn(endpoint.flow, "advanceTestClock");
-    await expect(endpoint.advanceBy(lead.id, 30 * 1000)).rejects.toThrow(/от минуты до 30 суток/i);
-    await expect(endpoint.advanceBy(lead.id, 31 * 86_400_000)).rejects.toThrow(/от минуты до 30 суток/i);
-    await expect(endpoint.advanceBy(lead.id, MIN + 0.5)).rejects.toThrow(/от минуты до 30 суток/i);
+    await expect(endpoint.advanceBy(lead.id, 30 * 1000)).rejects.toThrow(/от минуты до года/i);
+    await expect(endpoint.advanceBy(lead.id, 366 * 86_400_000)).rejects.toThrow(/от минуты до года/i);
+    await expect(endpoint.advanceBy(lead.id, MIN + 0.5)).rejects.toThrow(/от минуты до года/i);
 
     await createPreviewConversationStore(database.db).finish(chatId, { goal: "a", stuckAt: "b", chosenStep: "c" });
     await expect(endpoint.advanceBy(lead.id, 15 * MIN)).rejects.toThrow(/завершён/i);

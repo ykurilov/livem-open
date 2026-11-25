@@ -5,8 +5,8 @@ import { createTestDatabase, type TestDatabase } from "../../../tests/integratio
 import { leadMagnetToFlow } from "../flows/settings-to-flow";
 import { createLeadMagnet, newLeadMagnetSettings, newProgramSettings, type LeadMagnetSettings } from "../lead-magnets";
 import { createField, type FieldDefinition } from "../people";
-import { CONSULTANT_TOOL_NAMES, createConsultantTools } from "./tools";
-import { createPreviewConversationStore, readPreviewConversation, startPreviewConversation } from "./preview-store";
+import { CONSULTANT_TOOL_NAMES, createConsultantTools, FINISHED_BEFORE } from "./tools";
+import { createPreviewConversationStore, readPreviewConversation, reopenPreviewConversation, startPreviewConversation } from "./preview-store";
 import { createShortLinkStore } from "../text-links/server";
 
 let database: TestDatabase;
@@ -94,9 +94,19 @@ describe("инструменты консультанта", () => {
     expect(result.next).not.toMatch(/пуст/i);
     expect(result.next).not.toMatch(/одна-две фразы/i);
 
+    // Повторный finish_dialog в законченном разговоре — отказ: каждый случай — в заново открытом
+    await reopenPreviewConversation(database.db, chatId);
     const plain = (await run("finish_dialog", summary)) as { ok: boolean; next?: string };
     expect(plain.next).toMatch(/последний ответ/i);
     expect(plain.next).not.toMatch(/answer/);
+  });
+
+  it("finish_dialog в уже законченном разговоре: итог прежний, модель отвечает сама", async () => {
+    const summary = { goal: "Курс", stuckAt: "Нет идеи", chosenStep: "Собрать идею", outcome: "agreed" };
+    await run("finish_dialog", summary);
+    const again = (await run("finish_dialog", { ...summary, chosenStep: "Другое", outcome: "declined" })) as { ok: boolean; error?: string };
+    expect(again).toEqual({ ok: false, error: FINISHED_BEFORE });
+    expect((await readPreviewConversation(database.db, chatId))?.summary).toMatchObject({ chosenStep: "Собрать идею", outcome: "agreed" });
   });
 
   it("finish_dialog с отказом или уходом: прощание приложения не придёт, консультант прощается сам и ничего не обещает", async () => {
@@ -108,6 +118,7 @@ describe("инструменты консультанта", () => {
     });
     for (const outcome of ["declined", "left"]) {
       const summary = { goal: "Курс", stuckAt: "Нет идеи", chosenStep: "Пока ничего", outcome };
+      await reopenPreviewConversation(database.db, chatId);
       const result = (await withFarewell.finish_dialog!.execute!(summary as never, callOptions)) as { next?: string };
       expect(result.next).not.toMatch(/answer/);
       expect(result.next).not.toContain("Записал вас на созвон!");

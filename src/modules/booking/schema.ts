@@ -87,8 +87,11 @@ export const callNotifyBots = appSchema.table(
   (table) => [uniqueIndex("call_notify_bots_connect_code").on(table.connectCode)],
 );
 
-/** `reminder_failed`, `cancel_message_failed` — напоминание или сообщение об отмене не дошло до человека: эксперт напишет сам. */
-export const CALL_NOTICE_KINDS = ["booked", "rescheduled", "cancelled", "reminder_failed", "cancel_message_failed"] as const;
+/**
+ * `reminder_failed`, `cancel_message_failed` — напоминание или сообщение об отмене не дошло до человека: эксперт напишет сам.
+ * `agent_handover` — агент с согласия вернувшегося человека передал его вопрос эксперту (без записи на созвон).
+ */
+export const CALL_NOTICE_KINDS = ["booked", "rescheduled", "cancelled", "reminder_failed", "cancel_message_failed", "agent_handover"] as const;
 export type CallNoticeKind = (typeof CALL_NOTICE_KINDS)[number];
 export type CallNoticeStatus = "queued" | "sent" | "failed";
 
@@ -97,9 +100,10 @@ export const callNotices = appSchema.table(
   "call_notices",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    bookingId: uuid("booking_id")
-      .notNull()
-      .references(() => callBookings.id),
+    /** Запись на созвон; у передачи вопроса агентом (`agent_handover`) — нет. */
+    bookingId: uuid("booking_id").references(() => callBookings.id),
+    /** Передача вопроса агентом: прохождение и выжимка (`agentHandoverKey`) — повтор той же передачи второго не шлёт. */
+    handoverKey: text("handover_key"),
     kind: text("kind").$type<CallNoticeKind>().notNull(),
     botId: uuid("bot_id")
       .notNull()
@@ -110,7 +114,10 @@ export const callNotices = appSchema.table(
     sentAt: timestamp("sent_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("call_notices_booking_kind_bot").on(table.bookingId, table.kind, table.botId)],
+  (table) => [
+    uniqueIndex("call_notices_booking_kind_bot").on(table.bookingId, table.kind, table.botId),
+    uniqueIndex("call_notices_handover_bot").on(table.handoverKey, table.botId),
+  ],
 );
 
 export type CallNoticeRow = typeof callNotices.$inferSelect;

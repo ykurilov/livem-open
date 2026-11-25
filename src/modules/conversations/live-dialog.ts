@@ -28,6 +28,7 @@ import { createCallBookingPort } from "../booking/port";
 import { queueCallNotices, scheduleCallReminder, sendCallNotice, sendCallReminder } from "../booking/notices";
 import { CALL_BOOKED_EVENT, enabledCallBooking } from "../booking/setting";
 import { getVersion } from "../lead-magnets";
+import { createExpertHandoverPort } from "./expert-handover";
 import { endActivePassages } from "./passage-end";
 import { createPassageConversationStore } from "./passage-store";
 import { routeInboundMessage } from "./router";
@@ -173,6 +174,7 @@ export function createLiveDialog(deps: LiveDialogDependencies): LiveDialog {
         if (failures.length > 0) throw new AggregateError(failures, failures.map((error) => (error instanceof Error ? error.message : String(error))).join("; "));
       },
     }),
+    expertHandover: createExpertHandoverPort({ db, queue: deps.queue, clock }),
     ...(deps.chatImages && { attachments: deps.chatImages }),
     modelChoice: deps.modelChoice,
     limits,

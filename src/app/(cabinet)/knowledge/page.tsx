@@ -2,6 +2,7 @@ import Link from "next/link";
 import { BooksIcon } from "@phosphor-icons/react/dist/ssr";
 import { requireUser } from "@/modules/access";
 import { KNOWLEDGE_MAX_CHARS, formatChars, listKnowledgeBases, type KnowledgeBaseListItem } from "@/modules/knowledge";
+import { listLeadMagnetCards } from "@/modules/lead-magnets";
 import { getDatabase } from "@/modules/platform/db";
 import { DataTable, KNOWLEDGE_TABS, PageHeader, SectionTabs, type DataTableColumn } from "@/ui";
 import { AddKnowledgeButton, KnowledgeActions } from "./knowledge-dialogs";
@@ -27,7 +28,7 @@ const columns: DataTableColumn<KnowledgeBaseListItem>[] = [
     header: "Прикреплена",
     render: (base) =>
       base.usedBy.length === 0 ? (
-        <span className="text-[var(--yk-muted)]">Ни к одному лидмагниту</span>
+        <span className="text-[var(--yk-muted)]">Ни к одному лидмагниту — консультанты её не получают</span>
       ) : (
         <ul className="flex flex-col">
           {base.usedBy.map((lead) => (
@@ -45,20 +46,22 @@ const columns: DataTableColumn<KnowledgeBaseListItem>[] = [
 
 export default async function Page() {
   await requireUser();
-  const bases = await listKnowledgeBases(getDatabase().db);
+  const { db } = getDatabase();
+  const [bases, leadMagnets] = await Promise.all([listKnowledgeBases(db), listLeadMagnetCards(db)]);
   return (
     <>
-      <PageHeader title="База знаний" action={<AddKnowledgeButton />} tabs={<SectionTabs label="Разделы «Базы знаний»" tabs={KNOWLEDGE_TABS} />} />
+      <PageHeader title="База знаний" action={<AddKnowledgeButton targets={leadMagnets.map(({ id, name }) => ({ id, name }))} />} tabs={<SectionTabs label="Разделы «Базы знаний»" tabs={KNOWLEDGE_TABS} />} />
       <p className="app-muted mb-4">
-        Тексты, на которые консультант опирается в ответах: транскрипты курсов, частые вопросы и ответы на них. Прикрепите базу к лидмагниту на
-        его вкладке «Настройки» — консультант получит её целиком в начале разговора. На один лидмагнит помещается до{" "}
+        Тексты, на которые консультант опирается в ответах: транскрипты курсов, частые вопросы и ответы на них. Консультант получает базу целиком,
+        только когда она подключена к лидмагниту: отметьте лидмагниты при загрузке или подключите базу на вкладке «Настройки» лидмагнита. Файл,
+        отправленный в чат конструктора, становится базой и подключается к этому лидмагниту сам. На один лидмагнит помещается до{" "}
         {formatChars(KNOWLEDGE_MAX_CHARS)} знаков.
       </p>
       <DataTable
         columns={columns}
         rows={bases}
         rowKey={(base) => base.id}
-        empty={{ icon: BooksIcon, title: "Баз знаний пока нет", hint: "Нажмите «Добавить текст»: например, транскрипт курса или список частых вопросов." }}
+        empty={{ icon: BooksIcon, title: "Баз знаний пока нет", hint: "Нажмите «Добавить текст»: например, транскрипт курса или список частых вопросов — файлом .txt, .md или .pdf." }}
       />
     </>
   );

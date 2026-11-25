@@ -138,11 +138,7 @@ export async function callNoticeText(db: DatabaseExecutor, change: CallNoticeEve
 /** Уведомления о записи во все подключённые боты эксперта; повтор того же изменения второго не шлёт. Тестовые — никогда. Возвращает, сколько записано новых. */
 export async function queueCallNotices(deps: { db: Database; queue: JobEnqueuer; clock: Clock }, change: CallNoticeEvent): Promise<number> {
   if (change.booking.testChatId) return 0;
-  const targets = await deps.db
-    .select({ botId: callNotifyBots.botId })
-    .from(callNotifyBots)
-    .innerJoin(bots, eq(bots.id, callNotifyBots.botId))
-    .where(and(isNotNull(callNotifyBots.chatId), isNull(bots.deletedAt)));
+  const targets = await noticeTargets(deps.db);
   if (targets.length === 0) return 0;
   const text = await callNoticeText(deps.db, change);
   const kind: CallNoticeKind = change.kind;
@@ -152,6 +148,37 @@ export async function queueCallNotices(deps: { db: Database; queue: JobEnqueuer;
     const [notice] = await deps.db
       .insert(callNotices)
       .values({ bookingId: change.booking.id, kind, botId, text, createdAt: deps.clock.now() })
+      .onConflictDoNothing()
+      .returning({ id: callNotices.id });
+    if (notice) queued.push(notice.id);
+  }
+  for (const noticeId of queued) await deps.queue.enqueue("call-notice-send", { noticeId });
+  return queued.length;
+}
+
+/** Подключённые к уведомлениям боты эксперта, кроме удалённых. */
+async function noticeTargets(db: DatabaseExecutor): Promise<Array<{ botId: string }>> {
+  return db
+    .select({ botId: callNotifyBots.botId })
+    .from(callNotifyBots)
+    .innerJoin(bots, eq(bots.id, callNotifyBots.botId))
+    .where(and(isNotNull(callNotifyBots.chatId), isNull(bots.deletedAt)));
+}
+
+/**
+ * Уведомление эксперту о вопросе, который агент передал с согласия вернувшегося человека, — в те же боты, что и о
+ * записях. `handoverKey` — эта передача: повтор задачи или вызова второго уведомления не шлёт. Возвращает, сколько записано.
+ */
+export async function queueAgentHandoverNotices(
+  deps: { db: Database; queue: JobEnqueuer; clock: Clock },
+  handover: { key: string; text: string },
+): Promise<number> {
+  const targets = await noticeTargets(deps.db);
+  const queued: string[] = [];
+  for (const { botId } of targets) {
+    const [notice] = await deps.db
+      .insert(callNotices)
+      .values({ kind: "agent_handover", handoverKey: handover.key, botId, text: handover.text, createdAt: deps.clock.now() })
       .onConflictDoNothing()
       .returning({ id: callNotices.id });
     if (notice) queued.push(notice.id);

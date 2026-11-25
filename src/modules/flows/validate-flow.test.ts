@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FIRST_APP_FIELDS, firstAppSettings } from "./first-app.fixture";
+import { LEAD_MAGNET_TOOLS } from "./catalog";
 import { leadMagnetToFlow } from "./settings-to-flow";
 import { leadMagnetFlowIssues, validateLeadMagnetFlow } from "./validate-flow";
 
@@ -40,8 +41,8 @@ describe("validateLeadMagnetFlow: разбор, проверка SDK и наши
 
   it("наша находка — со своим путём", () => {
     const json = firstAppJson();
-    json.afterEnd = "reply";
-    expect(validateLeadMagnetFlow(json)).toEqual({ ok: false, issues: [{ path: "afterEnd", message: expect.stringMatching(/молч/) }] });
+    json.states[0].tools.push(LEAD_MAGNET_TOOLS.saleAnswer);
+    expect(validateLeadMagnetFlow(json)).toEqual({ ok: false, issues: [{ path: "states[0]", message: expect.stringMatching(/только в ноде «Продажа»/) }] });
   });
 
   it("замечания SDK (не ошибки) сохранению не мешают", () => {

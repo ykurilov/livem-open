@@ -35,14 +35,16 @@ export function createPassageConversationStore(db: Database, clock: Clock, queue
       // Купившему итог — «согласился», что бы ни решила модель: одним UPDATE по текущей строке, оплата посреди записи
       // итога его не разминётся (`markPurchased` ставит то же)
       const written = sql`${JSON.stringify(summary)}::jsonb`;
-      await db
+      const finished = await db
         .update(passages)
         .set({
           status: "completed",
           summary: sql`case when ${passages.purchasedAt} is null then ${written} else jsonb_set(${written}, '{outcome}', '"agreed"') end`,
           endedAt: clock.now(),
         })
-        .where(and(eq(passages.chatId, chatId), eq(passages.status, "active")));
+        .where(and(eq(passages.chatId, chatId), eq(passages.status, "active")))
+        .returning({ id: passages.id });
+      return finished.length > 0;
     },
 
     async saleAnswer(chatId, answer, day) {

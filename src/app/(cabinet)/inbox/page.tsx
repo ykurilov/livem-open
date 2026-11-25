@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Alert, Badge, Card, CardContent, CardHeader, CardTitle } from "@/ui/primitives";
 import { requireUser } from "@/modules/access";
 import { CHANNEL_LABELS } from "@/modules/channels";
+import { AGENT_HANDOVER_PREFIX } from "@/modules/consultant";
 import type { OutboundKind } from "@/modules/channels/schema";
 import { listUnansweredThreads, loadInboxThread, type InboxMessage, type InboxThreadSummary } from "@/modules/inbox";
 import { getDatabase } from "@/modules/platform/db";
@@ -82,7 +83,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-[var(--yk-space-6)]">
-                {selected.handoverReason ? <Alert variant="warm" title="Консультант не ответил сам — ответьте человеку">{handoverText(selected.handoverReason)}</Alert> : null}
+                {selected.handoverReason ? <HandoverAlert reason={selected.handoverReason} /> : null}
                 {selected.undeliveredReply ? <Alert variant="danger" title="Ваш ответ не ушёл">{selected.undeliveredReply}</Alert> : null}
                 <ThreadMessages personId={selected.person.id} lastMessageId={selected.messages.at(-1)?.id ?? null}>
                   {selected.messages.map((message) => (
@@ -129,7 +130,7 @@ function ThreadLink({ thread, active }: { thread: InboxThreadSummary; active: bo
         {thread.botTitle}
         {thread.lastMessageAt ? ` · ${timeFormat.format(thread.lastMessageAt)}` : ""}
       </span>
-      {thread.handoverReason ? <span className="text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">Консультант не ответил: {thread.handoverReason}</span> : null}
+      {thread.handoverReason ? <span className="text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">{handoverLine(thread.handoverReason)}</span> : null}
       {thread.replyUndelivered ? <span className="text-[length:var(--yk-text-small-size)] text-[var(--yk-danger)]">Ваш ответ не ушёл</span> : null}
     </Link>
   );
@@ -137,6 +138,23 @@ function ThreadLink({ thread, active }: { thread: InboxThreadSummary; active: bo
 
 /** Причина передачи — отдельной фразой после заголовка плашки. */
 const handoverText = (reason: string) => `Причина: ${reason}${/[.!?]$/.test(reason) ? "" : "."}`;
+
+/** Вопрос, который агент с согласия человека передал эксперту после конца разговора; иначе — консультант не ответил сам. */
+const agentHandoverOf = (reason: string) => (reason.startsWith(AGENT_HANDOVER_PREFIX) ? reason.slice(AGENT_HANDOVER_PREFIX.length) : null);
+
+function HandoverAlert({ reason }: { reason: string }) {
+  const question = agentHandoverOf(reason);
+  return question === null ? (
+    <Alert variant="warm" title="Консультант не ответил сам — ответьте человеку">{handoverText(reason)}</Alert>
+  ) : (
+    <Alert variant="warm" title="Агент передал вам вопрос — ответьте человеку">{question}</Alert>
+  );
+}
+
+const handoverLine = (reason: string) => {
+  const question = agentHandoverOf(reason);
+  return question === null ? `Консультант не ответил: ${reason}` : `Агент передал вопрос: ${question}`;
+};
 
 function Message({ message }: { message: InboxMessage }) {
   if (message.kind === "start")

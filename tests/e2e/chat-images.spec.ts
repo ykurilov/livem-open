@@ -1,7 +1,7 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { seal } from "../../src/auth/core/cookie-seal";
 import { E2E_SCRIPT } from "../../src/modules/platform/e2e-script";
-import { openTab } from "./open-tab";
+import { openCreateForm, openTab } from "./open-tab";
 import { E2E_BASE_URL, E2E_COOKIE_SECRET, E2E_EMAIL } from "./e2e-env";
 
 test.beforeEach(async ({ context }) => {
@@ -31,7 +31,7 @@ test("картинка из буфера доходит до конструкт�
   test.setTimeout(180_000);
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Новый лидмагнит" }).click();
+  await openCreateForm(page);
   await page.getByLabel("Название").fill("Лидмагнит с картинками");
   await page.getByRole("button", { name: "Создать" }).click();
   await expect(page).toHaveURL(/\/lead-magnets\/[0-9a-f-]{36}$/, { timeout: 60_000 });

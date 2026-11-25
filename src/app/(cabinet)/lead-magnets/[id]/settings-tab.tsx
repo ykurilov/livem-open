@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { Alert, Button, Field, Input, Textarea } from "@/ui/primitives";
 import type { LeadMagnetSettings, ReturnAfterProgramMode } from "@/modules/lead-magnets";
+import { RETURN_GUIDANCE_MAX_LENGTH } from "@/modules/lead-magnets/settings";
+import { nudgesWithSilence, REMIND_LONGER_THAN_WAIT, remindLongerThanWait, silenceOf, type SilenceSettings } from "@/modules/flows/silence-settings";
 import { Select } from "@/ui";
 import { Checkbox } from "@/ui/checkbox";
-import { KNOWLEDGE_MAX_CHARS, formatChars } from "@/modules/knowledge/knowledge-file";
+import { KNOWLEDGE_MAX_CHARS, formatChars } from "@/modules/knowledge/knowledge-limits";
 import { CHANNEL_LABELS, MESSENGER_KINDS } from "@/modules/channels/channel";
 import {
   CALL_BOOKING_ABOUT_MAX_LENGTH,
@@ -41,6 +43,11 @@ const DEFAULT_REASONING = "default";
 
 const RETURN_AFTER_PROGRAM_OPTIONS: Array<{ value: ReturnAfterProgramMode; label: string; hint: string }> = [
   {
+    value: "continue",
+    label: "Агент продолжит разговор",
+    hint: "Агент помнит прошлый разговор и его итог, выясняет, с чем человек пришёл, и помогает. Сценарий с начала не запускает и не продаёт по второму кругу без повода.",
+  },
+  {
     value: "inbox",
     label: "Передать мне во «Входящие»",
     hint: "Сообщение придёт вам, человек получит автоответ из настроек бота.",
@@ -61,7 +68,9 @@ const editKeyLabels: Partial<Record<SettingsEditKey, string>> = {
   clientPortrait: "Описание клиентов",
   endCondition: "Условие завершения",
   farewellMessage: "Прощальное сообщение",
-  returnAfterProgram: "Если человек вернулся после конца программы",
+  returnAfterProgram: "Если человек вернулся после конца",
+  returnGuidance: "Как вести вернувшихся",
+  nudges: "Напоминать и Ждать ответа",
   maxPersonMessages: "Предел сообщений человека",
   providerId: "Модель консультанта",
   modelId: "Модель консультанта",
@@ -221,18 +230,32 @@ export function SettingsTab({ leadMagnetId, draft, draftVersionId, videos, image
       ))}
 
       <div className="flex flex-col gap-1">
-        <span className="yk-mono-label">Если человек вернулся после конца программы</span>
+        <span className="yk-mono-label">Если человек вернулся после конца</span>
         <Select
-          aria-label="Если человек вернулся после конца программы"
+          aria-label="Если человек вернулся после конца"
           // Черновики, записанные до настройки, её не хранят: для них действует «Входящие»
           value={settings.returnAfterProgram ?? "inbox"}
           options={RETURN_AFTER_PROGRAM_OPTIONS}
           onValueChange={(value) => update({ returnAfterProgram: value as ReturnAfterProgramMode })}
         />
         <span className="text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">
-          Когда человек снова нажимает ссылку или кнопку этого лидмагнита. {RETURN_AFTER_PROGRAM_OPTIONS.find((option) => option.value === (settings.returnAfterProgram ?? "inbox"))?.hint}
+          Когда разговор уже закончился, а человек снова пишет или нажимает ссылку этого лидмагнита. {RETURN_AFTER_PROGRAM_OPTIONS.find((option) => option.value === (settings.returnAfterProgram ?? "inbox"))?.hint}
         </span>
       </div>
+      {settings.returnAfterProgram === "continue" ? (
+        <Field
+          label="Как вести вернувшихся"
+          hint={
+            (settings.returnGuidance ?? "").length > RETURN_GUIDANCE_MAX_LENGTH
+              ? `Не длиннее ${RETURN_GUIDANCE_MAX_LENGTH} знаков`
+              : "Необязательно. Ваше указание агенту для разговора после конца. Пусто — агент действует по общему правилу."
+          }
+        >
+          <Textarea rows={3} value={settings.returnGuidance ?? ""} onChange={(event) => update({ returnGuidance: event.target.value })} />
+        </Field>
+      ) : null}
+
+      <SilenceFields flow={settings.flow} onChange={(flow) => update({ flow })} />
 
       {/* Если у сценария есть «Дни и время», разговор ограничивают рамки дня, а не общий предел */}
       {settings.flow.schedule ? null : (
@@ -376,6 +399,42 @@ export function SettingsTab({ leadMagnetId, draft, draftVersionId, videos, image
  * «Переход в мессенджер»: агент веб-чата в нужный момент показывает кнопки мессенджеров вместо поля ввода. Кнопка
  * появляется, только если лидмагнит опубликован в этом мессенджере.
  */
+/**
+ * «Напоминать» и «Ждать ответа» — сроки молчания человека в сценарии. У воронки на несколько дней их нет: разговор
+ * кончается её сроком.
+ */
+function SilenceFields({ flow, onChange }: { flow: AgentFlow; onChange(flow: AgentFlow): void }) {
+  const silence = silenceOf(flow);
+  if (!silence) return null;
+  const set = (next: SilenceSettings) => onChange({ ...flow, nudges: nudgesWithSilence(flow.nudges, next) });
+  const remindHint =
+    silence.remindDays < 1 ? "Впишите число — хотя бы 1" : "Сколько дней молчания человека агент ещё пишет ему первым. Потом молчит и ждёт.";
+  const waitHint = remindLongerThanWait(silence)
+    ? `${REMIND_LONGER_THAN_WAIT}`
+    : "Сколько дней молчания разговор считается идущим. Потом в отчётах он «не завершил», но вернувшемуся агент всё равно ответит с того же места. Пусто — без срока.";
+  return (
+    <div className="flex flex-wrap gap-[var(--yk-space-4)]">
+      <Field label="Напоминать, дней" hint={remindHint}>
+        <Input
+          type="number"
+          min={1}
+          value={silence.remindDays < 1 ? "" : silence.remindDays}
+          onChange={(event) => set({ ...silence, remindDays: Number(event.target.value) })}
+        />
+      </Field>
+      <Field label="Ждать ответа, дней" hint={waitHint}>
+        <Input
+          type="number"
+          min={1}
+          placeholder="без срока"
+          value={silence.waitDays ?? ""}
+          onChange={(event) => set({ ...silence, waitDays: event.target.value.trim() === "" ? null : Number(event.target.value) })}
+        />
+      </Field>
+    </div>
+  );
+}
+
 function MessengerHandoffChoice({ value, onChange }: { value: MessengerHandoffSetting; onChange(value: MessengerHandoffSetting): void }) {
   const whenMissing = value.enabled && !value.when.trim();
   const channelsMissing = value.enabled && value.channels.length === 0;
@@ -485,7 +544,8 @@ function KnowledgeChoice({ knowledge, chosen, onChange }: { knowledge: ArchiveKn
       </p>
       {knowledge.length === 0 ? (
         <p className="text-[length:var(--yk-text-small-size)] text-[var(--yk-muted)]">
-          Баз пока нет. Тексты добавляются в разделе <Link href="/knowledge" className="app-focus underline">«База знаний» → «Тексты»</Link>.
+          Баз пока нет. Отправьте файл .txt, .md или .pdf в чат конструктора — он станет базой и сразу подключится. Или добавьте текст в разделе{" "}
+          <Link href="/knowledge" className="app-focus underline">«База знаний» → «Тексты»</Link>.
         </p>
       ) : null}
       {knowledge.map((base) => (

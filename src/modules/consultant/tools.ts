@@ -22,6 +22,9 @@ export const dialogSummaryInput = z.strictObject({
   answer: z.string().max(200).optional().describe(answerDescription("")),
 });
 
+/** finish_dialog в разговоре, который уже закончен: итог не меняется, прощания не будет. */
+export const FINISHED_BEFORE = "Разговор уже закончен раньше, итог прежний и прощания не будет. Ответь человеку сам обычным сообщением.";
+
 /** Описание answer одно на версию лидмагнита: в нём прощание из настроек, чтобы модель его не пересказывала. */
 function answerDescription(farewellMessage: string): string {
   const farewell = farewellMessage.trim();
@@ -63,7 +66,9 @@ export function createConsultantTools(input: {
       inputSchema: dialogSummaryInput.extend({ answer: z.string().max(200).optional().describe(answerDescription(settings.farewellMessage)) }),
       execute: async (summary) => {
         const answer = summary.answer && answerWithoutFarewellRepeats(summary.answer, settings.farewellMessage);
-        await store.finish(chatId, { ...summary, ...(summary.answer !== undefined && { answer }) });
+        const finished = await store.finish(chatId, { ...summary, ...(summary.answer !== undefined && { answer }) });
+        // Разговор после своего конца: итог и прощание уже были, отвечает сама модель
+        if (finished === false) return { ok: false as const, error: FINISHED_BEFORE };
         return {
           ok: true as const,
           next: `Разговор завершён. ${lastReplyRule(settings.farewellMessage, summary.outcome)}`,

@@ -67,7 +67,7 @@ export interface ConstructorEndpointOptions {
   reopenTestConversation?: (leadMagnetId: string) => Promise<void>;
   /** Инструкция конструктора; по умолчанию — `prompts/constructor.md`. */
   instructions?: string;
-  /** Картинки в сообщениях эксперта: снимки экрана, фото. Нет — чат только текстовый. */
+  /** Файлы в сообщениях эксперта: картинки, а PDF и текст — базы знаний (`createConstructorFiles`). Нет — чат только текстовый. */
   attachments?: Attachments;
 }
 

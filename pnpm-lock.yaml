@@ -36,44 +36,44 @@ importers:
         specifier: npm:@ykurilov/tandem-ui@^0.7.0
         version: '@ykurilov/tandem-ui@0.7.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)'
       '@ykurilov/agent-chat-attachments':
-        specifier: 0.110.0
-        version: 0.110.0(@types/node@22.20.5)(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+        specifier: 0.116.0
+        version: 0.116.0(@types/node@22.20.5)(@ykurilov/agent-chat-react@0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       '@ykurilov/agent-chat-core':
-        specifier: 0.110.0
-        version: 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+        specifier: 0.116.0
+        version: 0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       '@ykurilov/agent-chat-flows':
-        specifier: 0.110.0
-        version: 0.110.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+        specifier: 0.116.0
+        version: 0.116.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       '@ykurilov/agent-chat-image-library':
-        specifier: 0.110.0
-        version: 0.110.0(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)
+        specifier: 0.116.0
+        version: 0.116.0(@ykurilov/agent-chat-react@0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)
       '@ykurilov/agent-chat-limits':
-        specifier: 0.110.0
-        version: 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+        specifier: 0.116.0
+        version: 0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       '@ykurilov/agent-chat-react':
-        specifier: 0.110.0
-        version: 0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+        specifier: 0.116.0
+        version: 0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       '@ykurilov/agent-chat-reply-check':
-        specifier: 0.110.0
-        version: 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+        specifier: 0.116.0
+        version: 0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       '@ykurilov/agent-chat-server':
-        specifier: 0.110.0
-        version: 0.110.0(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(zod@4.6.5)
+        specifier: 0.116.0
+        version: 0.116.0(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(zod@4.6.5)
       '@ykurilov/agent-chat-skin-oduvanchik':
-        specifier: 0.110.0
-        version: 0.110.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-flows@0.110.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+        specifier: 0.116.0
+        version: 0.116.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-flows@0.116.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       '@ykurilov/agent-chat-storage-postgres':
-        specifier: 0.110.0
-        version: 0.110.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+        specifier: 0.116.0
+        version: 0.116.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       '@ykurilov/agent-chat-videos':
-        specifier: 0.110.0
-        version: 0.110.0(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)
+        specifier: 0.116.0
+        version: 0.116.0(@ykurilov/agent-chat-react@0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)
       '@ykurilov/agent-chat-voice':
-        specifier: 0.110.0
-        version: 0.110.0(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(ws@8.22.2)
+        specifier: 0.116.0
+        version: 0.116.0(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(ws@8.22.2)
       '@ykurilov/agent-chat-web-tools':
-        specifier: 0.110.0
-        version: 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+        specifier: 0.116.0
+        version: 0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       '@ykurilov/ds-react':
         specifier: 0.7.0
         version: 0.7.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -104,6 +104,9 @@ importers:
       react-dom:
         specifier: 19.3.0
         version: 19.3.0(react@19.3.0)
+      unpdf:
+        specifier: 1.9.1
+        version: 1.9.1
       web-push:
         specifier: 3.6.7
         version: 3.6.7
@@ -1483,8 +1486,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@rolldown/pluginutils@1.1.0':
-    resolution: {integrity: sha512-K+NU2HDCEem4sClgHH4ZZXwdJeNFkJo+hRk479DIwdIviAPN2hFJH1KHHwg8CxHQXvi0M5XY4deTXINfIiSG6w==}
+  '@rolldown/pluginutils@1.1.1':
+    resolution: {integrity: sha512-glFIJDvLNDtJhT9qrMFWLPbvS+skxgt4L0K8Ei2YtnhPysAJnsI7nyxSJxKj4ADeKX0OLjC4ntRkwpLOoS3rwA==}
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -1584,8 +1587,8 @@ packages:
   '@tailwindcss/postcss@4.3.3':
     resolution: {integrity: sha512-JTSZZGQi1AyKirbLN3azmjVzef92tcX7h+iSqPdaeStyFpGpDlKvvpxeOE8njhbUanbRwr3z8DyzhICWnMtQeg==}
 
-  '@tybys/wasm-util@0.10.4':
-    resolution: {integrity: sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A==}
+  '@tybys/wasm-util@0.10.5':
+    resolution: {integrity: sha512-dOGOPxlaNV+G046mZzN+9C0dAcQZeSKcXiVaM0TYy/LM4ttTmgSBDxYfovcYI8Em3+eAbiAYpvWLOv8+ZVRJKA==}
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -1599,8 +1602,8 @@ packages:
   '@types/d3-interpolate@3.0.4':
     resolution: {integrity: sha512-mgLPETlrpVV1YRJIglr4Ez47g7Yxjl1lj7YKsiMCb27VJH9W8NVM6Bb9d8kkpG/uAQS5AmbA48q2IAolKKo1MA==}
 
-  '@types/d3-selection@3.0.12':
-    resolution: {integrity: sha512-Qe/KWYhEiIIxGs7HrAAjMfShxKldx19SJtr5zu53f3afPsdZNz7HHtdTLXo/kqeiWNXVycI24kSnfzBYkTzpgw==}
+  '@types/d3-selection@3.0.13':
+    resolution: {integrity: sha512-oXz0iHVpWOhurycj7P8KehdevbbwQfdOyYPd6u5TUcrk6ofXeQfY0e4Ow+0/35arZ24gs6ubpjJX0CuZHV5fdw==}
 
   '@types/d3-transition@3.0.9':
     resolution: {integrity: sha512-uZS5shfxzO3rGlu0cC3bjmMFKsXv+SmZZcgp0KD22ts4uGXp5EVYGzu/0YdwZeKmddhcAccYtREJKkPfXkZuCg==}
@@ -1695,20 +1698,23 @@ packages:
   '@xyflow/system@0.0.84':
     resolution: {integrity: sha512-96zfGFjH3oZ3T0MRdH4gJ0SlXuCIxbBuHVevZ4xry5UTxqjzjt010+LRdholgepq7jhrcaz1JNtzrETscwnkEA==}
 
-  '@ykurilov/agent-chat-attachments@0.110.0':
-    resolution: {integrity: sha512-bhV9+MQGGnfeegIE/59CSswhx6Tubxw/TLp8RU+eLXAisdARELIx+qd17vs4P8O69RJECBgXSRLNmYgyJgwVHw==}
+  '@ykurilov/agent-chat-attachments@0.116.0':
+    resolution: {integrity: sha512-ZlF0bDDmkwH4qsgxnc879y8M80WO+Hs7YGNBSDFXFQAgDYTShxfIG6FWhX6tV/z7rjW7Ew/80dCkxOqYGAfIiw==}
     engines: {node: '>=22'}
     peerDependencies:
-      '@ykurilov/agent-chat-react': ^0.110.0
+      '@ykurilov/agent-chat-react': ^0.116.0
       react: ~19.0.1 || ~19.1.2 || ^19.2.1
+      vitest: ^3.2.0 || ^4.0.0 || ^5.0.0
     peerDependenciesMeta:
       '@ykurilov/agent-chat-react':
         optional: true
       react:
         optional: true
+      vitest:
+        optional: true
 
-  '@ykurilov/agent-chat-core@0.110.0':
-    resolution: {integrity: sha512-OzCkNKLT/6Hc6IDSaRXLeNGcBxDMSjHGX4xQ7RvelgXehA6hd6gajdx0gWpNSXW0sqgu0KveELfWxDblfvvz3Q==}
+  '@ykurilov/agent-chat-core@0.116.0':
+    resolution: {integrity: sha512-eljOyhMdO9jV3E6VzTtZdQTf/Hzj6MM1W+9fguNghDErDd9kuBC49E8H5yPZN8Sqw566lpoSvXR1llKaPzvBjg==}
     engines: {node: '>=22'}
     peerDependencies:
       vitest: ^3.2.0 || ^4.0.0 || ^5.0.0
@@ -1716,11 +1722,11 @@ packages:
       vitest:
         optional: true
 
-  '@ykurilov/agent-chat-flows@0.110.0':
-    resolution: {integrity: sha512-DBZhYSmOohu8pDLwP+5Ge8yYaRp8nVU3GsdrjK+FkQiiiKjT2FnE/udAoRVdUg3QNjc+DGw8GL6G4ElndW2Fuw==}
+  '@ykurilov/agent-chat-flows@0.116.0':
+    resolution: {integrity: sha512-+GMIgAomipeQzeYN49wyNzwrvbCahdtiABeOL1cdiDyqtIZbnyf1ldPaPW6NEpiCYnlktEm+taz6daWb+Ul6KA==}
     engines: {node: '>=22'}
     peerDependencies:
-      '@ykurilov/agent-chat-react': ^0.110.0
+      '@ykurilov/agent-chat-react': ^0.116.0
       better-sqlite3: ^13.0.3
       pg: ^8.23.0
       react: ~19.0.1 || ~19.1.2 || ^19.2.1
@@ -1734,11 +1740,11 @@ packages:
       react:
         optional: true
 
-  '@ykurilov/agent-chat-image-library@0.110.0':
-    resolution: {integrity: sha512-jQl0DBeLsANreRCqP2Cpv5v31qndieZ0fwHBCFA1HHUmtUMof2KDjahbhVOIRka2db9nK/h986tDFTapE2BFdQ==}
+  '@ykurilov/agent-chat-image-library@0.116.0':
+    resolution: {integrity: sha512-ZNahDvTmYREIkykMgHWkt/hhxB3JnvrW2MLQ1NXO4M8+xL/Hc57vhe/rgxE8oYb9uOHYjuNcjaYSiz06qQcGkQ==}
     engines: {node: '>=22'}
     peerDependencies:
-      '@ykurilov/agent-chat-react': ^0.110.0
+      '@ykurilov/agent-chat-react': ^0.116.0
       react: ~19.0.1 || ~19.1.2 || ^19.2.1
     peerDependenciesMeta:
       '@ykurilov/agent-chat-react':
@@ -1746,22 +1752,22 @@ packages:
       react:
         optional: true
 
-  '@ykurilov/agent-chat-limits@0.110.0':
-    resolution: {integrity: sha512-LqpfxBGlfM0/XJuP4IKLj61A4a3e5mB3NInlqkUrBgpVvbPIAMeH1BXl13QIvOT67PIcldsgb3TCVqJ7itkd9g==}
+  '@ykurilov/agent-chat-limits@0.116.0':
+    resolution: {integrity: sha512-xPnvQ7hlp9YUTIH8bac9elBzjlhQu1dxfOKZrUAtKu2p/XxbxekdW5L/vUwmiNSICTnimoPAQ+L8WHbUPgLRSA==}
     engines: {node: '>=22'}
 
-  '@ykurilov/agent-chat-react@0.110.0':
-    resolution: {integrity: sha512-BULiwX9zWl29ysTeuY1zyYbxgt9luIe3jLclJXDRyhRL7TqG0b4rbsCtuwCHnBf8Tt2hqoBvj+aoA3ouJtlvtw==}
+  '@ykurilov/agent-chat-react@0.116.0':
+    resolution: {integrity: sha512-9V+GxBllQixmCKrqLyj49VAxsaGhdsKayFlsCsX2962rXJxiqfxE73ZBIzbFKTCsREkgtjf9NjPUedByQeA46w==}
     engines: {node: '>=22'}
     peerDependencies:
       react: ~19.0.1 || ~19.1.2 || ^19.2.1
 
-  '@ykurilov/agent-chat-reply-check@0.110.0':
-    resolution: {integrity: sha512-3B/KLuBSEQcdOVVUhukVmdCm33wo5Aclla60oZeitefFqttejciBIwm+tO3Y7uGanYWxaBNu1EfVtikXE/x+wQ==}
+  '@ykurilov/agent-chat-reply-check@0.116.0':
+    resolution: {integrity: sha512-ZzPKyc9XvvYeDLMC0Ebzy+J80zox+7UhcTH5KBC7thsYP5n/gc+lEe+QUQ3yM4vshKymiUrbh1E/bm4n6MIjng==}
     engines: {node: '>=22'}
 
-  '@ykurilov/agent-chat-server@0.110.0':
-    resolution: {integrity: sha512-863XPYw1Tt+18YsnWeCemkveaI+iPfveSNGv69LO/W1p8I/vidKw5D1A2RJSCP4Ul+DdcL9b2wYnsDVkJULy+g==}
+  '@ykurilov/agent-chat-server@0.116.0':
+    resolution: {integrity: sha512-yv4zNm8pXAEOQ99gsMkMEo8VTYUS7juknGj/4lh5DEjVCAs/VWEn+RG8f1Vj/ma3Q46izluR0kiF8TzEZ/kCsQ==}
     engines: {node: '>=22'}
     peerDependencies:
       hono: ^4.13.10
@@ -1769,12 +1775,12 @@ packages:
       hono:
         optional: true
 
-  '@ykurilov/agent-chat-skin-oduvanchik@0.110.0':
-    resolution: {integrity: sha512-jN2/oj6Jix6TLclcyDyFL8icqQ8TqZeOHGTISv3c94zExCg6MHTVcXk44r9zLlFMBFpJVl0lHvbmO1gW7rjpnA==}
+  '@ykurilov/agent-chat-skin-oduvanchik@0.116.0':
+    resolution: {integrity: sha512-jaYJ5OoJTfrGm7qHSKcItIpKasbwcNIc8S2fLodbnxkCGQJ2D0Qt/rgrCYZRU/3PrxW+xTA4WZgZ5uIO4n7z7Q==}
     engines: {node: '>=22'}
     peerDependencies:
-      '@ykurilov/agent-chat-flows': ^0.110.0
-      '@ykurilov/agent-chat-sandbox': ^0.110.0
+      '@ykurilov/agent-chat-flows': ^0.116.0
+      '@ykurilov/agent-chat-sandbox': ^0.116.0
       react: ~19.0.1 || ~19.1.2 || ^19.2.1
       react-dom: ~19.0.1 || ~19.1.2 || ^19.2.1
     peerDependenciesMeta:
@@ -1783,15 +1789,15 @@ packages:
       '@ykurilov/agent-chat-sandbox':
         optional: true
 
-  '@ykurilov/agent-chat-storage-postgres@0.110.0':
-    resolution: {integrity: sha512-hIrQtb08A1DhqKjncPoB2UARCkuj9DlOY/v6qIed2MM35FpN7QKwN0OVeJqXHT1NQEYM67XQQw9mEAOW8m/ziA==}
+  '@ykurilov/agent-chat-storage-postgres@0.116.0':
+    resolution: {integrity: sha512-rjlj5CrGEexAz1GZjrp21t3qpZUHGX6LwwF91m7Knpipz/dtfH7eQ3osZGE/YSiOVmNpKN7SyKpkFdsbB/tQbA==}
     engines: {node: '>=22'}
 
-  '@ykurilov/agent-chat-videos@0.110.0':
-    resolution: {integrity: sha512-Z+mgJuEwPi1EtfPpusTtHwEs7puCR79c2Zerf0VUIWpvaJJwHLci3CYbTu4o7LE0UI5HWoORjBnaKDiMN6LzwQ==}
+  '@ykurilov/agent-chat-videos@0.116.0':
+    resolution: {integrity: sha512-oyODuL8CLLsvQdgXiJR7h0An50Mb5hF6ZTgkLpYG42LL2y9K7OHt+W9yEWm4gT6yxX7+QQh+HA4cI1byJoQy0g==}
     engines: {node: '>=22'}
     peerDependencies:
-      '@ykurilov/agent-chat-react': ^0.110.0
+      '@ykurilov/agent-chat-react': ^0.116.0
       react: ~19.0.1 || ~19.1.2 || ^19.2.1
     peerDependenciesMeta:
       '@ykurilov/agent-chat-react':
@@ -1799,8 +1805,8 @@ packages:
       react:
         optional: true
 
-  '@ykurilov/agent-chat-voice@0.110.0':
-    resolution: {integrity: sha512-+GA+QW+lFQ8ybXwyoAKjIVesVu3nuoPLcUTLm/ddwG0G3oqn9rv3vgU3oj5oRcbIRDMaVmiKYchFvPXyXBSyiQ==}
+  '@ykurilov/agent-chat-voice@0.116.0':
+    resolution: {integrity: sha512-g+OB5tXeGj6nYZByOS8LzFh5VHB2pXgfEz/UhgZGw+dlIpyCsfJ73xAa+J57XwXK+3BeSmYt+osGDXPa9Q4ysg==}
     engines: {node: '>=22'}
     peerDependencies:
       hono: ^4.13.10
@@ -1811,8 +1817,8 @@ packages:
       ws:
         optional: true
 
-  '@ykurilov/agent-chat-web-tools@0.110.0':
-    resolution: {integrity: sha512-O6f6RlJXXkb44Ha49jDgLS9HT8X3C9wjtTaCA44JLNtNO2FrrjVWHyg0HyH/wj032pvP4Fp7DklP6oQqA0f92Q==}
+  '@ykurilov/agent-chat-web-tools@0.116.0':
+    resolution: {integrity: sha512-LPElTO8HigetShXlijS6SSfNN/LNHQHAzcRVcc1Tq/M6Row3TOl6Zd1FSsvzt7BD+tKZAZYP7QLfQjyIXaqc+A==}
     engines: {node: '>=22'}
 
   '@ykurilov/ds-react@0.7.0':
@@ -2621,8 +2627,8 @@ packages:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
     engines: {node: '>=12'}
 
-  pkce-challenge@5.0.1:
-    resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
+  pkce-challenge@5.0.2:
+    resolution: {integrity: sha512-vCc54+qyIfKC5e2UN28AZKElwqjLINgiIV3RKI8pDu93TjaAJoB3QrgMzEBouy8yOKsXVXdAinO1QArJf9x5WA==}
     engines: {node: '>=16.20.0'}
 
   playwright-core@1.63.0:
@@ -2641,6 +2647,10 @@ packages:
 
   postcss@8.5.32:
     resolution: {integrity: sha512-LJlKCCAUFKOuZxipUdYw1NzIITEsPcgyOG9LkvRJvuKj/bRzbuRY0ARXvL0pWGpsZvn8jku+LMep2eU0seHp8g==}
+    engines: {node: ^10 || ^12 || >=14}
+
+  postcss@8.5.33:
+    resolution: {integrity: sha512-RVHEU9/Pp1Fnjr/MpAJsZoADukCKhfIi15OunEYiGktIkYLkPVvC1sioWolGDS7XByMTx9m/IGbro0Js13zhnQ==}
     engines: {node: ^10 || ^12 || >=14}
 
   postgres-array@2.0.0:
@@ -2768,6 +2778,10 @@ packages:
   source-map-js@1.2.2:
     resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
     engines: {node: '>=0.10.0'}
+
+  source-map-js@1.2.4:
+    resolution: {integrity: sha512-J7ZjMvHd9O1fcT/5V09QWaaSl2BbWx3F6O08spde82Namf9UB0GxRVIPiNbVsdKkoizHiSpTodo3vp2bAy91MA==}
+    engines: {node: '>=6.0.0'}
 
   source-map-support@0.5.21:
     resolution: {integrity: sha512-uBHU3L3czsIyYXKX88fdrGovxdSCoTGDRZ6SYXtSRxLZUzHg5P/66Ht6uoUlHu9EZod+inXhKo3qQgwXUT/y1w==}
@@ -3123,7 +3137,7 @@ snapshots:
       '@ai-sdk/provider': 4.0.19
       '@ai-sdk/provider-utils': 5.0.51(zod@4.6.5)
       cross-spawn: 7.0.6
-      pkce-challenge: 5.0.1
+      pkce-challenge: 5.0.2
       zod: 4.6.5
 
   '@ai-sdk/openai-compatible@3.0.59(zod@4.6.5)':
@@ -3567,7 +3581,7 @@ snapshots:
     dependencies:
       '@emnapi/core': 2.0.0-beta.2
       '@emnapi/runtime': 2.0.0-beta.2
-      '@tybys/wasm-util': 0.10.4
+      '@tybys/wasm-util': 0.10.5
     optional: true
 
   '@next/env@16.3.7': {}
@@ -4075,7 +4089,7 @@ snapshots:
   '@rolldown/binding-win32-x64-msvc@1.2.19':
     optional: true
 
-  '@rolldown/pluginutils@1.1.0': {}
+  '@rolldown/pluginutils@1.1.1': {}
 
   '@standard-schema/spec@1.1.0': {}
 
@@ -4152,7 +4166,7 @@ snapshots:
       postcss: 8.5.32
       tailwindcss: 4.3.3
 
-  '@tybys/wasm-util@0.10.4':
+  '@tybys/wasm-util@0.10.5':
     dependencies:
       tslib: 2.9.1
     optional: true
@@ -4166,22 +4180,22 @@ snapshots:
 
   '@types/d3-drag@3.0.7':
     dependencies:
-      '@types/d3-selection': 3.0.12
+      '@types/d3-selection': 3.0.13
 
   '@types/d3-interpolate@3.0.4':
     dependencies:
       '@types/d3-color': 3.1.3
 
-  '@types/d3-selection@3.0.12': {}
+  '@types/d3-selection@3.0.13': {}
 
   '@types/d3-transition@3.0.9':
     dependencies:
-      '@types/d3-selection': 3.0.12
+      '@types/d3-selection': 3.0.13
 
   '@types/d3-zoom@3.0.9':
     dependencies:
       '@types/d3-interpolate': 3.0.4
-      '@types/d3-selection': 3.0.12
+      '@types/d3-selection': 3.0.13
 
   '@types/debug@4.1.13':
     dependencies:
@@ -4269,7 +4283,7 @@ snapshots:
     dependencies:
       '@types/d3-drag': 3.0.7
       '@types/d3-interpolate': 3.0.4
-      '@types/d3-selection': 3.0.12
+      '@types/d3-selection': 3.0.13
       '@types/d3-transition': 3.0.9
       '@types/d3-zoom': 3.0.9
       d3-drag: 3.0.1
@@ -4277,20 +4291,20 @@ snapshots:
       d3-selection: 3.0.1
       d3-zoom: 3.0.1
 
-  '@ykurilov/agent-chat-attachments@0.110.0(@types/node@22.20.5)(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
+  '@ykurilov/agent-chat-attachments@0.116.0(@types/node@22.20.5)(@ykurilov/agent-chat-react@0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
     dependencies:
-      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       sharp: 0.35.5(@types/node@22.20.5)
       unpdf: 1.9.1
     optionalDependencies:
-      '@ykurilov/agent-chat-react': 0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+      '@ykurilov/agent-chat-react': 0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       react: 19.3.0
+      vitest: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
     transitivePeerDependencies:
       - '@napi-rs/canvas'
       - '@types/node'
-      - vitest
 
-  '@ykurilov/agent-chat-core@0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
+  '@ykurilov/agent-chat-core@0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
     dependencies:
       '@ai-sdk/deepseek': 3.0.56(zod@4.6.5)
       '@ai-sdk/fireworks': 3.0.62(zod@4.6.5)
@@ -4301,15 +4315,15 @@ snapshots:
     optionalDependencies:
       vitest: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
 
-  '@ykurilov/agent-chat-flows@0.110.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
+  '@ykurilov/agent-chat-flows@0.116.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
     dependencies:
       '@xyflow/react': 12.12.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       ai: 7.0.122(zod@4.6.5)
       drizzle-orm: 0.45.3(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(pg@8.23.1)
       zod: 4.6.5
     optionalDependencies:
-      '@ykurilov/agent-chat-react': 0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+      '@ykurilov/agent-chat-react': 0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       better-sqlite3: 13.0.3
       pg: 8.23.1
       react: 19.3.0
@@ -4348,21 +4362,21 @@ snapshots:
       - sqlite3
       - vitest
 
-  '@ykurilov/agent-chat-image-library@0.110.0(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)':
+  '@ykurilov/agent-chat-image-library@0.116.0(@ykurilov/agent-chat-react@0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)':
     dependencies:
       ai: 7.0.122(zod@4.6.5)
       zod: 4.6.5
     optionalDependencies:
-      '@ykurilov/agent-chat-react': 0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+      '@ykurilov/agent-chat-react': 0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       react: 19.3.0
 
-  '@ykurilov/agent-chat-limits@0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
+  '@ykurilov/agent-chat-limits@0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
     dependencies:
-      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
     transitivePeerDependencies:
       - vitest
 
-  '@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)':
+  '@ykurilov/agent-chat-react@0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)':
     dependencies:
       '@ai-sdk/react': 4.0.125(react@19.3.0)(zod@4.6.5)
       ai: 7.0.122(zod@4.6.5)
@@ -4377,15 +4391,15 @@ snapshots:
       - vue
       - zod
 
-  '@ykurilov/agent-chat-reply-check@0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
+  '@ykurilov/agent-chat-reply-check@0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
     dependencies:
-      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
     transitivePeerDependencies:
       - vitest
 
-  '@ykurilov/agent-chat-server@0.110.0(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(zod@4.6.5)':
+  '@ykurilov/agent-chat-server@0.116.0(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(zod@4.6.5)':
     dependencies:
-      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       ai: 7.0.122(zod@4.6.5)
     optionalDependencies:
       hono: 4.13.12
@@ -4393,13 +4407,13 @@ snapshots:
       - vitest
       - zod
 
-  '@ykurilov/agent-chat-skin-oduvanchik@0.110.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-flows@0.110.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)':
+  '@ykurilov/agent-chat-skin-oduvanchik@0.116.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-flows@0.116.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)':
     dependencies:
       '@phosphor-icons/react': 2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@radix-ui/react-dialog': 1.1.23(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@radix-ui/react-dropdown-menu': 2.1.24(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@tandem/ui': '@ykurilov/tandem-ui@0.7.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)'
-      '@ykurilov/agent-chat-react': 0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+      '@ykurilov/agent-chat-react': 0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       '@ykurilov/ds-react': 0.7.0(@phosphor-icons/react@2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@ykurilov/ds-tokens@0.2.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@ykurilov/ds-tokens': 0.2.1
       class-variance-authority: 0.7.1
@@ -4411,7 +4425,7 @@ snapshots:
       react-markdown: 10.1.0(@types/react@19.3.0)(react@19.3.0)
       remark-gfm: 4.0.1
     optionalDependencies:
-      '@ykurilov/agent-chat-flows': 0.110.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-flows': 0.116.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@ykurilov/agent-chat-react@0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(better-sqlite3@13.0.3)(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
     transitivePeerDependencies:
       - '@angular/common'
       - '@angular/core'
@@ -4423,9 +4437,9 @@ snapshots:
       - vue
       - zod
 
-  '@ykurilov/agent-chat-storage-postgres@0.110.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
+  '@ykurilov/agent-chat-storage-postgres@0.116.0(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
     dependencies:
-      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       drizzle-orm: 0.45.3(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(pg@8.23.1)
       pg: 8.23.1
     transitivePeerDependencies:
@@ -4461,26 +4475,26 @@ snapshots:
       - sqlite3
       - vitest
 
-  '@ykurilov/agent-chat-videos@0.110.0(@ykurilov/agent-chat-react@0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)':
+  '@ykurilov/agent-chat-videos@0.116.0(@ykurilov/agent-chat-react@0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5))(react@19.3.0)':
     dependencies:
       ai: 7.0.122(zod@4.6.5)
       zod: 4.6.5
     optionalDependencies:
-      '@ykurilov/agent-chat-react': 0.110.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+      '@ykurilov/agent-chat-react': 0.116.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       react: 19.3.0
 
-  '@ykurilov/agent-chat-voice@0.110.0(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(ws@8.22.2)':
+  '@ykurilov/agent-chat-voice@0.116.0(hono@4.13.12)(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))(ws@8.22.2)':
     dependencies:
-      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
     optionalDependencies:
       hono: 4.13.12
       ws: 8.22.2
     transitivePeerDependencies:
       - vitest
 
-  '@ykurilov/agent-chat-web-tools@0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
+  '@ykurilov/agent-chat-web-tools@0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))':
     dependencies:
-      '@ykurilov/agent-chat-core': 0.110.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
+      '@ykurilov/agent-chat-core': 0.116.0(vitest@5.0.3(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(vite@8.3.2(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
       ai: 7.0.122(zod@4.6.5)
       undici: 7.30.2
       zod: 4.6.5
@@ -5441,7 +5455,7 @@ snapshots:
 
   picomatch@4.0.7: {}
 
-  pkce-challenge@5.0.1: {}
+  pkce-challenge@5.0.2: {}
 
   playwright-core@1.63.0: {}
 
@@ -5460,6 +5474,12 @@ snapshots:
       nanoid: 3.3.20
       picocolors: 1.1.1
       source-map-js: 1.2.2
+
+  postcss@8.5.33:
+    dependencies:
+      nanoid: 3.3.20
+      picocolors: 1.1.1
+      source-map-js: 1.2.4
 
   postgres-array@2.0.0: {}
 
@@ -5564,7 +5584,7 @@ snapshots:
   rolldown@1.2.19:
     dependencies:
       '@oxc-project/types': 0.156.0
-      '@rolldown/pluginutils': 1.1.0
+      '@rolldown/pluginutils': 1.1.1
     optionalDependencies:
       '@rolldown/binding-android-arm-eabi': 1.2.19
       '@rolldown/binding-android-arm64': 1.2.19
@@ -5640,6 +5660,8 @@ snapshots:
   shebang-regex@3.0.0: {}
 
   source-map-js@1.2.2: {}
+
+  source-map-js@1.2.4: {}
 
   source-map-support@0.5.21:
     dependencies:
@@ -5794,7 +5816,7 @@ snapshots:
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
-      postcss: 8.5.32
+      postcss: 8.5.33
       rolldown: 1.2.19
       tinyglobby: 0.2.17
     optionalDependencies:

@@ -52,7 +52,7 @@ test("эксперт находит человека фильтром, откр�
     .returning();
   const leadName = `База ${tag}`;
   const lead = await createLeadMagnet(db, { name: leadName });
-  await saveDraft(db, lead.id, { ...lead.draft, instruction: "Ты консультант.", firstMessage: E2E_SCRIPT.firstMessage }, "manual");
+  await saveDraft(db, lead.id, { ...lead.draft, instruction: "Ты консультант.", firstMessage: E2E_SCRIPT.firstMessage, returnAfterProgram: "inbox" }, "manual");
   const { code } = await publishWithBots(db, lead.id, { telegram: bot!.id });
   const fieldName = `Есть свой курс ${tag}`;
   const hasCourse = await createField(db, { name: fieldName, type: "boolean", description: "" });
