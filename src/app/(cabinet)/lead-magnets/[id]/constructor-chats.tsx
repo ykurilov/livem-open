@@ -55,7 +55,8 @@ function ConstructorChatsFrame({ view, busy, onClose }: { view: ChatWorkspaceVie
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-2 flex items-center gap-1">
+      {/* Правая часть общей строки над колонками: той же высоты, что полоса редактора слева; линия-разделитель начинается под ней */}
+      <div className="constructor-head mb-2 flex min-h-9 items-center gap-1 lg:mb-[var(--yk-space-4)] lg:pl-[calc(var(--yk-space-6)+1px)]">
         <span className="shrink-0 font-semibold">Конструктор</span>
         {list ? (
           <>
@@ -78,9 +79,11 @@ function ConstructorChatsFrame({ view, busy, onClose }: { view: ChatWorkspaceVie
         )}
         <IconButton label="Закрыть конструктор" icon={XIcon} size="sm" onClick={onClose} />
       </div>
-      {listView}
-      {/* Чат остаётся в странице и под списком: не теряет историю, начатый ход и набранный текст */}
-      <div className={showList ? "hidden" : "min-h-0 flex-1"}>{view.children}</div>
+      <div className="flex min-h-0 flex-1 flex-col lg:border-l lg:border-[var(--yk-border)] lg:pl-[var(--yk-space-6)]">
+        {listView}
+        {/* Чат остаётся в странице и под списком: не теряет историю, начатый ход и набранный текст */}
+        <div className={showList ? "hidden" : "min-h-0 flex-1"}>{view.children}</div>
+      </div>
     </div>
   );
 }

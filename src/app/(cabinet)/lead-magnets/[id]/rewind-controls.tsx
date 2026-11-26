@@ -91,11 +91,9 @@ export function RewindControls({ onRewind, onNextReminder, onNextDay, disabled }
       label="Промотать время"
       entries={entries}
       trigger={
-        <Button variant="secondary" size="sm" disabled={disabled} title="Промотать часы клиента вперёд: проверить, как агент пишет пропавшему клиенту">
+        <Button variant="secondary" size="sm" disabled={disabled} aria-label="Промотать время" title="Промотать часы клиента вперёд: проверить, как агент пишет пропавшему клиенту">
           <ClockIcon aria-hidden />
-          <span className="max-sm:hidden">Промотать время</span>
-          {/* На телефоне поле узкое: «Время» помещается в одну строку с «Автоответом» */}
-          <span className="sm:hidden">Время</span>
+          <span className="composer-action__label">Промотать время</span>
         </Button>
       }
     />

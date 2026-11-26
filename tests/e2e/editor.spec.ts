@@ -225,7 +225,7 @@ test("после хода конструктора: кнопка перезап�
   await expect(constructor.getByText(/Правка лидмагнита/).first()).toBeVisible();
   await expect(constructor.getByText(/edit_lead_magnet/)).toHaveCount(0);
 
-  // «Начать заново» — над перепиской «Разговора», на других вкладках ему не к чему относиться
+  // «Начать заново» — в строке над колонками только на «Разговоре», на других вкладках ему не к чему относиться
   const restart = page.getByRole("button", { name: "Начать заново" });
   await expect(restart).toBeVisible();
   for (const tab of ["Настройки", "История", "Лог"]) {

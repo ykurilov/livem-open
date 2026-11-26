@@ -28,13 +28,12 @@ import {
   useTransition,
   type ComponentProps,
 } from "react";
-import { Button as DesignButton } from "@ykurilov/ds-react";
 import { Alert, Button, cn } from "@/ui/primitives";
 import type { PreviewStatus } from "@/modules/consultant";
 import type { LeadMagnetSettings } from "@/modules/lead-magnets";
 import type { RoleSwapState } from "@/modules/role-swap";
 import type { FieldDefinition } from "@/modules/people";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui";
+import { Tabs, TabsContent } from "@/ui";
 import { IconButton } from "@/ui/icon-button";
 import { advancePreviewAction, advancePreviewToReminderAction, nextPreviewDayAction, reopenPreviewAction, restartPreviewAction, suggestPreviewReplyAction, takePreviewMessengerHandoffAction } from "../actions";
 import { PreviewMessengerHandoffPanel } from "./preview-messenger-handoff";
@@ -52,11 +51,12 @@ import { SettingsTab, type ArchiveImage, type ArchiveKnowledge, type ArchiveVide
 import { withSingleReply } from "./single-reply-skin";
 import { PreviewProductLinks, withTaggedProductLinks } from "./product-links-skin";
 import { CorrectablePreviewChat } from "./preview-corrections";
-import { SidebarSimpleIcon, SparkleIcon, XIcon } from "@phosphor-icons/react";
+import { ListChecksIcon, SparkleIcon, XIcon } from "@phosphor-icons/react";
+import { EditorHeader, type EditorRestart } from "./editor-header";
 import { CONSTRUCTOR_PANEL_COOKIE } from "./constructor-panel-cookie";
 import { ConstructorChats } from "./constructor-chats";
 import { RoleSwapPanel } from "./role-swap-panel";
-import { ConversationBar } from "./conversation-bar";
+import { ConversationStatus } from "./conversation-status";
 import { ConversationRoleContext, ConversationRoleMenu, type ConversationRole } from "./conversation-role";
 import { showsStage } from "./stage-line";
 import { ROLE_SWAP_MODE_COOKIE } from "./role-swap-cookie";
@@ -251,7 +251,7 @@ function PreviewComposer(props: ComponentProps<ChatSkin["Composer"]>) {
       {...props}
       modelChoice={undefined}
       actions={
-        <div className="app-composer-actions">
+        <div className="app-composer-actions" data-actions="preview">
           {props.actions}
           {clock ? <RewindControls {...clock.rewind} disabled={props.busy || clock.shifting} /> : null}
           <ConversationRoleMenu />
@@ -300,9 +300,9 @@ function AutoreplyButton({ canSend, onReply }: { canSend: boolean; onReply(text:
     });
   return (
     <span className="inline-flex items-center gap-2">
-      <Button variant="secondary" size="sm" disabled={!canSend || pending} onClick={suggest} title="Ответить за клиента: ответ уйдёт сразу, потом его можно исправить в ленте">
+      <Button variant="secondary" size="sm" disabled={!canSend || pending} onClick={suggest} aria-label={pending ? "Придумываю…" : "Автоответ"} title="Ответить за клиента: ответ уйдёт сразу, потом его можно исправить в ленте">
         <SparkleIcon aria-hidden />
-        {pending ? "Придумываю…" : "Автоответ"}
+        <span className="composer-action__label">{pending ? "Придумываю…" : "Автоответ"}</span>
       </Button>
       {error ? (
         <span role="alert" className="text-[length:var(--yk-text-small-size)] text-[var(--yk-danger)]">
@@ -336,14 +336,22 @@ function QueuedCorrectionsRequest({ composer, onSent }: { composer: ComposerHelp
 const correctionsComposerActions = (count: number, queued: boolean, onQueuedSent: () => void) =>
   function CorrectionsComposerActions(composer: ComposerHelper) {
     return (
-      <>
+      <div className="app-composer-actions" data-actions="constructor">
         {queued ? <QueuedCorrectionsRequest composer={composer} onSent={onQueuedSent} /> : null}
         {count > 0 ? (
-          <Button variant="secondary" size="sm" disabled={!composer.canSend} onClick={() => composer.send(ANSWER_CORRECTIONS_REQUEST)}>
-            Разобрать правки ({count})
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!composer.canSend}
+            onClick={() => composer.send(ANSWER_CORRECTIONS_REQUEST)}
+            aria-label={`Разобрать правки (${count})`}
+            title="Разобрать правки ответов консультанта"
+          >
+            <ListChecksIcon aria-hidden />
+            <span className="composer-action__label">Разобрать правки</span>({count})
           </Button>
         ) : null}
-      </>
+      </div>
     );
   };
 
@@ -547,7 +555,6 @@ export function Editor({
     document.cookie = `${CONSTRUCTOR_PANEL_COOKIE}=${open ? "1" : "0"}; path=/; max-age=31536000; samesite=lax`;
     setPanelOpen(open);
   };
-  const togglePanel = () => showPanel(!panelOpen);
   // Разговор «Поменяемся ролями» отдан на разбор: конструктор открывается и получает просьбу разобрать правки
   const askConstructorToReview = () => {
     reloadCorrectionsCount();
@@ -668,6 +675,11 @@ export function Editor({
       router.refresh();
     });
   };
+  const [roleSwapRestart, setRoleSwapRestart] = useState<EditorRestart | null>(null);
+  // «Начать заново» — только на «Разговоре» и только когда разговор есть
+  let headerRestart: EditorRestart | null = null;
+  if (tab === "preview" && hasDraft)
+    headerRestart = answeringAsConsultant ? roleSwapRestart : { onRestart: restart, restarting: restarting || settingsSaving, disabled: settingsSaving };
 
   // Уход со страницы унёс бы несохранённую правку: сначала вопрос
   const leaveConfirmation = useLeaveConfirmation(settingsDirty ? "в «Настройках»" : flowDirty ? "на вкладке «Сценарий»" : null);
@@ -675,51 +687,18 @@ export function Editor({
   return (
     <TestClientContext.Provider value={testClientState}>
     <PreviewRevision.Provider value={previewRevision}>
-    {/* Редактор занимает окно целиком: data-fill-window растягивает область контента на высоту окна (globals.css) */}
+    {/* Редактор занимает окно целиком: data-fill-window растягивает область контента на высоту окна (globals.css).
+        Конструктор — своя колонка на всю высоту: полоса с вкладками стоит только над левой частью */}
     <Tabs
       value={tab}
       onValueChange={switchTab}
       data-fill-window=""
-      className={cn("flex min-h-0 flex-1 flex-col", boardFull ? "gap-0" : "gap-[var(--yk-space-2)] lg:gap-[var(--yk-space-4)]")}
+      className={cn("flex min-h-0 flex-1", boardFull ? "gap-0" : "gap-[var(--yk-space-6)]")}
     >
-      <header
-        className={cn(
-          "flex flex-wrap items-center gap-x-3 gap-y-2 lg:flex-nowrap",
-          boardFull ? "px-3 py-1.5" : "",
-        )}
-      >
-        {/* На телефоне название — своя строка, под ним «Публикация» и «Конструктор» по краям одного ряда, ниже вкладки */}
-        <h1 className="min-w-0 truncate text-[length:var(--yk-text-body-size)] font-semibold max-lg:basis-full" title={draft.name}>
-          {draft.name}
-        </h1>
-        <DesignButton href={`/lead-magnets/${leadMagnetId}/publish`} variant="secondary" size="sm" className="shrink-0">
-          Публикация
-        </DesignButton>
-        {leaveConfirmation}
-        {/* На узком экране вкладки — своя строка во всю ширину, в один ряд: поуже, а не влезут — прокручиваются вбок */}
-        <TabsList className="editor-tabs max-lg:order-last max-lg:flex max-lg:w-full max-lg:flex-nowrap max-lg:overflow-x-auto max-lg:[scrollbar-width:none] max-lg:[&>*]:flex-auto max-lg:[&>*]:px-1.5 lg:ml-auto">
-          <TabsTrigger value="preview">Разговор</TabsTrigger>
-          <TabsTrigger value="flow">Сценарий</TabsTrigger>
-          <TabsTrigger value="settings">Настройки</TabsTrigger>
-          <TabsTrigger value="history">История</TabsTrigger>
-          <TabsTrigger value="log">Лог</TabsTrigger>
-        </TabsList>
-        <div className="ml-auto flex shrink-0 items-center gap-2 lg:ml-0">
-          <DesignButton
-            variant={panelOpen ? "primary" : "secondary"}
-            size="sm"
-            icon={SidebarSimpleIcon}
-            aria-pressed={panelOpen}
-            aria-controls="constructor-panel"
-            title={panelOpen ? "Скрыть конструктор" : "Показать конструктор"}
-            onClick={togglePanel}
-          >
-            Конструктор
-          </DesignButton>
-        </div>
-      </header>
-      {/* Панель конструктора сдвигает вкладки, а не ложится поверх: разговор и конструктор видны рядом */}
-      <div className={cn("flex min-h-0 flex-1", boardFull ? "gap-0" : "gap-[var(--yk-space-6)]")}>
+      <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", boardFull ? "gap-0" : "gap-[var(--yk-space-2)] lg:gap-[var(--yk-space-4)]")}>
+        <EditorHeader name={draft.name} leadMagnetId={leadMagnetId} constructorOpen={panelOpen} onOpenConstructor={() => showPanel(true)} compact={boardFull} restart={headerRestart}>
+          {leaveConfirmation}
+        </EditorHeader>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {/* Скрытый «Разговор» остаётся в странице: недописанная реплика не теряется при переходе на другую вкладку */}
             <TabsContent
@@ -727,11 +706,10 @@ export function Editor({
               forceMount
               className="flex min-h-0 flex-1 flex-col gap-2 data-[state=inactive]:hidden"
             >
-              {/* Над чатом — где клиент сейчас и «Начать заново»; роль, перемотка и конец разговора — в поле ввода, рядом с «Автоответом» */}
+              {/* Над чатом — где клиент сейчас; «Начать заново» — в общей строке, роль, перемотка и конец разговора — в поле ввода */}
               {/* Обычный разговор и разговор «Поменяемся ролями» живут рядом: выбор роли прячет один, не трогая другой */}
-              {hasDraft && !answeringAsConsultant ? (
-                // Перезапуск нужен и после правки в «Настройках» или «Сценарии»: проверка начнётся с сохранённого черновика
-                <ConversationBar onRestart={restart} restarting={restarting || settingsSaving} restartDisabled={settingsSaving}>
+              {hasDraft && !answeringAsConsultant && (preview.day !== null || (stageShown && preview.stageName)) ? (
+                <ConversationStatus>
                   {preview.day !== null ? (
                     <>
                       <span className="font-medium text-[var(--yk-text)]">
@@ -740,10 +718,10 @@ export function Editor({
                       </span>
                       {stageShown && preview.stageName ? ` · ${preview.stageName}` : null}
                     </>
-                  ) : stageShown && preview.stageName ? (
+                  ) : (
                     `Этап: ${preview.stageName}`
-                  ) : null}
-                </ConversationBar>
+                  )}
+                </ConversationStatus>
               ) : null}
               {restartNotice && !answeringAsConsultant ? (
                 <p role="alert" className="px-3 text-[length:var(--yk-text-small-size)] text-[var(--yk-danger)]">
@@ -773,7 +751,7 @@ export function Editor({
               <ConversationRoleContext.Provider value={hasDraft ? { role: answeringAsConsultant ? "consultant" : "client", choose: switchConversationMode } : null}>
               {hasDraft ? (
                 <div className={cn("min-h-0 flex-1", !answeringAsConsultant && "hidden")}>
-                  <RoleSwapPanel leadMagnetId={leadMagnetId} initial={roleSwap} showStage={stageShown} onCorrectionsChanged={reloadCorrectionsCount} onSubmitted={askConstructorToReview} />
+                  <RoleSwapPanel leadMagnetId={leadMagnetId} initial={roleSwap} showStage={stageShown} onCorrectionsChanged={reloadCorrectionsCount} onSubmitted={askConstructorToReview} onRestartChange={setRoleSwapRestart} />
                 </div>
               ) : null}
               <div className={cn("min-h-0 flex-1", answeringAsConsultant && "hidden")}>
@@ -910,6 +888,7 @@ export function Editor({
               <LogTab leadMagnetId={leadMagnetId} />
             </TabsContent>
         </div>
+      </div>
         {/* Закрытая панель остаётся в странице скрытой: чат не теряет историю и начатый ход. На узком экране — на весь экран поверх */}
         <section
           id="constructor-panel"
@@ -918,8 +897,10 @@ export function Editor({
             panelOpen ? "flex" : "hidden",
             "min-h-0 flex-col bg-[var(--yk-surface)]",
             "max-lg:fixed max-lg:inset-0 max-lg:z-50 max-lg:p-3",
-            "lg:w-[440px] lg:shrink-0 lg:border-l lg:border-[var(--yk-border)] lg:pl-[var(--yk-space-6)]",
-            boardFull && "lg:py-1.5 lg:pr-3",
+            // Линия-разделитель и отступ слева — у тела конструктора, под общей строкой (constructor-chats.tsx)
+            "lg:w-[440px] lg:shrink-0",
+            // На доске полоса слева без зазора снизу: тело конструктора начинается вровень с доской
+            boardFull && "lg:py-1.5 lg:pr-3 lg:[&_.constructor-head]:mb-1.5",
           )}
         >
           <div className="min-h-0 flex-1">
@@ -928,7 +909,7 @@ export function Editor({
                 <ConstructorChats
                   leadMagnetId={leadMagnetId}
                   busy={constructorBusy}
-                  onClose={togglePanel}
+                  onClose={() => showPanel(false)}
                   skin={constructorSkin}
                   composerActions={constructorComposerActions}
                   attachments={attachmentsClient}
@@ -938,7 +919,6 @@ export function Editor({
             </ConstructorSendBlock.Provider>
           </div>
         </section>
-      </div>
     </Tabs>
     </PreviewRevision.Provider>
     </TestClientContext.Provider>

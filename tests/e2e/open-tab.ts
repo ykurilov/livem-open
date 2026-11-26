@@ -23,6 +23,8 @@ export async function openConstructor(page: Page): Promise<Locator> {
     if (!(await panel.isVisible())) await toggle.click({ timeout: 2000 });
     await expect(panel).toBeVisible({ timeout: 2000 });
   }).toPass({ timeout: 45_000 });
+  // Кнопка открытия стоит там, где у открытой панели «Новый чат»: курсор с неё уводим, иначе подсветка наведения попадёт в снимки
+  await page.mouse.move(0, 0);
   return panel;
 }
 

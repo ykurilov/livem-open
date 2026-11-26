@@ -11,11 +11,6 @@ const ROLE_LABELS: Record<ConversationRole, string> = {
   client: "Я пишу за клиента",
   consultant: "Я отвечаю за консультанта",
 };
-/** На телефоне поле узкое: подпись короче. */
-const SHORT_ROLE_LABELS: Record<ConversationRole, string> = {
-  client: "За клиента",
-  consultant: "За консультанта",
-};
 
 interface ConversationRoleState {
   role: ConversationRole;
@@ -39,10 +34,9 @@ export function ConversationRoleMenu({ disabled = false }: { disabled?: boolean 
       label="Кто вы в разговоре"
       entries={entries}
       trigger={
-        <Button variant="secondary" size="sm" disabled={disabled} title="Выбрать, за кого вы пишете в разговоре">
+        <Button variant="secondary" size="sm" disabled={disabled} aria-label={ROLE_LABELS[state.role]} title="Выбрать, за кого вы пишете в разговоре">
           <ArrowsLeftRightIcon aria-hidden />
-          <span className="max-sm:hidden">{ROLE_LABELS[state.role]}</span>
-          <span className="sm:hidden">{SHORT_ROLE_LABELS[state.role]}</span>
+          <span className="composer-action__label">{ROLE_LABELS[state.role]}</span>
         </Button>
       }
     />

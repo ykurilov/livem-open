@@ -44,7 +44,7 @@ async function openConversation(page: Page) {
   return page.getByRole("tabpanel", { name: "Разговор" });
 }
 
-// Роль выбирается кнопкой в нижней строке поля ввода; на ней написана текущая роль (на телефоне — короче)
+// Роль выбирается кнопкой в нижней строке поля ввода; её имя — текущая роль (в тесноте на кнопке остаётся значок)
 const roleButton = (page: Page) => page.getByRole("tabpanel", { name: "Разговор" }).getByRole("button", { name: /^(Я пишу |Я отвечаю )?за (клиента|консультанта)$/i });
 async function chooseRole(page: Page, role: "Я пишу за клиента" | "Я отвечаю за консультанта") {
   await roleButton(page).click();
@@ -98,8 +98,8 @@ test("«Поменяемся ролями»: клиент отвечает, эк
   const roleSwapFeed = conversation.getByRole("log");
   await expect(roleSwapFeed.getByText("Здравствуйте! Чем занимаетесь?", { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(clientReplies).toHaveCount(1, { timeout: 30_000 });
-  // У лидмагнита без этапов нода одна: подпись «Этап» повторяла бы название вкладки, над лентой только «Начать заново»
-  await expect(conversation.getByRole("button", { name: "Начать заново" })).toBeVisible({ timeout: 30_000 });
+  // У лидмагнита без этапов нода одна: подпись «Этап» повторяла бы название вкладки — над лентой ничего, «Начать заново» в строке над колонками
+  await expect(page.getByRole("button", { name: "Начать заново" })).toBeVisible({ timeout: 30_000 });
   await expect(conversation.getByText(/^Этап:/)).toHaveCount(0);
 
   const input = conversation.getByRole("textbox", { name: "Сообщение", exact: true });
@@ -152,7 +152,7 @@ test("«Поменяемся ролями»: клиент отвечает, эк
   await expect(conversation.getByRole("paragraph").filter({ hasText: corrected })).toBeVisible();
 
   // «Начать заново» снова спрашивает, кто клиент
-  await conversation.getByRole("button", { name: "Начать заново" }).click();
+  await page.getByRole("button", { name: "Начать заново" }).click();
   await expect(conversation.getByRole("textbox", { name: "Кто клиент" })).toBeVisible();
   await conversation.getByRole("button", { name: "Отмена" }).click();
   await expect(conversation.getByRole("paragraph").filter({ hasText: corrected })).toBeVisible();
@@ -182,10 +182,11 @@ test("«Закончить и разобрать»: разговор закры�
 
   const constructor = page.getByRole("region", { name: "Конструктор", exact: true });
   await expect(constructor).toBeVisible({ timeout: 60_000 });
-  await expect(constructor.getByText("Разбери правки ответов консультанта.")).toBeVisible({ timeout: 30_000 });
+  // Название чата в шапке конструктора тоже может стать текстом просьбы: ищем в ленте
+  await expect(constructor.getByRole("log").getByText("Разбери правки ответов консультанта.")).toBeVisible({ timeout: 30_000 });
   await expect(conversation.getByText("Разговор отдан на разбор")).toBeVisible({ timeout: 30_000 });
   await expect(finish).toHaveCount(0);
-  await expect(conversation.getByRole("button", { name: "Начать заново" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Начать заново" })).toBeVisible();
 
   const records = await listCorrections(connection.db, lead.id, { status: "all" });
   expect(records.map((record) => [record.source, record.agentRole, record.correctedText])).toEqual([["role_swap", "consultant", "Сколько учеников сейчас?"]]);
@@ -236,7 +237,7 @@ test("«Клиент для проверки»: шестерёнка в «Про
   await expect(brief).toHaveValue("Пенсионер, ездит на дачу, боится сложной техники");
   await brief.fill("Студентка, денег мало, сомневается");
   await conversation.getByRole("button", { name: "Начать" }).click();
-  await expect(conversation.getByRole("button", { name: "Начать заново" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Начать заново" })).toBeVisible({ timeout: 30_000 });
 
   await clientMode(page);
   await gear.click();

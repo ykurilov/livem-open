@@ -70,7 +70,7 @@ test("без неразобранных правок кнопки нет", async
 async function closeConstructor(page: Page) {
   const panel = page.getByRole("region", { name: "Конструктор", exact: true });
   await expect(async () => {
-    if (await panel.isVisible()) await page.getByRole("button", { name: "Конструктор", exact: true }).click({ timeout: 2000 });
+    if (await panel.isVisible()) await panel.getByRole("button", { name: "Закрыть конструктор" }).click({ timeout: 2000 });
     await expect(panel).toBeHidden({ timeout: 2000 });
   }).toPass({ timeout: 30_000 });
 }

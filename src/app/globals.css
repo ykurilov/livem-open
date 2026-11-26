@@ -30,9 +30,64 @@ body { margin: 0; }
 /* Лента переписки во «Входящих» прокручена: верхний край тает — видно, что выше есть ещё сообщения.
    Полоса узкая: шире — и верхняя строка целиком сереет, будто выключена. */
 .inbox-messages[data-scrolled] { mask-image: linear-gradient(to bottom, transparent 0, #000 18px); }
-/* Вкладки редактора на телефоне: все пять в один ряд без обрезанной последней. Классы Tailwind здесь проигрывают
-   стилям дизайн-системы, поэтому поля вкладок сужаем обычным правилом. */
-@media (max-width: 1023px) { .editor-tabs > .yk-tab { flex: 1 1 auto; padding-inline: 4px; } }
+/* Полоса редактора сжимается по своей ширине, а не по окну: ширина зависит от меню и открытого конструктора.
+   Просторно — значок со словом, теснее — слово, совсем тесно — значок; имя и подсказка остаются в aria-label и title.
+   Пороги оставляют названию около 200px; при открытом конструкторе кнопки «Конструктор» в полосе нет — пороги ниже.
+   Классы Tailwind здесь проигрывают стилям дизайн-системы, поэтому правила обычные. */
+.editor-bar { container: editor-bar / inline-size; }
+/* Телефон: все пять вкладок словами в один ряд без обрезанной последней, «Конструктор» — у правого края */
+@media (max-width: 1023px) {
+  .editor-tabs > .yk-tab { flex: 1 1 auto; justify-content: center; padding-inline: 4px; }
+  .editor-tabs .editor-bar__icon { display: none; }
+  .editor-bar__open-constructor { margin-left: auto; }
+}
+/* Сжатие по ширине полосы: сначала значки вкладок прячутся, потом «Начать заново» — значок, потом вкладки — значки, последними — «Публикация» и «Конструктор».
+   Пороги — по набору кнопок в полосе: открыт ли конструктор (его кнопки нет) и есть ли «Начать заново» (только на «Разговоре»). */
+@media (min-width: 1024px) {
+  @container editor-bar (max-width: 1019px) { .editor-bar[data-constructor="closed"]:not([data-restart]) .editor-tabs .editor-bar__icon { display: none; } }
+  @container editor-bar (max-width: 909px) {
+    .editor-bar[data-constructor="closed"]:not([data-restart]) .editor-tabs { gap: 4px; }
+    .editor-bar[data-constructor="closed"]:not([data-restart]) .editor-tabs > .yk-tab { padding-inline: 6px; }
+    .editor-bar[data-constructor="closed"]:not([data-restart]) .editor-tabs .editor-bar__icon { display: inline-block; }
+    .editor-bar[data-constructor="closed"]:not([data-restart]) .editor-tabs .editor-bar__label { display: none; }
+  }
+  @container editor-bar (max-width: 559px) { .editor-bar[data-constructor="closed"]:not([data-restart]) .editor-bar__action .editor-bar__label { display: none; } }
+  @container editor-bar (max-width: 879px) { .editor-bar[data-constructor="open"]:not([data-restart]) .editor-tabs .editor-bar__icon { display: none; } }
+  @container editor-bar (max-width: 769px) {
+    .editor-bar[data-constructor="open"]:not([data-restart]) .editor-tabs { gap: 4px; }
+    .editor-bar[data-constructor="open"]:not([data-restart]) .editor-tabs > .yk-tab { padding-inline: 6px; }
+    .editor-bar[data-constructor="open"]:not([data-restart]) .editor-tabs .editor-bar__icon { display: inline-block; }
+    .editor-bar[data-constructor="open"]:not([data-restart]) .editor-tabs .editor-bar__label { display: none; }
+  }
+  @container editor-bar (max-width: 419px) { .editor-bar[data-constructor="open"]:not([data-restart]) .editor-bar__action .editor-bar__label { display: none; } }
+  @container editor-bar (max-width: 1171px) { .editor-bar[data-constructor="closed"][data-restart] .editor-tabs .editor-bar__icon { display: none; } }
+  @container editor-bar (max-width: 1061px) { .editor-bar[data-constructor="closed"][data-restart] .editor-bar__restart .editor-bar__label { display: none; } }
+  @container editor-bar (max-width: 959px) {
+    .editor-bar[data-constructor="closed"][data-restart] .editor-tabs { gap: 4px; }
+    .editor-bar[data-constructor="closed"][data-restart] .editor-tabs > .yk-tab { padding-inline: 6px; }
+    .editor-bar[data-constructor="closed"][data-restart] .editor-tabs .editor-bar__icon { display: inline-block; }
+    .editor-bar[data-constructor="closed"][data-restart] .editor-tabs .editor-bar__label { display: none; }
+  }
+  @container editor-bar (max-width: 609px) { .editor-bar[data-constructor="closed"][data-restart] .editor-bar__action .editor-bar__label { display: none; } }
+  @container editor-bar (max-width: 1031px) { .editor-bar[data-constructor="open"][data-restart] .editor-tabs .editor-bar__icon { display: none; } }
+  @container editor-bar (max-width: 921px) { .editor-bar[data-constructor="open"][data-restart] .editor-bar__restart .editor-bar__label { display: none; } }
+  @container editor-bar (max-width: 819px) {
+    .editor-bar[data-constructor="open"][data-restart] .editor-tabs { gap: 4px; }
+    .editor-bar[data-constructor="open"][data-restart] .editor-tabs > .yk-tab { padding-inline: 6px; }
+    .editor-bar[data-constructor="open"][data-restart] .editor-tabs .editor-bar__icon { display: inline-block; }
+    .editor-bar[data-constructor="open"][data-restart] .editor-tabs .editor-bar__label { display: none; }
+  }
+  @container editor-bar (max-width: 469px) { .editor-bar[data-constructor="open"][data-restart] .editor-bar__action .editor-bar__label { display: none; } }
+  /* Самое тесное место (1024 с открытым конструктором): значки ближе друг к другу, название уходит в подсказку */
+  /* Зазор самой полосы её же запрос по ширине не меняет — дети подтягиваются отрицательным отступом; повтор класса перебивает пороги выше */
+  @container editor-bar (max-width: 299px) {
+    .editor-bar.editor-bar.editor-bar > * + * { margin-inline-start: -8px; }
+    .editor-bar.editor-bar.editor-bar .editor-tabs { gap: 2px; }
+    .editor-bar.editor-bar.editor-bar .editor-tabs > .yk-tab { padding-inline: 4px; }
+  }
+}
+/* Телефон: «Начать заново» значком, чтобы ряд с «Публикацией» и «Конструктором» не переносился */
+@media (max-width: 1023px) { @container editor-bar (max-width: 559px) { .editor-bar__restart .editor-bar__label { display: none; } } }
 .app-card-header { display: flex; flex-direction: column; gap: var(--yk-space-2); margin-bottom: var(--yk-space-4); }
 .app-muted { color: var(--yk-muted); font-size: var(--yk-text-small-size); }
 .app-field { display: flex; flex-direction: column; gap: var(--yk-space-2); min-width: 0; }
@@ -54,6 +109,13 @@ body { margin: 0; }
 @media (prefers-reduced-motion: reduce) { .app-navigation-progress { animation: none; transform: scaleX(0.6); } }
 /* Кнопки в нижней строке поля ввода «Разговора»: не влезают — переносятся строкой ниже, стрелка отправки остаётся справа и ничего не закрывает. */
 .oduvanchik-field-actions:has(> .app-composer-actions) { flex: 1 1 0; }
-.oduvanchik-field-bar:has(.app-composer-actions) { align-items: flex-end; }
+/* Строка кнопок — под текстом, во всю ширину; место слева оставлено под «+» вложений, если он есть */
+.oduvanchik-field-bar:has(.app-composer-actions) { align-items: flex-end; flex: 1 1 calc(100% - 48px); min-width: 0; margin-left: 0; }
 .app-composer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--yk-space-2); min-width: 0; }
 .app-composer-actions > * { flex: none; max-width: 100%; }
+/* Тесно в поле — кнопки остаются значками с подсказкой (имя и подсказка — у самих кнопок), стрелка отправки всегда видна.
+   Пороги — по ширине поля без его внутренних отступов и по набору кнопок: обычная проверка, «Поменяемся ролями», конструктор. */
+.oduvanchik-field:has(.app-composer-actions) { container: composer-field / inline-size; }
+@container composer-field (max-width: 549px) { .app-composer-actions[data-actions="preview"] .composer-action__label { display: none; } }
+@container composer-field (max-width: 479px) { .app-composer-actions[data-actions="role-swap"] .composer-action__label { display: none; } }
+@container composer-field (max-width: 299px) { .app-composer-actions[data-actions="constructor"] .composer-action__label { display: none; } }

@@ -3,11 +3,13 @@
 import { chatLabelsWithToolTitles } from "@/modules/agent-log/tool-titles";
 import { ChatLabelsProvider, russianLabels, type ChatSkin, type ComposerHelper } from "@ykurilov/agent-chat-react";
 import { oduvanchikSkin } from "@ykurilov/agent-chat-skin-oduvanchik";
-import { useCallback, useRef, useState, type ComponentProps, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type FormEvent } from "react";
+import { FlagCheckeredIcon } from "@phosphor-icons/react";
 import { ROLE_SWAP_BASE_PATH } from "@/modules/role-swap/base-path";
 import type { RoleSwapState } from "@/modules/role-swap";
 import { Button, Field, Textarea } from "@/ui/primitives";
-import { ConversationBar } from "./conversation-bar";
+import { ConversationStatus } from "./conversation-status";
+import type { EditorRestart } from "./editor-header";
 import { ConversationRoleMenu } from "./conversation-role";
 import { CorrectablePreviewChat } from "./preview-corrections";
 import { restartRoleSwap, roleSwapState, startRoleSwap, submitRoleSwap } from "./role-swap-actions";
@@ -109,6 +111,7 @@ export function RoleSwapPanel({
   showStage,
   onCorrectionsChanged,
   onSubmitted,
+  onRestartChange,
 }: {
   leadMagnetId: string;
   initial: RoleSwapState | null;
@@ -117,6 +120,8 @@ export function RoleSwapPanel({
   onCorrectionsChanged(): void;
   /** Ответы встали в очередь: пора звать конструктора. */
   onSubmitted(): void;
+  /** «Начать заново» в общей строке над колонками: есть, пока идёт разговор; `null` — начинать нечего. */
+  onRestartChange(restart: EditorRestart | null): void;
 }) {
   const [chatId, setChatId] = useState(initial?.chatId ?? null);
   const [askingAgain, setAskingAgain] = useState(false);
@@ -170,15 +175,30 @@ export function RoleSwapPanel({
   // Главное в поле — ответить клиенту: «Закончить и разобрать» контурная, слева, подальше от стрелки отправки.
   // Видна и в закрытом чате: клиент ушёл — отдать на разбор можно
   const composerActions = (composer: ComposerHelper) => (
-    <div className="app-composer-actions">
+    <div className="app-composer-actions" data-actions="role-swap">
       {submitted ? null : (
-        <Button variant="outline" size="sm" loading={submitting} disabled={composer.busy || submitting} onClick={() => void submit()}>
-          Закончить и разобрать
+        <Button
+          variant="outline"
+          size="sm"
+          loading={submitting}
+          disabled={composer.busy || submitting}
+          onClick={() => void submit()}
+          aria-label="Закончить и разобрать"
+          title="Закончить разговор и отдать ответы конструктору на разбор"
+        >
+          <FlagCheckeredIcon aria-hidden />
+          <span className="composer-action__label">Закончить и разобрать</span>
         </Button>
       )}
       <ConversationRoleMenu />
     </div>
   );
+
+  const restartable = Boolean(chatId) && !askingAgain;
+  const restartBlocked = chatBusy || submitting;
+  useEffect(() => {
+    onRestartChange(restartable ? { onRestart: () => setAskingAgain(true), disabled: restartBlocked } : null);
+  }, [onRestartChange, restartable, restartBlocked]);
 
   if (!chatId || askingAgain)
     return (
@@ -198,10 +218,8 @@ export function RoleSwapPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
-      {/* Где сейчас разговор по сценарию и «Начать заново» — как в «Проверке» */}
-      <ConversationBar onRestart={() => setAskingAgain(true)} restartDisabled={chatBusy || submitting}>
-        {showStage && stageName ? `Этап: ${stageName}` : null}
-      </ConversationBar>
+      {/* Где сейчас разговор по сценарию — как в «Проверке» */}
+      {showStage && stageName ? <ConversationStatus>Этап: {stageName}</ConversationStatus> : null}
       <div className="min-h-0 flex-1">
         <ChatLabelsProvider labels={roleSwapLabels}>
           <CorrectablePreviewChat
